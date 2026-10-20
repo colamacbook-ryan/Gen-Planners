@@ -54,21 +54,54 @@ def per_year(v, n):
 def compute(assumptions: dict, scenario: dict) -> dict:
     meta, A, M = assumptions["meta"], assumptions["assumptions"], assumptions["model"]
     n, start = meta["years"], meta["start_year"]
-    val = lambda ref: per_year(A[ref]["value"] if isinstance(ref, str) else ref, n)
+
+    def val(ref):
+        """Chuỗi theo năm từ 1 ref: số | list số | id assumption | "cum:<id>" (luỹ kế)
+        | list id (nhân từng phần tử, vd giá × tỷ lệ)."""
+        if isinstance(ref, list) and ref and all(isinstance(r, str) for r in ref):
+            out = [1.0] * n
+            for r in ref:
+                out = [a * b for a, b in zip(out, val(r))]
+            return out
+        if isinstance(ref, str) and ref.startswith("cum:"):
+            out, acc = [], 0.0
+            for x in val(ref[4:]):
+                acc += x
+                out.append(acc)
+            return out
+        return per_year(A[ref]["value"] if isinstance(ref, str) else ref, n)
 
     years = [dict(year=start + i, revenue=0.0, cogs=0.0, opex=0.0, streams={}) for i in range(n)]
+    segs = {}
+    seg = lambda sid: segs.setdefault(sid, dict(
+        id=sid, name=M.get("segments", {}).get(sid, sid),
+        years=[dict(year=start + i, revenue=0.0, cogs=0.0, direct_opex=0.0) for i in range(n)]))
+    stream_x = scenario.get("stream_x", {})
     for s in M["revenue_streams"]:
-        price = val(s["price"])
-        vol = val(s["volume"])
-        cogs = val(s["cogs_pct"])
+        price, vol, cogs = val(s["price"]), val(s["volume"]), val(s["cogs_pct"])
+        k = scenario.get("volume_x", 1) * scenario.get("price_x", 1) * stream_x.get(s["id"], 1)
+        sy = seg(s.get("segment", s["id"]))["years"]
         for i, y in enumerate(years):
-            r = price[i] * vol[i] * scenario.get("volume_x", 1) * scenario.get("price_x", 1)
+            r = price[i] * vol[i] * k
             y["streams"][s["id"]] = r
             y["revenue"] += r
             y["cogs"] += r * cogs[i]
+            sy[i]["revenue"] += r
+            sy[i]["cogs"] += r * cogs[i]
     for o in M["opex"]:
         for i, x in enumerate(val(o["amount"])):
-            years[i]["opex"] += x * scenario.get("opex_x", 1)
+            x *= scenario.get("opex_x", 1)
+            years[i]["opex"] += x
+            if o.get("segment"):
+                seg(o["segment"])["years"][i]["direct_opex"] += x
+    for g in segs.values():
+        for sy in g["years"]:
+            sy["gross_profit"] = sy["revenue"] - sy["cogs"]
+            sy["contribution"] = sy["gross_profit"] - sy["direct_opex"]
+            sy["margin"] = sy["contribution"] / sy["revenue"] if sy["revenue"] else 0
+        g["last"] = g["years"][-1]
+        g["total_revenue"] = sum(sy["revenue"] for sy in g["years"])
+        g["total_contribution"] = sum(sy["contribution"] for sy in g["years"])
 
     tax_rate = val(M["tax_rate"])
     capex = val(M["capex"])
@@ -108,7 +141,7 @@ def compute(assumptions: dict, scenario: dict) -> dict:
         investor_exit=exit_value * stake,
         investor_moic=exit_value * stake / raise_amt if raise_amt else 0,
     )
-    return dict(years=years, last=years[-1], metrics=metrics)
+    return dict(years=years, last=years[-1], metrics=metrics, segments=segs)
 
 
 def compute_all(assumptions: dict) -> dict:
@@ -228,6 +261,13 @@ def write_excel(path, ctx, assumptions, evidence):
             s.append([k, v])
         for c in s[1]:
             c.font = Font(bold=True)
+    s = wb.create_sheet("Segments base")
+    base = ctx["fin"]["base"]
+    s.append(["Mảng", "Chỉ tiêu"] + [y["year"] for y in base["years"]])
+    for g in base["segments"].values():
+        for label, key in [("Doanh thu", "revenue"), ("Lợi nhuận gộp", "gross_profit"),
+                           ("Chi phí trực tiếp", "direct_opex"), ("Lợi nhuận đóng góp", "contribution")]:
+            s.append([g["name"], label] + [round(y[key], 2) for y in g["years"]])
     e = wb.create_sheet("Evidence")
     e.append(["id", "title", "publisher", "date", "url", "type", "note"])
     for k, v in evidence.items():
