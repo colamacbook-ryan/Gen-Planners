@@ -160,6 +160,10 @@ def make_env(d: Path, assumptions: dict, evidence: dict, issues: list):
     def num(x, digits=0):
         return f"{x:,.{digits}f}".replace(",", "_").replace(".", ",").replace("_", ".")
 
+    def ty(x, digits=1):
+        """triệu đ → tỷ đ."""
+        return num(x / 1000, digits) + " tỷ đ"
+
     def pct(x, digits=0):
         return f"{x * 100:.{digits}f}%".replace(".", ",")
 
@@ -171,7 +175,7 @@ def make_env(d: Path, assumptions: dict, evidence: dict, issues: list):
 
     env = Environment(loader=FileSystemLoader(str(d)), undefined=StrictUndefined,
                       trim_blocks=True, lstrip_blocks=True)
-    env.filters.update(money=money, num=num, pct=pct)
+    env.filters.update(money=money, num=num, pct=pct, ty=ty)
     env.globals.update(cite=cite)
     return env
 

@@ -1,38 +1,149 @@
-# SINGLE SOURCE OF TRUTH cho mọi con số của dự án.
-# status: placeholder (chưa nghiên cứu) → estimate (có cách ước tính) → verified (có nguồn ngoài/dữ liệu thật)
-# confidence: low | medium | high.  value: số hoặc list theo từng năm.
+# SINGLE SOURCE OF TRUTH — AI Robot Pet → "Bộ não AI tiếng Việt cho thiết bị"
+# status: placeholder → estimate → verified. Tiền: triệu đ. Năm 1 = 2027.
+# Dữ kiện thị trường (fact_*) là số đã có nguồn; giả định kinh doanh (còn lại) là ước tính cần kiểm chứng ở Giai đoạn 0.
 meta:
   currency: VND
-  unit_label: triệu đ        # mọi số tiền tính bằng triệu VND
+  unit_label: triệu đ
   start_year: 2027
   years: 5
+  fx_usd: 26000
 
 assumptions:
-  raise_amount:   {label: Vốn gọi, value: 1000, unit: triệu đ, status: placeholder, confidence: low, source: []}
-  pre_money:      {label: Định giá trước vốn, value: 2000, unit: triệu đ, status: placeholder, confidence: low, source: []}
-  price_main:     {label: Giá bán sản phẩm chính, value: 1, unit: triệu đ/đơn vị, status: placeholder, confidence: low, source: []}
-  volume_main:    {label: Sản lượng/năm, value: [100, 200, 400, 600, 800], unit: đơn vị, status: placeholder, confidence: low, source: []}
-  cogs_main_pct:  {label: Giá vốn % doanh thu, value: 0.5, unit: "%", status: placeholder, confidence: low, source: []}
-  opex_staff:     {label: Chi phí nhân sự/năm, value: [100, 120, 150, 180, 200], unit: triệu đ, status: placeholder, confidence: low, source: []}
-  opex_marketing: {label: Chi phí marketing/năm, value: [50, 60, 80, 90, 100], unit: triệu đ, status: placeholder, confidence: low, source: []}
-  capex_plan:     {label: Đầu tư ban đầu, value: [200, 0, 0, 0, 0], unit: triệu đ, status: placeholder, confidence: low, source: []}
-  cit_rate:       {label: Thuế TNDN, value: 0.2, unit: "%", status: placeholder, confidence: medium, source: []}
-  discount_rate:  {label: Suất chiết khấu, value: 0.2, unit: "%", status: estimate, confidence: medium, source: []}
-  exit_multiple:  {label: Hệ số định giá thoát vốn (×EBITDA), value: 6, unit: x, status: placeholder, confidence: low, source: []}
+  # ---------------------------------------------------------------- dữ kiện thị trường
+  fact_cn_aitoy_2025:   {label: Thị trường AI toy TQ 2025, value: 29, unit: tỷ NDT, status: verified, confidence: medium, source: [ev-caixin-aitoy]}
+  fact_cn_aitoy_2030:   {label: Thị trường AI toy TQ 2030 (dự báo cao), value: 100, unit: tỷ NDT, status: verified, confidence: low, source: [ev-mittr-aitoy]}
+  fact_cn_aitoy_firms:  {label: Số công ty AI toy ở TQ, value: 1500, unit: công ty, status: verified, confidence: medium, source: [ev-mittr-aitoy]}
+  fact_fuzozo_units:    {label: Fuzozo đã bán, value: 300000, unit: máy, status: verified, confidence: medium, source: [ev-pedaily-fuzozo], note: Doanh nghiệp tự công bố}
+  fact_fuzozo_minutes:  {label: Fuzozo thời gian dùng TB, value: 50, unit: phút/ngày, status: verified, confidence: low, source: [ev-pedaily-fuzozo]}
+  fact_fuzozo_female:   {label: Tỷ lệ nữ trong người dùng cốt lõi Fuzozo, value: 0.8, unit: "%", status: verified, confidence: low, source: [ev-pedaily-fuzozo]}
+  fact_return_rate:     {label: Tỷ lệ trả hàng AI plush online ở TQ, value: 0.3, unit: "%", status: verified, confidence: medium, source: [ev-36kr-returns, ev-36kr-ropet]}
+  fact_ropet_retention: {label: Ropet giữ chân người dùng sau 90 ngày, value: 0.8, unit: "%", status: verified, confidence: low, source: [ev-36kr-ropet], note: Tự công bố 80–90%}
+  fact_doubao_devices:  {label: Thiết bị kết nối Doubao (06/2025), value: 1000000, unit: thiết bị, status: verified, confidence: medium, source: [ev-36kr-ropet]}
+  fact_vn_60plus:       {label: Người 60+ ở VN (2025), value: 14.8, unit: triệu người, status: verified, confidence: high, source: [ev-nso-census]}
+  fact_vn_60plus_2050:  {label: Người 60+ ở VN (2050), value: 28, unit: triệu người, status: verified, confidence: medium, source: [ev-unfpa-ageing]}
+  fact_vn_aged_year:    {label: Năm VN thành xã hội già, value: 2036, unit: năm, status: verified, confidence: medium, source: [ev-unfpa-ageing]}
+  fact_vn_abcd_hh:      {label: Hộ thu nhập ABCD, value: 15.8, unit: triệu hộ, status: verified, confidence: medium, source: [ev-cimigo-abcd]}
+  fact_vn_schools:      {label: Trường phổ thông, value: 25900, unit: trường, status: verified, confidence: medium, source: [ev-nso-census], note: Nguồn Thời báo Tài chính 2024 trong research/04}
+  fact_vn_toys:         {label: Thị trường đồ chơi VN 2025, value: 601.9, unit: triệu USD, status: verified, confidence: medium, source: [ev-imarc-toys]}
+  fact_vn_vacuum:       {label: Thị trường robot hút bụi VN 12 tháng tới 06/2026, value: 92.5, unit: triệu USD, status: verified, confidence: medium, source: [ev-vacuum-vn]}
+  fact_vn_vacuum_growth: {label: Tăng trưởng robot hút bụi VN, value: 1.376, unit: "%", status: verified, confidence: medium, source: [ev-vacuum-vn]}
+  fact_vn_ai_users:     {label: Người dùng online VN đã dùng AI, value: 0.78, unit: "%", status: verified, confidence: medium, source: [ev-decisionlab-ai]}
+  fact_vn_ai_paying:    {label: Người dùng AI trả phí thuê bao, value: 0.55, unit: "%", status: verified, confidence: low, source: [ev-decisionlab-ai]}
+  fact_vn_pet_owners:   {label: Người trưởng thành đô thị nuôi thú cưng, value: 0.79, unit: "%", status: verified, confidence: medium, source: [ev-pet-vn]}
+  fact_vn_english_spend_lo: {label: Chi tiêu tiếng Anh/tháng của phụ huynh (thấp), value: 2.1, unit: triệu đ, status: verified, confidence: low, source: [ev-english-parents]}
+  fact_vn_english_spend_hi: {label: Chi tiêu tiếng Anh/tháng của phụ huynh (cao), value: 4.5, unit: triệu đ, status: verified, confidence: low, source: [ev-english-parents]}
+  fact_vn_no_online:    {label: Phụ huynh không chấp nhận học hoàn toàn online, value: 0.72, unit: "%", status: verified, confidence: low, source: [ev-english-parents]}
+  fact_landed_low:      {label: Giá về kho/máy (loại giọng nói cơ bản), value: 28, unit: USD, status: estimate, confidence: medium, source: [ev-alibaba-aipets, ev-hs-9503], note: Mô hình landed cost research/02}
+  fact_landed_mid:      {label: Giá về kho/máy (để bàn có màn hình + camera), value: 61, unit: USD, status: estimate, confidence: medium, source: [ev-alibaba-aipets, ev-hs-9503]}
+  fact_cloud_selfhost:  {label: Chi phí AI/người dùng/tháng khi tự host, value: 1.5, unit: USD (trần), status: estimate, confidence: low, source: [ev-xiaozhi, ev-deepseek-pricing], note: 0,5–1,5 USD; cần benchmark}
+  fact_cloud_realtime:  {label: Chi phí AI/người dùng/tháng dùng API realtime, value: 8, unit: USD, status: estimate, confidence: medium, source: [ev-openai-pricing]}
+  fact_cn_margin_lo:    {label: Biên gộp AI toy TQ phân khúc thấp, value: 0.5, unit: "%", status: verified, confidence: low, source: [ev-36kr-margin]}
+  fact_cn_margin_hi:    {label: Biên gộp AI toy TQ phân khúc ¥1.500–3.000, value: 0.85, unit: "%", status: verified, confidence: low, source: [ev-36kr-margin]}
+  fact_acfta_duty:      {label: Thuế NK ACFTA với C/O form E (mã 9503 và 85xx), value: 0, unit: "%", status: verified, confidence: medium, source: [ev-hs-9503]}
+  fact_mfn_toy_duty:    {label: Thuế NK MFN đồ chơi 9503 (không có form E), value: 0.2, unit: "%", status: verified, confidence: medium, source: [ev-hs-9503]}
+  fact_club_capex:      {label: Capex 1 CLB 150 m² HCM, value: 1980, unit: triệu đ, status: estimate, confidence: low, source: [ev-cbre-hcm, ev-min-wage], note: research/05}
+
+  # ---------------------------------------------------------------- mảng 1: người cao tuổi "Con cháu"
+  elder_price:       {label: Giá thiết bị bạn đồng hành người già, value: 1.99, unit: triệu đ/máy, status: estimate, confidence: low, source: [ev-000], note: Trong khoảng 1,5–3 tr (research/07); kiểm chứng ở thí nghiệm C}
+  elder_units:       {label: Máy người già bán ra/năm, value: [200, 1500, 4000, 7000, 10000], unit: máy, status: estimate, confidence: low, source: [ev-000], note: Năm 5 ≈ 0,07% số người 60+ — khiêm tốn có chủ đích}
+  elder_device_cogs: {label: Giá vốn + kênh thiết bị người già, value: 0.55, unit: "%", status: estimate, confidence: medium, source: [ev-alibaba-aipets], note: Landed ~0,73 tr (37%) + kênh/bảo hành 18%}
+  elder_sub_price:   {label: Thuê bao người già/năm, value: 2.388, unit: triệu đ/năm, status: estimate, confidence: low, source: [ev-000], note: 199k/tháng; thí nghiệm C đo WTP 200–300k}
+  elder_active:      {label: Tỷ lệ máy đã bán còn trả thuê bao, value: 0.5, unit: "%", status: estimate, confidence: low, source: [ev-36kr-ropet, ev-36kr-returns], note: Giữa TB ngành (~70% còn giữ) và Ropet; trừ người không gia hạn}
+  elder_sub_cogs:    {label: Giá vốn thuê bao (cloud + hỗ trợ), value: 0.3, unit: "%", status: estimate, confidence: medium, source: [ev-xiaozhi, ev-deepseek-pricing]}
+
+  # ---------------------------------------------------------------- mảng 2: bạn luyện nói tiếng Anh
+  eng_price:         {label: Giá thiết bị luyện nói tiếng Anh, value: 1.49, unit: triệu đ/máy, status: estimate, confidence: low, source: [ev-000], note: < 1 tháng học phí trung tâm; thí nghiệm A}
+  eng_units:         {label: Máy tiếng Anh bán ra/năm, value: [300, 2000, 4000, 6000, 8000], unit: máy, status: estimate, confidence: low, source: [ev-000], note: Neo theo SOM B2C trẻ em ~4k máy/năm (research/04) + kênh trung tâm tiếng Anh}
+  eng_device_cogs:   {label: Giá vốn + chiết khấu kênh thiết bị tiếng Anh, value: 0.6, unit: "%", status: estimate, confidence: medium, source: [ev-alibaba-aipets], note: Landed ~0,73 tr + chiết khấu trung tâm 10%}
+  eng_sub_price:     {label: Thuê bao tiếng Anh/năm, value: 1.788, unit: triệu đ/năm, status: estimate, confidence: low, source: [ev-000], note: 149k/tháng}
+  eng_active:        {label: Tỷ lệ máy tiếng Anh còn trả thuê bao, value: 0.4, unit: "%", status: estimate, confidence: low, source: [ev-36kr-returns]}
+  eng_sub_cogs:      {label: Giá vốn thuê bao tiếng Anh, value: 0.35, unit: "%", status: estimate, confidence: medium, source: [ev-xiaozhi, ev-openai-pricing], note: Dùng nhiều hơn → cloud cao hơn}
+
+  # ---------------------------------------------------------------- mảng 3: nền tảng "Bộ não AI tiếng Việt" (B2B)
+  brain_devices:     {label: Thiết bị bên thứ ba chạy trên nền tảng (TB năm), value: [0, 3000, 12000, 30000, 60000], unit: thiết bị, status: estimate, confidence: low, source: [ev-36kr-ropet, ev-vacuum-vn], note: So sánh - Doubao > 1 tr thiết bị ở TQ; hãng TQ chiếm > 90% robot hút bụi VN}
+  brain_fee:         {label: Phí nền tảng/thiết bị/năm, value: 0.3, unit: triệu đ/năm, status: estimate, confidence: low, source: [ev-36kr-ropet], note: 25k/tháng ≈ 1 USD; TQ thuê bao ~¥100/năm}
+  brain_cogs:        {label: Giá vốn nền tảng (cloud), value: 0.5, unit: "%", status: estimate, confidence: low, source: [ev-xiaozhi, ev-deepseek-pricing]}
+  brain_brands:      {label: Thương hiệu tích hợp mới/năm, value: [0, 2, 4, 6, 8], unit: thương hiệu, status: estimate, confidence: low, source: [ev-000], note: JD JoyInside > 40 thương hiệu ở TQ}
+  brain_integration: {label: Phí tích hợp/thương hiệu, value: 150, unit: triệu đ, status: estimate, confidence: low, source: [ev-000]}
+  brain_int_cogs:    {label: Giá vốn tích hợp (kỹ sư), value: 0.4, unit: "%", status: estimate, confidence: medium, source: [ev-000]}
+
+  # ---------------------------------------------------------------- mảng 4: giáo dục AI (trung tâm STEM, trường tư)
+  edu_customers:     {label: Trung tâm/trường mua gói/năm, value: [10, 30, 60, 100, 140], unit: khách, status: estimate, confidence: low, source: [ev-qd2422], note: SOM research/04 - 60 trường trong 3 năm}
+  edu_package:       {label: Gói kit robot giọng nói + giáo án 12 tiết, value: 60, unit: triệu đ/khách/năm, status: estimate, confidence: low, source: [ev-stem-room, ev-algorithmics], note: Rẻ hơn rất nhiều phòng STEM 2 tỷ}
+  edu_cogs:          {label: Giá vốn gói giáo dục, value: 0.45, unit: "%", status: estimate, confidence: medium, source: [ev-alibaba-aipets]}
+
+  # ---------------------------------------------------------------- mảng 5: dịch vụ dữ liệu giọng nói & embodied
+  data_rev:          {label: Doanh thu dịch vụ dữ liệu/năm, value: [600, 1500, 3000, 4000, 5000], unit: triệu đ, status: estimate, confidence: low, source: [ev-embodied-data, ev-vn-speech-data], note: Dòng tiền nuôi lõi; khách là phòng lab robot/AI}
+  data_cogs:         {label: Giá vốn dịch vụ dữ liệu (nhân công, thiết bị), value: 0.6, unit: "%", status: estimate, confidence: medium, source: [ev-min-wage]}
+
+  # ---------------------------------------------------------------- mảng 6: CLB trải nghiệm (flagship, giai đoạn mở rộng)
+  club_venues:       {label: Số CLB đang hoạt động, value: [0, 0, 0, 1, 2], unit: CLB, status: estimate, confidence: low, source: [ev-000], note: Chỉ mở khi lõi đã chứng minh}
+  club_rev:          {label: Doanh thu/CLB/năm, value: 5916, unit: triệu đ, status: estimate, confidence: low, source: [ev-cbre-hcm, ev-min-wage], note: 493 tr/tháng (research/05)}
+  club_cogs:         {label: Giá vốn CLB, value: 0.21, unit: "%", status: estimate, confidence: low, source: [ev-000]}
+  club_opex:         {label: Chi phí vận hành/CLB/năm (thuê, người, điện, marketing, phần mềm), value: 3204, unit: triệu đ, status: estimate, confidence: low, source: [ev-cbre-hcm, ev-min-wage], note: 267 tr/tháng}
+
+  # ---------------------------------------------------------------- chi phí chung
+  opex_team:         {label: Nhân sự lõi (kỹ thuật, nội dung, vận hành), value: [2400, 4200, 6600, 9000, 11400], unit: triệu đ, status: estimate, confidence: medium, source: [ev-min-wage], note: ~8 → 38 người, TB 25 tr/tháng}
+  opex_marketing:    {label: Marketing & bán hàng, value: [500, 2000, 3500, 5000, 6500], unit: triệu đ, status: estimate, confidence: low, source: [ev-000]}
+  opex_compliance:   {label: Hợp quy, pháp lý, BVDLCN, an toàn AI, value: [800, 1200, 1500, 2000, 2500], unit: triệu đ, status: estimate, confidence: low, source: [ev-tt29-2025, ev-pdp-law, ev-ai-law]}
+  opex_ga:           {label: Văn phòng & quản lý chung, value: [300, 600, 900, 1200, 1500], unit: triệu đ, status: estimate, confidence: medium, source: [ev-000]}
+  capex_plan:        {label: Capex (khuôn, NRE, chứng nhận, server, fit-out CLB), value: [1200, 1500, 2500, 3980, 3980], unit: triệu đ, status: estimate, confidence: low, source: [ev-alibaba-aipets], note: Năm 4–5 gồm 1 CLB/năm (~1,98 tỷ)}
+  cit_rate:          {label: Thuế TNDN (miễn 3 năm đầu cho DNNVV mới), value: [0, 0, 0, 0.17, 0.2], unit: "%", status: verified, confidence: medium, source: [ev-nq198, ev-cit-law]}
+
+  # ---------------------------------------------------------------- lộ trình & cửa ải
+  phase0_budget:     {label: Giai đoạn 0 - kiểm chứng (thí nghiệm, mẫu, chuyến TQ, prototype), value: 300, unit: triệu đ, status: estimate, confidence: medium, source: [ev-000], note: 4 thí nghiệm ~110 tr + chuyến TQ ~20 tr + mẫu/prototype/server ~170 tr}
+  phase1_budget:     {label: Giai đoạn 1 - ra mắt 2 sản phẩm + nền tảng, value: 4700, unit: triệu đ, status: estimate, confidence: low, source: [ev-000]}
+  phase2_budget:     {label: Giai đoạn 2 - mở rộng (B2B, ĐNA, CLB flagship), value: 10000, unit: triệu đ, status: estimate, confidence: low, source: [ev-000]}
+  exp_a_budget:      {label: Thí nghiệm A tiếng Anh, value: 45, unit: triệu đ, status: estimate, confidence: medium, source: [ev-000]}
+  exp_b_budget:      {label: Thí nghiệm B nền tảng, value: 35, unit: triệu đ, status: estimate, confidence: medium, source: [ev-000]}
+  exp_c_budget:      {label: Thí nghiệm C người già, value: 40, unit: triệu đ, status: estimate, confidence: medium, source: [ev-000]}
+  exp_d_budget:      {label: Thí nghiệm D giáo dục, value: 20, unit: triệu đ, status: estimate, confidence: medium, source: [ev-000]}
+  trip_budget:       {label: Chuyến khảo sát Thâm Quyến 5 ngày/người, value: 22, unit: triệu đ, status: estimate, confidence: medium, source: [ev-freight], note: 15–22 tr (research/02)}
+  gate_elder_use:    {label: Ngưỡng - bố mẹ còn dùng ở tuần 6, value: 0.6, unit: "%", status: estimate, confidence: medium, source: [ev-elliq]}
+  gate_elder_pay:    {label: Ngưỡng - con cái sẵn lòng trả thuê bao, value: 0.4, unit: "%", status: estimate, confidence: medium, source: [ev-000]}
+  gate_eng_deposit:  {label: Ngưỡng - khách đặt cọc trên landing page, value: 0.03, unit: "%", status: estimate, confidence: medium, source: [ev-000]}
+  gate_eng_use:      {label: Ngưỡng - trẻ còn dùng ≥ nửa số ngày ở tuần 4, value: 0.5, unit: "%", status: estimate, confidence: medium, source: [ev-000]}
+  gate_asr_wer:      {label: Ngưỡng - tỷ lệ lỗi nhận dạng giọng (WER) với giọng người già/trẻ em các vùng, value: 0.15, unit: "%", status: estimate, confidence: low, source: [ev-000]}
+  gate_cloud_cost:   {label: Ngưỡng - chi phí AI/người dùng/tháng, value: 40, unit: nghìn đ, status: estimate, confidence: medium, source: [ev-xiaozhi], note: ≈ 1,5 USD}
+
+  # ---------------------------------------------------------------- vốn (khung đề xuất, bàn sau)
+  raise_amount:      {label: Tổng vốn cần cho 5 năm (chia theo giai đoạn), value: 15000, unit: triệu đ, status: estimate, confidence: low, source: [ev-000], note: Không gọi một lần - xem lộ trình}
+  pre_money:         {label: Định giá trước vốn (tham khảo), value: 15000, unit: triệu đ, status: placeholder, confidence: low, source: [ev-000]}
+  discount_rate:     {label: Suất chiết khấu, value: 0.25, unit: "%", status: estimate, confidence: medium, source: [ev-000]}
+  exit_multiple:     {label: Hệ số định giá (×EBITDA năm 5), value: 6, unit: x, status: estimate, confidence: low, source: [ev-000]}
 
 model:
+  segments:
+    elder: Người cao tuổi "Con cháu"
+    english: Bạn luyện nói tiếng Anh
+    brain: Nền tảng Bộ não AI tiếng Việt (B2B)
+    edu: Giáo dục AI (STEM, trường tư)
+    data: Dịch vụ dữ liệu giọng nói & embodied
+    club: CLB trải nghiệm
   revenue_streams:
-    - {id: main, name: Sản phẩm chính, price: price_main, volume: volume_main, cogs_pct: cogs_main_pct}
+    - {id: elder_device, segment: elder, price: elder_price, volume: elder_units, cogs_pct: elder_device_cogs}
+    - {id: elder_sub, segment: elder, price: elder_sub_price, volume: ["cum:elder_units", elder_active], cogs_pct: elder_sub_cogs}
+    - {id: eng_device, segment: english, price: eng_price, volume: eng_units, cogs_pct: eng_device_cogs}
+    - {id: eng_sub, segment: english, price: eng_sub_price, volume: ["cum:eng_units", eng_active], cogs_pct: eng_sub_cogs}
+    - {id: brain_fee, segment: brain, price: brain_fee, volume: brain_devices, cogs_pct: brain_cogs}
+    - {id: brain_int, segment: brain, price: brain_integration, volume: brain_brands, cogs_pct: brain_int_cogs}
+    - {id: edu, segment: edu, price: edu_package, volume: edu_customers, cogs_pct: edu_cogs}
+    - {id: data, segment: data, price: data_rev, volume: 1, cogs_pct: data_cogs}
+    - {id: club, segment: club, price: club_rev, volume: club_venues, cogs_pct: club_cogs}
   opex:
-    - {name: Nhân sự, amount: opex_staff}
+    - {name: Nhân sự lõi, amount: opex_team}
     - {name: Marketing, amount: opex_marketing}
+    - {name: Hợp quy & an toàn, amount: opex_compliance}
+    - {name: Quản lý chung, amount: opex_ga}
+    - {name: Vận hành CLB, amount: [club_venues, club_opex], segment: club}
   capex: capex_plan
   tax_rate: cit_rate
   funding: raise_amount
   pre_money: pre_money
   discount_rate: discount_rate
   exit_multiple: exit_multiple
-  scenarios:            # nhân hệ số lên base
-    bear: {volume_x: 0.6, price_x: 0.9, opex_x: 1.1}
+  scenarios:
+    bear: {volume_x: 0.5, opex_x: 0.9}
     base: {}
-    bull: {volume_x: 1.4}
+    bull: {volume_x: 1.5, opex_x: 1.1}
+    no_brain: {stream_x: {brain_fee: 0, brain_int: 0}}
