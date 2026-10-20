@@ -1,0 +1,110 @@
+# TRÌNH PHỎNG VẤN FOUNDER CHUẨN — chạy TRƯỚC khi nghiên cứu, để agent hiểu đúng ý tưởng gốc.
+# AI phỏng vấn hỏi từng câu, đào sâu bằng probes khi trả lời mơ hồ, tóm tắt câu trả lời vào `answers[id]`.
+# Kết quả biên dịch thành brief.md (xem saas/server/interview.py → build_brief). Câu `required: true` phải có trước khi chạy Plan.
+style:
+  - Một câu hỏi mỗi lượt, ngắn, bằng ngôn ngữ đời thường; không giảng bài.
+  - Tôn trọng ý tưởng gốc — hỏi để hiểu, không để thay ý tưởng.
+  - Trả lời mơ hồ ("chắc là", "nhiều lắm") → hỏi lại một lần bằng một probe cụ thể (con số, ví dụ, tên).
+  - Founder nói "chưa biết" → ghi nhận là câu hỏi mở, chuyển câu tiếp; agent sẽ nghiên cứu sau.
+  - Mỗi 4–5 câu, tóm tắt lại 2–3 dòng những gì đã hiểu để founder xác nhận.
+
+blocks:
+  - {id: origin, title: Gốc ý tưởng}
+  - {id: product, title: Sản phẩm lõi}
+  - {id: customer, title: Khách hàng & nỗi đau}
+  - {id: ecosystem, title: Cấu phần & kênh}
+  - {id: supply, title: Nguồn hàng & công nghệ}
+  - {id: team, title: Đội ngũ & nguồn lực}
+  - {id: money, title: Mô hình tiền & tham vọng}
+  - {id: market, title: Thị trường & đối thủ}
+  - {id: risk, title: Rủi ro & giới hạn}
+  - {id: proof, title: Kiểm chứng & thành công}
+
+questions:
+  - id: one_liner
+    block: origin
+    required: true
+    ask: Nếu phải kể ý tưởng cho một người bạn trong 30 giây, anh/chị sẽ nói thế nào?
+    probes: ["Cho ai dùng?", "Họ được gì mà hôm nay chưa có?"]
+  - id: why_you
+    block: origin
+    ask: Điều gì khiến anh/chị nghĩ tới ý tưởng này — trải nghiệm, nghề nghiệp hay một cơ hội nhìn thấy?
+    probes: ["Có khoảnh khắc cụ thể nào không?", "Vì sao là anh/chị chứ không phải người khác?"]
+  - id: why_now
+    block: origin
+    ask: Vì sao lúc này là thời điểm đúng?
+    probes: ["Công nghệ, giá, chính sách hay thói quen nào vừa thay đổi?"]
+  - id: core_product
+    block: product
+    required: true
+    ask: Sản phẩm/dịch vụ lõi cụ thể là gì? Mô tả như đang cầm nó trên tay.
+    probes: ["Nó làm được 3 việc gì quan trọng nhất?", "Giá bán dự kiến khoảng bao nhiêu?"]
+  - id: must_keep
+    block: product
+    required: true
+    ask: Những điểm nào là "linh hồn" của ý tưởng, dù thế nào cũng không bỏ?
+    probes: ["Nếu bỏ điểm đó thì ý tưởng còn khác gì người khác?"]
+  - id: differentiation
+    block: product
+    ask: So với thứ khách đang dùng thay thế hôm nay, điểm khác biệt lớn nhất là gì?
+  - id: target_customer
+    block: customer
+    required: true
+    ask: Ai là người trả tiền đầu tiên? Mô tả một người cụ thể — tuổi, công việc, sống ở đâu.
+    probes: ["Người dùng và người trả tiền có phải là một không?"]
+  - id: pain
+    block: customer
+    ask: Họ đang gặp vấn đề hay mong muốn gì mà sản phẩm giải quyết? Hôm nay họ xoay xở thế nào?
+  - id: willingness_to_pay
+    block: customer
+    ask: Anh/chị đã từng hỏi ai sẵn sàng trả tiền chưa? Họ nói mức bao nhiêu?
+    probes: ["Có ai đặt cọc hay đăng ký trước chưa?"]
+  - id: components
+    block: ecosystem
+    required: true
+    ask: Ngoài sản phẩm lõi, anh/chị hình dung những mảng nào xung quanh (dịch vụ, cộng đồng, kênh bán, đào tạo, nhượng quyền…)? Kể hết ra.
+    probes: ["Mảng nào sẽ ra tiền đầu tiên?", "Mảng nào chỉ là giấc mơ xa?"]
+  - id: first_channel
+    block: ecosystem
+    ask: Khách hàng đầu tiên sẽ biết và mua ở đâu?
+  - id: supply
+    block: supply
+    ask: Sản phẩm sẽ được làm ra/nhập về thế nào — tự làm, OEM, nhập khẩu? Đã có nhà cung cấp nào chưa?
+  - id: tech
+    block: supply
+    ask: Phần công nghệ (phần mềm, AI, server, dữ liệu) ai làm và làm ở đâu?
+  - id: team
+    block: team
+    required: true
+    ask: Đội ngũ hiện có những ai, mỗi người mạnh gì? Còn thiếu vai trò nào?
+  - id: resources
+    block: team
+    ask: Nguồn lực sẵn có — vốn tự có, vốn bạn bè, mặt bằng, quan hệ, thời gian mỗi tuần — là bao nhiêu?
+    probes: ["Số vốn có thể bỏ ra mà mất cũng không sao là bao nhiêu?"]
+  - id: revenue_model
+    block: money
+    ask: Tiền sẽ đến từ đâu — bán đứt, thuê bao, dịch vụ, phí thành viên, phí nhượng quyền? Mảng nào lời nhất theo anh/chị?
+  - id: ambition
+    block: money
+    required: true
+    ask: Sau 5 năm, nếu mọi thứ thuận lợi, dự án trông thế nào (doanh thu, số điểm bán, số khách, thị trường)?
+  - id: market_geo
+    block: market
+    ask: Bắt đầu ở thành phố/quốc gia nào, sau đó mở rộng đi đâu?
+  - id: competitors
+    block: market
+    ask: Anh/chị biết những ai đang làm điều gần giống (trong và ngoài nước)?
+  - id: red_lines
+    block: risk
+    ask: Có điều gì anh/chị nhất định không làm (pháp lý, đạo đức, kiểu đối tác, mức nợ)?
+  - id: biggest_fear
+    block: risk
+    ask: Điều gì có thể giết dự án này nhanh nhất?
+  - id: phase0_test
+    block: proof
+    required: true
+    ask: Với số tiền nhỏ nhất và trong 1–2 tháng, anh/chị muốn chứng minh điều gì trước khi bỏ vốn lớn?
+    probes: ["Con số nào nhìn thấy thì anh/chị tự tin đi tiếp?", "Con số nào thì dừng?"]
+  - id: investors
+    block: proof
+    ask: Ai sẽ đọc bộ hồ sơ này (bạn bè góp vốn, quỹ, ngân hàng, đối tác)? Họ quan tâm nhất điều gì?

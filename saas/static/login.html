@@ -1,0 +1,61 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gen Planner — Đăng nhập</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,600&family=Public+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/static/gp.css">
+<style>
+.wrap{min-height:100vh;display:grid;grid-template-columns:1.1fr 1fr}
+.hero{background:var(--hero);color:var(--hero-fg);padding:56px 48px;display:flex;flex-direction:column;justify-content:space-between}
+.hero h1{font-size:40px;max-width:520px;margin-top:24px} .hero p{color:var(--hero-muted);max-width:480px;font-size:15px}
+.steps{display:grid;gap:12px;margin-top:28px;max-width:480px}
+.steps div{display:flex;gap:12px;align-items:flex-start} .steps b{display:grid;place-items:center;flex:none;width:26px;height:26px;border-radius:50%;background:var(--hero-line);color:var(--core);font-size:12px}
+.steps span{color:var(--hero-muted);font-size:13.5px} .steps strong{color:var(--hero-fg);display:block;font-weight:600}
+.form{display:grid;place-items:center;padding:32px}
+.form .card{width:100%;max-width:380px;padding:28px}
+.gbtn{width:100%;display:flex;justify-content:center;gap:8px;margin-top:6px}
+.or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px;margin:16px 0 4px}.or:before,.or:after{content:"";flex:1;height:1px;background:var(--line)}
+@media (max-width:860px){.wrap{grid-template-columns:1fr}.hero{padding:32px 20px}.hero h1{font-size:30px}}
+</style></head><body>
+<div class="wrap">
+  <section class="hero">
+    <div><div class="k" style="color:var(--hero-muted)" id="site">Gen Planner</div>
+      <h1>Từ một ý tưởng đến bộ hồ sơ khai phá đầy đủ.</h1>
+      <p>Trợ lý AI phỏng vấn để hiểu đúng ý tưởng gốc, cùng bạn brainstorm chốt từng điểm, rồi core agent nghiên cứu và dựng kế hoạch, dashboard, model tài chính — một nguồn số liệu duy nhất.</p>
+      <div class="steps">
+        <div><b>1</b><span><strong>Phỏng vấn founder</strong>23 câu theo 10 chủ đề, hỏi từng câu, đào sâu khi mơ hồ.</span></div>
+        <div><b>2</b><span><strong>Brainstorm & chốt điểm</strong>AI đề xuất, bạn chốt hoặc loại — thành neo cho agent.</span></div>
+        <div><b>3</b><span><strong>Chạy Plan</strong>Agent nghiên cứu R1–R9, dựng SSOT, kiểm tra 0 lỗi.</span></div>
+        <div><b>4</b><span><strong>Hồ sơ</strong>Console câu chuyện, dashboard số liệu, Word · PowerPoint · Excel.</span></div>
+      </div></div>
+    <p class="hint" style="color:var(--hero-muted)">Mỗi tài khoản dùng API key AI của chính mình — key được mã hoá trên máy chủ.</p>
+  </section>
+  <section class="form"><div class="card">
+    <h2 id="title">Đăng nhập</h2><p class="hint" id="sub">Chào mừng trở lại.</p>
+    <form id="f">
+      <div id="nameRow" hidden><label for="name">Tên hiển thị</label><input id="name" autocomplete="name"></div>
+      <label for="email">Email</label><input id="email" type="email" required autocomplete="email">
+      <label for="pw">Mật khẩu</label><input id="pw" type="password" required minlength="8" autocomplete="current-password">
+      <p class="err" id="msg" role="alert"></p>
+      <button class="pri" style="width:100%" id="go">Đăng nhập</button>
+    </form>
+    <div id="google" hidden><div class="or">hoặc</div><a href="/api/auth/google"><button class="gbtn" type="button">Tiếp tục với Google</button></a></div>
+    <p class="hint" style="margin-top:16px" id="switch"></p>
+  </div></section>
+</div>
+<script src="/static/gp.js"></script>
+<script>
+let mode = "login", pub = {};
+function draw() {
+  const su = mode === "signup";
+  $("#title").textContent = su ? (pub.has_owner ? "Tạo tài khoản" : "Tạo tài khoản owner") : "Đăng nhập";
+  $("#sub").textContent = su ? (pub.has_owner ? "Mỗi tài khoản có không gian dự án và API key riêng." : "Tài khoản đầu tiên là owner — toàn quyền quản trị hệ thống.") : "Chào mừng trở lại.";
+  $("#nameRow").hidden = !su; $("#go").textContent = su ? "Tạo tài khoản" : "Đăng nhập";
+  $("#pw").autocomplete = su ? "new-password" : "current-password";
+  $("#switch").innerHTML = su ? `Đã có tài khoản? <a href="#" data-m="login">Đăng nhập</a>` : pub.allow_signup || !pub.has_owner ? `Chưa có tài khoản? <a href="#" data-m="signup">Tạo tài khoản</a>` : "Đăng ký mới đang tắt — liên hệ admin.";
+}
+$("#switch").onclick = e => { const m = e.target.dataset.m; if (m) { e.preventDefault(); mode = m; draw(); } };
+$("#f").onsubmit = async e => { e.preventDefault(); $("#msg").textContent = "";
+  try { const r = await api("/auth/" + mode, {body: {email: $("#email").value, password: $("#pw").value, name: $("#name").value}});
+    location.href = r.role === "owner" && mode === "signup" ? "/admin" : "/app"; } catch (x) { $("#msg").textContent = x.message; } };
+api("/public").then(p => { pub = p; $("#site").textContent = p.site_name; document.title = p.site_name + " — Đăng nhập";
+  $("#google").hidden = !p.google; if (!p.has_owner) mode = "signup"; draw(); });
+</script></body></html>

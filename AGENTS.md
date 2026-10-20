@@ -53,3 +53,8 @@ python gen.py check <slug>
 python gen.py status [<slug>]
 ```
 Slash commands: `/new-project`, `/run-stage`, `/run-all`, `/change`.
+
+## Khi được SaaS gọi
+
+Bạn nhận prompt từ `pipeline/core-agent-prompt.md`. Dự án nằm ngoài repo (`GP_PROJECTS` đã đặt sẵn) — chỉ ghi trong thư mục dự án,
+đọc `brief.md` trước tiên: đó là kết quả phỏng vấn + các điểm founder đã chốt.

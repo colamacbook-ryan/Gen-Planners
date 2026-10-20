@@ -16,6 +16,7 @@ Lệnh:
 """
 import argparse
 import datetime as dt
+import os
 import re
 import shutil
 import subprocess
@@ -26,9 +27,13 @@ import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 ROOT = Path(__file__).resolve().parent
-PROJECTS = ROOT / "projects"
+PROJECTS = Path(os.environ.get("GP_PROJECTS") or ROOT / "projects")  # SaaS trỏ workspace riêng
 TEMPLATE = ROOT / "templates" / "project"
 STAGES = yaml.safe_load((ROOT / "pipeline" / "stages.yaml").read_text())["stages"]
+
+
+def rel(p: Path) -> str:
+    return str(p.relative_to(ROOT)) if p.is_relative_to(ROOT) else str(p)
 
 
 def load(p: Path):
@@ -232,7 +237,7 @@ def cmd_build(slug):
 
     for i in issues:
         print("! " + i)
-    print(f"✓ build {slug} v{ctx['version']} → {out.relative_to(ROOT)}/")
+    print(f"✓ build {slug} v{ctx['version']} → {rel(out)}/")
     for f in sorted(out.iterdir()):
         print("   ", f.name)
     if ctx["draft"]:
@@ -346,7 +351,7 @@ def cmd_new(slug, name, idea_file):
     (d / "project.yaml").write_text(yaml.safe_dump(p, allow_unicode=True, sort_keys=False))
     if idea_file:
         (d / "idea.md").write_text(Path(idea_file).read_text())
-    print(f"✓ tạo {d.relative_to(ROOT)} — bước tiếp: điền idea.md rồi chạy stage 01")
+    print(f"✓ tạo {rel(d)} — bước tiếp: điền idea.md rồi chạy stage 01")
 
 
 def cmd_status(slug):

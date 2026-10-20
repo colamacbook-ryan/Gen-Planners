@@ -49,3 +49,10 @@ python gen.py check <slug>
 python gen.py status [<slug>]
 ```
 Slash commands: `/new-project`, `/run-stage`, `/run-all`, `/change`.
+
+## SaaS (saas/)
+
+Lớp web bọc quanh chuẩn này — xem `saas/README.md`. Phỏng vấn founder theo `pipeline/interview.yaml`, brainstorm chốt điểm,
+biên dịch `brief.md` (neo founder-first), rồi job chạy core agent (`agy` mặc định, `claude` dự phòng) với prompt
+`pipeline/core-agent-prompt.md`. Dự án của SaaS nằm ở `$GP_DATA/workspace/projects` (biến `GP_PROJECTS` cho gen.py/export.py).
+`uvicorn saas.server.main:app --port 8080` · kiểm thử `GP_DATA=$(mktemp -d) python -m pytest saas/tests -q`.

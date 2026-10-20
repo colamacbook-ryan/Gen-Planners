@@ -1,0 +1,268 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gen Planner</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,600&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/static/gp.css">
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+</head><body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand"><b id="site">Gen Planner</b><small>Từ ý tưởng tới hồ sơ khai phá</small></div>
+    <nav>
+      <button id="newBtn" type="button">＋ Dự án mới</button>
+      <div class="sec">Dự án của tôi</div>
+      <div id="plist"></div>
+      <div class="sec">Tài khoản</div>
+      <a href="#settings" id="navSettings">⚙ Cài đặt · API key</a>
+      <a href="/admin" id="navAdmin" hidden>◆ Trang quản trị</a>
+    </nav>
+    <div class="foot"><div id="who"></div><a href="#" onclick="logout();return false">Đăng xuất</a></div>
+  </aside>
+  <main class="main" id="main"></main>
+</div>
+<script src="/static/gp.js"></script>
+<script>
+const S = {me: null, projects: [], cur: null, tab: "interview", keys: [], providers: {}, poll: null};
+const TABS = [["interview", "Phỏng vấn"], ["brainstorm", "Brainstorm"], ["brief", "Brief"], ["run", "Chạy Plan"], ["dossier", "Hồ sơ"]];
+const CAT = {product: "Sản phẩm", customer: "Khách hàng", channel: "Kênh", revenue: "Doanh thu", ops: "Vận hành", team: "Đội ngũ", risk: "Rủi ro", roadmap: "Lộ trình", other: "Khác"};
+
+function route() {
+  clearInterval(S.poll);
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (location.hash === "#settings") return viewSettings();
+  if (location.hash === "#new" || (!h.get("p") && !S.projects.length)) return viewNew();
+  const slug = h.get("p") || S.projects[0].slug; S.tab = h.get("t") || S.tab;
+  openProject(slug);
+}
+function go(slug, tab) { location.hash = `p=${slug}&t=${tab || S.tab}`; }
+window.onhashchange = route;
+$("#newBtn").onclick = () => location.hash = "new";
+
+function sideList() {
+  const cur = S.cur?.slug;
+  $("#plist").innerHTML = S.projects.map(p => `<a href="#p=${esc(p.slug)}&t=${S.tab}" class="${p.slug === cur ? "on" : ""}">
+    <span class="grow">${esc(p.name)}<span class="sub">${STATUS[p.status] || p.status} · ${p.progress.answered}/${p.progress.total} câu · ${p.locked} điểm chốt</span></span></a>`).join("")
+    || '<p class="hint" style="padding:0 10px;color:var(--hero-muted)">Chưa có dự án.</p>';
+  $("#navSettings").className = location.hash === "#settings" ? "on" : "";
+}
+function keyBanner() {
+  if (S.me.has_keys) return "";
+  return `<div class="banner"><b>Chưa có API key.</b> Trợ lý AI chạy bằng key của chính bạn (Anthropic, OpenAI, Gemini hoặc OpenRouter).
+    ${S.me.demo_allowed ? "Hiện đang ở <b>chế độ demo</b> — câu hỏi theo kịch bản, không có AI phản biện." : ""} <a href="#settings">Thêm key →</a></div>`;
+}
+function topbar(title, extra = "") {
+  return `<div class="top"><div class="row"><button class="burger ghost sm" type="button">☰</button><div class="grow"><h1 style="margin:0">${title}</h1></div>${extra}</div>`;
+}
+
+// ---------------------------------------------------------------- new project
+function viewNew() {
+  S.cur = null; sideList();
+  $("#main").innerHTML = topbar("Dự án mới") + `</div><div class="body"><div class="grid g2">
+    <form class="card" id="nf">${keyBanner()}
+      <label for="nn">Tên dự án</label><input id="nn" required maxlength="120" placeholder="Ví dụ: Hệ sinh thái AI Robot Pet">
+      <label for="ni">Mô tả ý tưởng — viết tự nhiên, càng chi tiết càng tốt</label>
+      <textarea id="ni" rows="12" required placeholder="Sản phẩm là gì, cho ai, kiếm tiền thế nào, các mảng xung quanh, nguồn lực đang có…"></textarea>
+      <label for="nc">Thị trường mục tiêu</label><input id="nc" value="Việt Nam">
+      <p class="err" id="nmsg"></p><button class="pri">Tạo dự án & bắt đầu phỏng vấn</button>
+      <p class="hint">Hạn mức: ${S.me.quota.projects_limit == null ? "không giới hạn" : `${S.me.quota.projects}/${S.me.quota.projects_limit} dự án`}.</p></form>
+    <div class="card"><div class="k">Quy trình chuẩn</div>
+      <ol style="padding-left:1.1em;margin:8px 0 0">
+        <li><b>Phỏng vấn founder</b> — trợ lý hỏi từng câu theo 10 chủ đề để giữ đúng ý tưởng gốc của bạn.</li>
+        <li><b>Brainstorm</b> — thảo luận tự do; AI đề xuất điểm cần chốt, bạn <i>Chốt</i> hoặc <i>Loại</i>.</li>
+        <li><b>Brief</b> — tự biên dịch từ câu trả lời + điểm đã chốt; là neo bắt buộc cho agent.</li>
+        <li><b>Chạy Plan</b> — core agent nghiên cứu R1–R9, dựng số liệu một nguồn, kiểm tra chất lượng.</li>
+        <li><b>Hồ sơ</b> — console câu chuyện, dashboard, tải Word/PowerPoint/Excel.</li></ol></div></div></div>`;
+  $("#nf").onsubmit = async e => { e.preventDefault();
+    try { const p = await api("/projects", {body: {name: $("#nn").value, idea: $("#ni").value, country: $("#nc").value}});
+      await loadProjects(); S.tab = "interview"; go(p.slug, "interview"); } catch (x) { $("#nmsg").textContent = x.message; } };
+}
+
+// ---------------------------------------------------------------- project shell
+async function openProject(slug) {
+  try { S.cur = await api("/projects/" + slug); } catch (x) { toast(x.message); return viewNew(); }
+  sideList(); renderProject();
+}
+function renderProject() {
+  const p = S.cur, pr = p.progress, pct = Math.round(pr.answered / pr.total * 100);
+  $("#main").innerHTML = topbar(esc(p.name), `${pill(p.status)}<div style="width:180px"><div class="hint">Phỏng vấn ${pr.answered}/${pr.total} · ${p.locked} điểm chốt</div><div class="meter"><i style="width:${pct}%"></i></div></div>`) +
+    `<div class="tabs" role="tablist">${TABS.map(([k, l], i) => `<button type="button" role="tab" data-t="${k}" class="${S.tab === k ? "on" : ""}"><span class="n">${i + 1}</span>${l}</button>`).join("")}</div></div>
+    <div class="body" id="tab"></div>`;
+  $$(".tabs button").forEach(b => b.onclick = () => go(p.slug, b.dataset.t));
+  ({interview: tabInterview, brainstorm: tabBrainstorm, brief: tabBrief, run: tabRun, dossier: tabDossier}[S.tab] || tabInterview)();
+}
+async function refresh() { S.cur = await api("/projects/" + S.cur.slug); await loadProjects(); }
+
+// ---------------------------------------------------------------- chat (shared)
+async function chatBox(room, el, sideHtml, after) {
+  const msgs = await api(`/projects/${S.cur.slug}/messages?room=${room}`);
+  el.innerHTML = `${keyBanner()}<div class="chatwrap"><div class="chat"><div class="msgs" id="msgs">${msgs.map(bubble).join("") ||
+    `<div class="empty">${room === "brainstorm" ? "Đặt câu hỏi hay ném một ý tưởng — ví dụ: <i>“Mảng nào nên làm trước để có dòng tiền?”</i>" : ""}</div>`}</div>
+    <form class="composer" id="cf"><textarea id="ct" placeholder="${room === "interview" ? "Trả lời câu hỏi… (Enter để gửi, Shift+Enter xuống dòng)" : "Brainstorm với AI… (Enter để gửi)"}" ${S.cur.mine ? "" : "disabled"}></textarea>
+    <button class="pri" ${S.cur.mine ? "" : "disabled"}>Gửi</button></form></div><div class="panel" id="sidep">${sideHtml}</div></div>`;
+  const box = $("#msgs"); box.scrollTop = box.scrollHeight;
+  const send = async () => { const t = $("#ct").value.trim(); if (!t) return; $("#ct").value = "";
+    box.insertAdjacentHTML("beforeend", bubble({role: "user", content: t}) + `<div class="msg" id="typing"><span class="hint">Đang suy nghĩ…</span></div>`); box.scrollTop = box.scrollHeight;
+    $("#cf button").disabled = true;
+    try { await api(`/projects/${S.cur.slug}/${room}`, {body: {text: t}}); await refresh(); after(); }
+    catch (x) { $("#typing")?.remove(); toast(x.message); $("#ct").value = t; } finally { const b = $("#cf button"); if (b) b.disabled = false; } };
+  $("#cf").onsubmit = e => { e.preventDefault(); send(); };
+  $("#ct").onkeydown = e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } };
+  $("#ct").focus();
+}
+function bubble(m) { const meta = m.meta ? JSON.parse(m.meta) : {};
+  return `<div class="msg ${m.role}">${m.role === "user" ? esc(m.content).replace(/\n/g, "<br>") : md(m.content)}${meta.provider === "demo" ? '<div class="meta">chế độ demo</div>' : ""}</div>`; }
+
+// ---------------------------------------------------------------- 1. interview
+function answersPanel() {
+  const p = S.cur, miss = p.progress.required_missing;
+  const blocks = Object.entries(p.blocks).map(([bid, title]) => {
+    const qs = p.questions.filter(q => q.block === bid);
+    return `<div class="k" style="margin-top:12px">${esc(title)}</div>` + qs.map(q => `<div class="ans ${q.id === p.current_qid ? "cur" : ""}">
+      <div class="q">${q.required ? '<span class="req" title="bắt buộc">*</span> ' : ""}${esc(q.ask)}</div>
+      <div class="a ${p.answers[q.id] ? "" : "none"}" data-q="${q.id}" title="Bấm để sửa">${esc(p.answers[q.id] || "chưa trả lời")}</div></div>`).join("");
+  }).join("");
+  return `<div class="row"><b class="grow">Câu trả lời đã ghi</b><span class="hint">${p.progress.answered}/${p.progress.total}</span></div>
+    <p class="hint" style="margin:4px 0">${miss.length ? `Còn <b class="req">${miss.length}</b> câu bắt buộc trước khi chạy Plan.` : "Đã đủ câu bắt buộc ✓"} Bấm vào câu trả lời để sửa tay.</p>${blocks}`;
+}
+function tabInterview() {
+  chatBox("interview", $("#tab"), answersPanel(), renderProject).then(() => {
+    $$("#sidep .a").forEach(a => a.onclick = () => { if (!S.cur.mine || a.querySelector("textarea")) return;
+      const q = a.dataset.q, v = S.cur.answers[q] || "";
+      a.innerHTML = `<textarea rows="3">${esc(v)}</textarea><div class="row" style="margin-top:4px"><button class="pri sm" type="button">Lưu</button><button class="ghost sm" type="button">Huỷ</button></div>`;
+      const [save, cancel] = a.querySelectorAll("button"); a.querySelector("textarea").focus();
+      cancel.onclick = e => { e.stopPropagation(); tabInterview(); };
+      save.onclick = async e => { e.stopPropagation(); await api(`/projects/${S.cur.slug}/answers`, {method: "PUT", body: {[q]: a.querySelector("textarea").value}}); await refresh(); renderProject(); };
+    });
+  });
+}
+
+// ---------------------------------------------------------------- 2. brainstorm
+function decisionsPanel() {
+  const d = S.cur.decisions, by = s => d.filter(x => x.status === s);
+  const card = x => `<div class="dec ${x.status}" data-id="${x.id}"><div class="row"><span class="pill core">${esc(CAT[x.category] || x.category)}</span>${pill(x.status)}</div>
+    <b>${esc(x.title)}</b>${x.detail ? `<p>${esc(x.detail)}</p>` : ""}${S.cur.mine ? `<div class="row">
+    ${x.status !== "locked" ? '<button class="pri sm" data-a="locked" type="button">Chốt</button>' : '<button class="sm ghost" data-a="proposed" type="button">Mở lại</button>'}
+    ${x.status !== "rejected" ? '<button class="sm ghost" data-a="rejected" type="button">Loại</button>' : ""}<button class="sm ghost" data-a="edit" type="button">Sửa</button>
+    <button class="sm ghost danger" data-a="del" type="button" aria-label="Xoá">✕</button></div>` : ""}</div>`;
+  return `<b>Bảng chốt điểm</b><p class="hint" style="margin:4px 0 8px">Điểm đã chốt đi thẳng vào brief — agent phải giữ chúng làm trung tâm.</p>
+    <div class="k">Đã chốt · ${by("locked").length}</div>${by("locked").map(card).join("") || '<p class="hint">Chưa có.</p>'}
+    <div class="k" style="margin-top:12px">Đề xuất chờ quyết · ${by("proposed").length}</div>${by("proposed").map(card).join("") || '<p class="hint">AI sẽ đề xuất khi có điểm đáng chốt.</p>'}
+    ${S.cur.mine ? `<details style="margin-top:12px"><summary class="hint">＋ Thêm điểm tự viết</summary><form id="df"><label for="dt">Điểm cần chốt</label><input id="dt" required>
+    <label for="dd">Chi tiết</label><textarea id="dd" rows="2"></textarea><label for="dc">Nhóm</label><select id="dc">${Object.entries(CAT).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select>
+    <button class="pri sm" style="margin-top:8px">Chốt điểm này</button></form></details>` : ""}
+    ${by("rejected").length ? `<details style="margin-top:12px"><summary class="hint">Đã loại · ${by("rejected").length}</summary>${by("rejected").map(card).join("")}</details>` : ""}`;
+}
+function tabBrainstorm() {
+  chatBox("brainstorm", $("#tab"), decisionsPanel(), renderProject).then(() => {
+    $$("#sidep .dec button").forEach(b => b.onclick = async () => { const id = b.closest(".dec").dataset.id, a = b.dataset.a;
+      if (a === "del") { if (!confirm("Xoá điểm này?")) return; await api("/decisions/" + id, {method: "DELETE"}); }
+      else if (a === "edit") { const x = S.cur.decisions.find(d => d.id == id); const t = prompt("Điểm cần chốt", x.title); if (t == null) return;
+        const dt = prompt("Chi tiết", x.detail || ""); await api("/decisions/" + id, {method: "PATCH", body: {title: t, detail: dt ?? x.detail}}); }
+      else await api("/decisions/" + id, {method: "PATCH", body: {status: a}});
+      await refresh(); renderProject(); });
+    const f = $("#df"); if (f) f.onsubmit = async e => { e.preventDefault();
+      await api(`/projects/${S.cur.slug}/decisions`, {body: {title: $("#dt").value, detail: $("#dd").value, category: $("#dc").value, status: "locked"}}); await refresh(); renderProject(); };
+  });
+}
+
+// ---------------------------------------------------------------- 3. brief
+async function tabBrief() {
+  let b = S.cur.brief_md;
+  if (!b && S.cur.mine) { b = (await api(`/projects/${S.cur.slug}/brief`, {method: "POST"})).brief_md; }
+  $("#tab").innerHTML = `<div class="row" style="margin-bottom:12px"><p class="hint grow" style="margin:0">Brief tự biên dịch từ phỏng vấn + bảng chốt điểm. Muốn đổi nội dung → sửa câu trả lời hoặc điểm chốt, rồi bấm Tổng hợp lại.</p>
+    ${S.cur.mine ? '<button id="rb" type="button">↻ Tổng hợp lại</button>' : ""}<a href="/api/projects/${S.cur.slug}/brief.md"><button type="button">Tải brief.md</button></a>
+    ${S.cur.mine ? `<button class="pri" type="button" onclick="go('${S.cur.slug}','run')">Sang Chạy Plan →</button>` : ""}</div>
+    <article class="card prose">${md(b || "Chưa có brief.")}</article>`;
+  const rb = $("#rb"); if (rb) rb.onclick = async () => { await api(`/projects/${S.cur.slug}/brief`, {method: "POST"}); await refresh(); tabBrief(); toast("Đã tổng hợp lại brief"); };
+}
+
+// ---------------------------------------------------------------- 4. run
+async function tabRun() {
+  const p = S.cur, q = S.me.quota, mode = S.me.plan_billing;
+  S.keys = await api("/keys"); const planKeys = S.keys.filter(k => k.plan_engine);
+  const ownerLeft = q.owner_jobs_limit == null ? "không giới hạn" : `${Math.max(0, q.owner_jobs_limit - q.owner_jobs_month)}/${q.owner_jobs_limit} lần còn lại tháng này`;
+  const opts = [
+    mode !== "user_key" && ["owner", "Tài khoản hệ thống (core agent)", `Agent chạy trên tài khoản AI của chủ hệ thống · ${ownerLeft}.`, false],
+    mode !== "owner" && ["user_key", "API key của tôi", planKeys.length ? `Chạy core agent bằng key của bạn — Anthropic → Claude Code CLI, Gemini → Antigravity CLI. Chi phí tính vào tài khoản AI của bạn.` : "Cần key Anthropic hoặc Gemini (OpenAI/OpenRouter chỉ dùng để chat).", !planKeys.length],
+    S.me.demo_allowed && ["demo", "Demo", "Không gọi AI: ghi brief vào dự án và build từ template — để thử luồng.", false]].filter(Boolean);
+  const running = p.jobs.find(j => ["queued", "starting", "running"].includes(j.status));
+  const miss = p.progress.required_missing;
+  $("#tab").innerHTML = `<div class="grid g2" style="align-items:start"><div class="card"><h2>Chạy Plan</h2>
+    <p class="hint">Core agent đọc <code>brief.md</code>, chạy 9 luồng nghiên cứu theo playbook chuẩn, dựng số liệu một nguồn và tự kiểm tra (0 lỗi) trước khi xuất hồ sơ. Thường mất 30–120 phút.</p>
+    ${miss.length ? `<div class="banner">Còn ${miss.length} câu phỏng vấn bắt buộc chưa trả lời: ${miss.map(m => esc(p.questions.find(q => q.id === m).ask)).join(" · ")}</div>` : ""}
+    <div id="opts">${opts.map(([v, t, d, dis], i) => `<label class="opt ${dis ? "dis" : ""}"><input type="radio" name="bill" value="${v}" ${dis ? "disabled" : ""} ${i === 0 && !dis ? "checked" : ""}><span><b>${t}</b><br><span class="hint">${d}</span></span></label>`).join("")}</div>
+    <div id="keyRow" hidden><label for="rk">Key dùng để chạy</label><select id="rk">${planKeys.map(k => `<option value="${k.id}">${esc(k.label)} · ${esc(k.key_hint)} · ${esc(k.model)}</option>`).join("")}</select></div>
+    <label for="rm">Model (tuỳ chọn — để trống dùng mặc định)</label><input id="rm" placeholder="mặc định">
+    <div class="row" style="margin-top:14px"><button class="pri" id="go" ${running || !p.mine ? "disabled" : ""}>▶ Chạy Plan</button>
+    ${miss.length ? '<label class="row hint" style="margin:0"><input type="checkbox" id="force" style="width:auto"> chạy dù còn thiếu</label>' : ""}</div><p class="err" id="rmsg"></p></div>
+    <div class="card"><div class="row"><h2 class="grow" style="margin:0">Tiến trình</h2><span id="jst"></span><button class="sm danger" id="cancel" hidden type="button">Huỷ</button></div>
+    <pre class="log" id="jlog" style="margin-top:10px">${running ? "Đang tải…" : "Chưa có job đang chạy."}</pre>
+    <div class="k" style="margin-top:14px">Lịch sử</div><table class="t"><tbody>${p.jobs.map(j => `<tr><td>#${j.id}</td><td>${pill(j.status)}</td><td>${esc(j.engine)} · ${esc(j.billing)}</td><td class="hint">${ago(j.created)}</td><td><a href="#" data-j="${j.id}">log</a></td></tr>`).join("") || '<tr><td class="hint">Chưa chạy lần nào.</td></tr>'}</tbody></table></div></div>`;
+  const sync = () => { const v = $("input[name=bill]:checked")?.value; $("#keyRow").hidden = v !== "user_key"; $$(".opt").forEach(o => o.classList.toggle("on", o.querySelector("input").checked)); };
+  $$("input[name=bill]").forEach(r => r.onchange = sync); sync();
+  $("#go").onclick = async () => { $("#rmsg").textContent = "";
+    try { const r = await api(`/projects/${p.slug}/run`, {body: {billing: $("input[name=bill]:checked")?.value, api_key_id: +$("#rk")?.value || null, model: $("#rm").value, force: $("#force")?.checked}});
+      await refresh(); S.me = await api("/me"); await tabRun(); watch(r.job_id); } catch (x) { $("#rmsg").textContent = x.message; } };
+  $$("[data-j]").forEach(a => a.onclick = e => { e.preventDefault(); watch(+a.dataset.j); });
+  if (running) watch(running.id); else if (p.jobs[0]) watch(p.jobs[0].id, true);
+}
+function watch(id, once) {
+  clearInterval(S.poll);
+  const tick = async () => { if (!$("#jlog")) return clearInterval(S.poll);
+    const j = await api("/jobs/" + id); const el = $("#jlog"), atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
+    el.textContent = `Job #${j.id} · ${j.engine} · ${j.billing}${j.model ? " · " + j.model : ""}\n` + (j.log || "…");
+    if (atEnd) el.scrollTop = el.scrollHeight;
+    $("#jst").innerHTML = pill(j.status); const live = ["queued", "starting", "running"].includes(j.status);
+    $("#cancel").hidden = !live || !S.cur.mine; $("#cancel").onclick = async () => { if (confirm("Huỷ job đang chạy?")) await api(`/jobs/${id}/cancel`, {method: "POST"}); };
+    if (!live) { clearInterval(S.poll); if (!once && j.status === "done") { await refresh(); toast("Plan đã xong — mở tab Hồ sơ"); renderProject(); } } };
+  tick(); if (!once) S.poll = setInterval(tick, 2000);
+}
+
+// ---------------------------------------------------------------- 5. dossier
+function tabDossier() {
+  const p = S.cur;
+  $("#tab").innerHTML = p.exported ? `<div class="row" style="margin-bottom:10px"><p class="hint grow" style="margin:0">Console câu chuyện · dashboard số liệu · hồ sơ chi tiết · tải Word/PowerPoint/Excel ở tab Tải về của trình xem.</p>
+    <a href="/viewer/${p.slug}" target="_blank" rel="noopener"><button type="button">Mở toàn màn hình ↗</button></a></div><iframe class="viewer" src="/viewer/${p.slug}" title="Hồ sơ ${esc(p.name)}"></iframe>`
+    : `<div class="card empty">Chưa có hồ sơ. Hoàn tất phỏng vấn, chốt điểm, rồi <a href="#p=${p.slug}&t=run">Chạy Plan</a>.</div>`;
+}
+
+// ---------------------------------------------------------------- settings
+async function viewSettings() {
+  S.cur = null; sideList();
+  [S.keys, S.providers] = await Promise.all([api("/keys"), api("/providers")]);
+  $("#main").innerHTML = topbar("Cài đặt") + `</div><div class="body"><div class="grid g2" style="align-items:start">
+    <div class="card"><h2>API key của tôi</h2><p class="hint">Trợ lý AI (phỏng vấn, brainstorm) chạy bằng key mặc định của bạn. Key Anthropic hoặc Gemini còn dùng được để <b>Chạy Plan</b> bằng tài khoản của bạn. Key được mã hoá, không bao giờ hiển thị lại.</p>
+    <table class="t"><thead><tr><th>Provider</th><th>Key</th><th>Model</th><th>Kiểm tra</th><th></th></tr></thead><tbody>${S.keys.map(k => `<tr data-k="${k.id}">
+      <td>${esc(k.label)}${k.is_default ? ' <span class="pill core">mặc định</span>' : ""}<div class="hint">${k.plan_engine ? "chat + chạy Plan" : "chỉ chat"}</div></td><td class="mono">${esc(k.key_hint)}</td>
+      <td><input class="km" value="${esc(k.model)}" style="min-width:150px"></td><td>${k.last_test ? (k.last_test_ok ? '<span class="ok">✓ ok</span>' : '<span class="err">✗ lỗi</span>') : '<span class="hint">—</span>'}</td>
+      <td class="row" style="flex-wrap:nowrap"><button class="sm" data-a="test" type="button">Thử</button>${k.is_default ? "" : '<button class="sm ghost" data-a="def" type="button">Mặc định</button>'}<button class="sm ghost danger" data-a="del" type="button">Xoá</button></td></tr>`).join("") || '<tr><td colspan="5" class="hint">Chưa có key.</td></tr>'}</tbody></table>
+    <form id="kf" style="margin-top:14px"><div class="k">Thêm key</div><div class="grid g2" style="gap:0 12px">
+      <div><label for="kp">Provider</label><select id="kp">${Object.entries(S.providers).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join("")}</select></div>
+      <div><label for="kmo">Model</label><input id="kmo" list="kml" required><datalist id="kml"></datalist></div></div>
+      <label for="kk">API key</label><input id="kk" type="password" required autocomplete="off" placeholder="dán key vào đây">
+      <p class="err" id="kmsg"></p><button class="pri">Lưu key</button></form></div>
+    <div class="card"><h2>Tài khoản</h2><p>${esc(S.me.email)} ${pill(S.me.role === "user" ? "active" : S.me.role)}</p>
+      <p class="hint">Hạn mức: ${S.me.quota.projects_limit == null ? "không giới hạn dự án" : `${S.me.quota.projects}/${S.me.quota.projects_limit} dự án`} ·
+      ${S.me.quota.owner_jobs_limit == null ? "không giới hạn lần chạy" : `${S.me.quota.owner_jobs_month}/${S.me.quota.owner_jobs_limit} lần chạy Plan bằng tài khoản hệ thống tháng này`}.</p>
+      <form id="pf"><label for="po">Mật khẩu hiện tại</label><input id="po" type="password" autocomplete="current-password">
+      <label for="pn">Mật khẩu mới</label><input id="pn" type="password" minlength="8" required autocomplete="new-password"><p class="err" id="pmsg"></p><button>Đổi mật khẩu</button></form></div></div></div>`;
+  const fill = () => { const m = S.providers[$("#kp").value].models; $("#kml").innerHTML = m.map(x => `<option value="${x}">`).join(""); $("#kmo").value = m[0] || ""; $("#kmo").placeholder = m.length ? "" : "nhập tên model, ví dụ gpt-…"; };
+  $("#kp").onchange = fill; fill();
+  $("#kf").onsubmit = async e => { e.preventDefault(); try { await api("/keys", {body: {provider: $("#kp").value, model: $("#kmo").value, key: $("#kk").value}}); S.me = await api("/me"); toast("Đã lưu key"); viewSettings(); } catch (x) { $("#kmsg").textContent = x.message; } };
+  $$("tr[data-k]").forEach(tr => { const id = tr.dataset.k;
+    tr.querySelector(".km").onchange = async e => { await api("/keys/" + id, {method: "PATCH", body: {model: e.target.value}}); toast("Đã đổi model"); };
+    tr.querySelectorAll("button").forEach(b => b.onclick = async () => { const a = b.dataset.a;
+      if (a === "test") { b.disabled = true; b.textContent = "…"; const r = await api(`/keys/${id}/test`, {method: "POST"}); toast(r.ok ? "Key hoạt động: " + r.message : r.message); }
+      if (a === "def") await api("/keys/" + id, {method: "PATCH", body: {is_default: true}});
+      if (a === "del") { if (!confirm("Xoá key này?")) return; await api("/keys/" + id, {method: "DELETE"}); }
+      S.me = await api("/me"); viewSettings(); }); });
+  $("#pf").onsubmit = async e => { e.preventDefault(); try { await api("/me/password", {body: {old: $("#po").value, new: $("#pn").value}}); toast("Đã đổi mật khẩu"); e.target.reset(); } catch (x) { $("#pmsg").textContent = x.message; } };
+}
+
+async function loadProjects() { S.projects = await api("/projects"); sideList(); }
+(async () => {
+  S.me = await api("/me"); $("#site").textContent = S.me.site_name; document.title = S.me.site_name;
+  $("#who").textContent = S.me.email; $("#navAdmin").hidden = !["owner", "admin"].includes(S.me.role);
+  await loadProjects(); route();
+})();
+</script></body></html>

@@ -1,0 +1,23 @@
+// Tiện ích dùng chung: gọi API (luôn kèm X-GP chống CSRF), escape, markdown an toàn, toast.
+const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+async function api(path, opt = {}) {
+  const r = await fetch("/api" + path, {method: opt.method || (opt.body ? "POST" : "GET"), credentials: "same-origin",
+    headers: {"X-GP": "1", ...(opt.body ? {"Content-Type": "application/json"} : {})}, body: opt.body ? JSON.stringify(opt.body) : undefined});
+  if (r.status === 401 && !path.startsWith("/auth")) { location.href = "/login"; throw new Error("401"); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : `Lỗi ${r.status}`);
+  return j;
+}
+function md(s) { const h = window.marked ? marked.parse(String(s || ""), {breaks: true}) : esc(s).replace(/\n/g, "<br>"); return window.DOMPurify ? DOMPurify.sanitize(h) : h; }
+let _tt; function toast(t) { let e = $(".toast"); if (!e) { e = document.createElement("div"); e.className = "toast"; document.body.append(e); }
+  e.textContent = t; e.hidden = false; clearTimeout(_tt); _tt = setTimeout(() => e.hidden = true, 3200); }
+const fmt = n => (n ?? 0).toLocaleString("vi-VN");
+const ago = iso => { if (!iso) return "—"; const s = (Date.now() - new Date(iso)) / 1000;
+  return s < 60 ? "vừa xong" : s < 3600 ? Math.floor(s / 60) + " phút trước" : s < 86400 ? Math.floor(s / 3600) + " giờ trước" : new Date(iso).toLocaleDateString("vi-VN"); };
+const STATUS = {interview: "phỏng vấn", brainstorm: "brainstorm", ready: "sẵn sàng chạy", running: "đang chạy", done: "hoàn thành", failed: "lỗi",
+  queued: "chờ", starting: "khởi động", cancelled: "đã huỷ", proposed: "đề xuất", locked: "đã chốt", rejected: "đã loại",
+  active: "hoạt động", disabled: "khoá", new: "mới", not_installed: "chưa cài", error: "lỗi", quota_exhausted: "hết quota", needs_login: "cần đăng nhập"};
+const pill = s => `<span class="pill ${esc(s)}">${esc(STATUS[s] || s || "—")}</span>`;
+async function logout() { await api("/auth/logout", {method: "POST"}); location.href = "/login"; }
+document.addEventListener("click", e => { if (e.target.closest(".burger")) $(".side").classList.toggle("open"); else if (!e.target.closest(".side")) $(".side")?.classList.remove("open"); });

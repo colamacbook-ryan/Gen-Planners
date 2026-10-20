@@ -1,3 +1,4 @@
 projects/*/build/
 __pycache__/
 saas/data/
+.pytest_cache/

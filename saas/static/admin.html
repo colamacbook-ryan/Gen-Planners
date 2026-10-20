@@ -1,0 +1,232 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gen Planner — Quản trị</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,600&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/static/gp.css">
+<style>
+.term{background:#05090e;color:#cfe3f0;border-radius:10px;padding:12px;font:12px/1.45 var(--f-mono);white-space:pre-wrap;height:320px;overflow-y:auto;margin:0}
+.prof{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--surface)} .prof.act{border-color:var(--core);box-shadow:0 0 0 1px var(--core)}
+.prof h3{margin:0;font-size:15px} .kv{display:grid;grid-template-columns:110px 1fr;gap:4px 10px;font-size:12.5px;margin:10px 0} .kv span:nth-child(odd){color:var(--muted)}
+.bars{display:flex;align-items:flex-end;gap:3px;height:130px;padding-top:8px;border-bottom:1px solid var(--line)}
+.bars i{flex:1;background:var(--c1);border-radius:3px 3px 0 0;min-height:2px;position:relative} .bars i:hover{filter:brightness(1.2)}
+.axis{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:4px}
+.urls a{display:block;word-break:break-all;margin:4px 0;font-family:var(--f-mono);font-size:12px}
+</style></head><body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand"><b id="site">Gen Planner</b><small>Trang quản trị SaaS</small></div>
+    <nav id="nav"></nav>
+    <div class="foot"><div id="who"></div><a href="/app">← Về ứng dụng</a> · <a href="#" onclick="logout();return false">Đăng xuất</a></div>
+  </aside>
+  <main class="main" id="main"></main>
+</div>
+<script src="/static/gp.js"></script>
+<script>
+const A = {me: null, poll: null};
+const PAGES = [["overview", "◷ Tổng quan"], ["users", "👤 Người dùng"], ["projects", "▤ Dự án"], ["jobs", "⚙ Jobs"],
+  ["agents", "◆ Core agent", true], ["usage", "▦ Quota & usage"], ["settings", "☰ Cài đặt", true], ["audit", "✎ Nhật ký"]];
+const page = () => location.hash.slice(1) || "overview";
+window.onhashchange = render;
+function nav() { $("#nav").innerHTML = PAGES.filter(p => !p[2] || A.me.role === "owner").map(([k, l]) => `<a href="#${k}" class="${page() === k ? "on" : ""}">${l}</a>`).join(""); }
+function topbar(t, sub = "", extra = "") { return `<div class="top"><div class="row"><button class="burger ghost sm" type="button">☰</button><div class="grow"><h1 style="margin:0">${t}</h1>${sub ? `<div class="hint">${sub}</div>` : ""}</div>${extra}</div></div>`; }
+async function render() { clearInterval(A.poll); nav(); const f = {overview, users, projects, jobs, agents, usage, settings, audit}[page()] || overview;
+  try { await f(); } catch (x) { $("#main").innerHTML = topbar("Lỗi") + `<div class="body"><p class="err">${esc(x.message)}</p></div>`; } }
+const tok = n => n >= 1e6 ? (n / 1e6).toFixed(2).replace(".", ",") + " tr" : n >= 1e3 ? Math.round(n / 1e3) + " k" : fmt(n);
+
+// ---------------------------------------------------------------- overview
+async function overview() {
+  const o = await api("/admin/overview"), ag = o.active_agent;
+  const max = Math.max(1, ...o.days.map(d => d.i + d.o));
+  $("#main").innerHTML = topbar("Tổng quan", "Sức khoẻ hệ thống tháng này") + `<div class="body">
+  ${!ag && A.me.role === "owner" ? `<div class="banner"><b>Chưa có core agent.</b> Người dùng chưa chạy được Plan bằng tài khoản hệ thống. <a href="#agents">Cấu hình agent →</a></div>` : ""}
+  <div class="grid g4">${[["Người dùng", o.users, `${o.users_active_30d} hoạt động 30 ngày`], ["Dự án", o.projects, `${o.projects_done} đã có hồ sơ`],
+    ["Job tháng này", o.jobs_month, `${o.jobs_failed_month} lỗi · ${o.jobs_running} đang chạy · ${o.jobs_queued} chờ`],
+    ["Token tháng này", tok(o.tokens_month), `${tok(o.owner_tokens_month)} trên tài khoản hệ thống`]].map(([l, v, s]) => `<div class="card kpi"><div class="k">${l}</div><b>${v}</b><span>${s}</span></div>`).join("")}</div>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card"><div class="k">Token theo ngày · 30 ngày</div>${o.days.length ? `<div class="bars">${o.days.map(d => `<i style="height:${(d.i + d.o) / max * 100}%" title="${d.d}: ${fmt(d.i + d.o)} token · ${d.n} lượt"></i>`).join("")}</div>
+      <div class="axis"><span>${o.days[0].d}</span><span>${o.days.at(-1).d}</span></div>` : '<p class="hint">Chưa có lượt dùng.</p>'}</div>
+    <div class="card"><div class="k">Core agent đang dùng</div>${ag ? `<h2 style="margin:6px 0">${esc(ag.name)}</h2><p>${esc(ag.engine)} · ${esc(ag.auth_mode === "api_key" ? "API key" : "tài khoản đăng nhập")} · model ${esc(ag.model || "mặc định")} ${pill(ag.status)}</p>` : '<p class="hint">Chưa cấu hình.</p>'}
+      ${A.me.role === "owner" ? '<a href="#agents">Quản lý agent →</a>' : ""}</div></div>
+  <div class="card" style="margin-top:14px"><div class="k">Job gần đây</div>${jobTable(o.recent_jobs)}</div></div>`;
+}
+function jobTable(rows, actions) {
+  return `<div class="scroll-x"><table class="t"><thead><tr><th>#</th><th>Trạng thái</th><th>Dự án</th><th>Người dùng</th><th>Engine</th><th>Tính phí</th><th>Tạo</th>${actions ? "<th></th>" : ""}</tr></thead><tbody>
+  ${rows.map(j => `<tr><td>${j.id}</td><td>${pill(j.status)}${j.error ? `<div class="hint err">${esc(j.error)}</div>` : ""}</td><td>${j.kind === "install" ? `<i>cài ${esc(j.engine)}</i>` : esc(j.name || "—")}<div class="hint">${esc(j.slug || "")}</div></td>
+  <td>${esc(j.email || "")}</td><td>${esc(j.engine)}${j.profile ? `<div class="hint">${esc(j.profile)}</div>` : ""}</td><td>${esc({owner: "hệ thống", user_key: "key user", demo: "demo"}[j.billing] || "—")}</td><td class="hint">${ago(j.created)}</td>
+  ${actions ? `<td class="row" style="flex-wrap:nowrap"><button class="sm" data-log="${j.id}" type="button">Log</button>${["queued", "starting", "running"].includes(j.status) ? `<button class="sm danger" data-cancel="${j.id}" type="button">Huỷ</button>` : j.kind === "plan" ? `<button class="sm ghost" data-retry="${j.id}" type="button">Chạy lại</button>` : ""}</td>` : ""}</tr>`).join("") || '<tr><td colspan="8" class="hint">Chưa có job.</td></tr>'}</tbody></table></div>`;
+}
+
+// ---------------------------------------------------------------- users
+async function users() {
+  const us = await api("/admin/users"), owner = A.me.role === "owner";
+  $("#main").innerHTML = topbar("Người dùng", `${us.length} tài khoản · hạn mức để trống = mặc định hệ thống`) + `<div class="body"><div class="card scroll-x"><table class="t"><thead><tr>
+    <th>Tài khoản</th><th>Vai trò</th><th>Trạng thái</th><th class="num">Dự án</th><th class="num">Job hệ thống / tháng</th><th class="num">Token tháng</th><th>API key</th><th>Đăng nhập</th><th></th></tr></thead><tbody>
+    ${us.map(u => `<tr data-u="${u.id}"><td><b>${esc(u.name)}</b><div class="hint">${esc(u.email)}${u.google ? " · Google" : ""}</div></td>
+    <td>${owner && u.id !== A.me.id ? `<select data-f="role">${["user", "admin", "owner"].map(r => `<option ${u.role === r ? "selected" : ""}>${r}</option>`).join("")}</select>` : pill(u.role === "user" ? "active" : u.role).replace(/>[^<]*</, `>${u.role}<`)}</td>
+    <td>${pill(u.status)}</td>
+    <td class="num">${u.quota.projects} / <input data-f="quota_projects" value="${u.quota_projects ?? ""}" placeholder="${u.role === "user" ? "mặc định" : "∞"}" style="width:70px"></td>
+    <td class="num">${u.quota.owner_jobs_month} / <input data-f="quota_jobs_month" value="${u.quota_jobs_month ?? ""}" placeholder="${u.role === "user" ? "mặc định" : "∞"}" style="width:70px"></td>
+    <td class="num">${tok(u.tokens_month)}</td><td>${u.keys}</td><td class="hint">${ago(u.last_login)}</td>
+    <td class="row" style="flex-wrap:nowrap">${u.id !== A.me.id && (owner || u.role !== "owner") ? `<button class="sm ${u.status === "active" ? "danger" : ""}" data-a="status" type="button">${u.status === "active" ? "Khoá" : "Mở khoá"}</button>
+    <button class="sm ghost" data-a="pw" type="button">Đặt mật khẩu</button>` : ""}</td></tr>`).join("")}</tbody></table></div>
+    <form class="card" id="uf" style="margin-top:14px;max-width:640px"><h2>Tạo tài khoản</h2><div class="grid g2" style="gap:0 12px">
+    <div><label for="ue">Email</label><input id="ue" type="email" required></div><div><label for="un">Tên</label><input id="un"></div>
+    <div><label for="up">Mật khẩu tạm</label><input id="up" type="password" minlength="8" required autocomplete="new-password"></div>
+    <div><label for="ur">Vai trò</label><select id="ur"><option>user</option>${owner ? "<option>admin</option>" : ""}</select></div></div>
+    <p class="err" id="umsg"></p><button class="pri">Tạo</button></form></div>`;
+  $$("tr[data-u]").forEach(tr => { const id = tr.dataset.u, u = us.find(x => x.id == id);
+    tr.querySelectorAll("[data-f]").forEach(i => i.onchange = async () => { try { await api("/admin/users/" + id, {method: "PATCH", body: {[i.dataset.f]: i.value}}); toast("Đã lưu"); users(); } catch (x) { toast(x.message); users(); } });
+    tr.querySelectorAll("[data-a]").forEach(b => b.onclick = async () => {
+      if (b.dataset.a === "status") { if (!confirm(`${u.status === "active" ? "Khoá" : "Mở khoá"} ${u.email}?`)) return; await api("/admin/users/" + id, {method: "PATCH", body: {status: u.status === "active" ? "disabled" : "active"}}); }
+      else { const pw = prompt(`Mật khẩu mới cho ${u.email} (≥ 8 ký tự)`); if (!pw) return; await api("/admin/users/" + id, {method: "PATCH", body: {password: pw}}).catch(x => toast(x.message)); }
+      toast("Đã cập nhật"); users(); }); });
+  $("#uf").onsubmit = async e => { e.preventDefault(); try { await api("/admin/users", {body: {email: $("#ue").value, name: $("#un").value, password: $("#up").value, role: $("#ur").value}}); toast("Đã tạo"); users(); } catch (x) { $("#umsg").textContent = x.message; } };
+}
+
+// ---------------------------------------------------------------- projects
+async function projects() {
+  const ps = await api("/admin/projects");
+  $("#main").innerHTML = topbar("Dự án", `${ps.length} dự án trên toàn hệ thống`, A.me.role === "owner" ? '<button id="seed" type="button">Nạp dự án mẫu AI Robot Pet</button>' : "") +
+  `<div class="body"><div class="card scroll-x"><table class="t"><thead><tr><th>Dự án</th><th>Chủ</th><th>Trạng thái</th><th>Phỏng vấn</th><th class="num">Điểm chốt</th><th>Job gần nhất</th><th>Cập nhật</th><th></th></tr></thead><tbody>
+  ${ps.map(p => `<tr><td><b>${esc(p.name)}</b><div class="hint">${esc(p.slug)}</div></td><td>${esc(p.email)}</td><td>${pill(p.status)}</td>
+  <td>${p.progress.answered}/${p.progress.total}${p.progress.required_missing.length ? ` <span class="hint">(thiếu ${p.progress.required_missing.length} bắt buộc)</span>` : ""}</td><td class="num">${p.locked}</td>
+  <td>${p.last_job ? `#${p.last_job.id} ${pill(p.last_job.status)}` : "—"}</td><td class="hint">${ago(p.updated)}</td>
+  <td>${p.exported ? `<a href="/viewer/${esc(p.slug)}" target="_blank" rel="noopener">Xem hồ sơ ↗</a>` : ""} <a href="/app#p=${esc(p.slug)}&t=interview">Mở</a></td></tr>`).join("") || '<tr><td colspan="8" class="hint">Chưa có dự án.</td></tr>'}</tbody></table></div></div>`;
+  const s = $("#seed"); if (s) s.onclick = async () => { s.disabled = true; s.textContent = "Đang build…"; try { await api("/admin/seed-sample", {method: "POST"}); toast("Đã nạp mẫu"); } catch (x) { toast(x.message); } projects(); };
+}
+
+// ---------------------------------------------------------------- jobs
+async function jobs() {
+  const st = new URLSearchParams(location.search).get("s") || "";
+  const js = await api("/admin/jobs" + (A.filter ? "?status=" + A.filter : ""));
+  $("#main").innerHTML = topbar("Jobs", "Hàng đợi chạy core agent", `<select id="jf" style="width:auto">${["", "queued", "running", "done", "failed", "cancelled"].map(s => `<option value="${s}" ${A.filter === s ? "selected" : ""}>${s ? STATUS[s] : "tất cả"}</option>`).join("")}</select>`) +
+  `<div class="body"><div class="card">${jobTable(js, true)}</div><div class="card" style="margin-top:14px" id="logc" hidden><div class="row"><h2 class="grow" id="lt" style="margin:0"></h2><button class="sm ghost" id="lx" type="button">Đóng</button></div><pre class="log" id="lg" style="margin-top:10px"></pre></div></div>`;
+  $("#jf").onchange = e => { A.filter = e.target.value; jobs(); };
+  $$("[data-log]").forEach(b => b.onclick = () => showLog(+b.dataset.log));
+  $$("[data-cancel]").forEach(b => b.onclick = async () => { if (confirm("Huỷ job?")) { await api(`/jobs/${b.dataset.cancel}/cancel`, {method: "POST"}); jobs(); } });
+  $$("[data-retry]").forEach(b => b.onclick = async () => { const r = await api(`/admin/jobs/${b.dataset.retry}/retry`, {method: "POST"}); toast("Đã xếp hàng job #" + r.job_id); jobs(); });
+}
+function showLog(id) { clearInterval(A.poll); $("#logc").hidden = false; $("#lx").onclick = () => { clearInterval(A.poll); $("#logc").hidden = true; };
+  const tick = async () => { const j = await api("/jobs/" + id); $("#lt").innerHTML = `Job #${id} ${pill(j.status)}`; const el = $("#lg"); el.textContent = j.log || "…"; el.scrollTop = el.scrollHeight;
+    if (!["queued", "starting", "running"].includes(j.status)) clearInterval(A.poll); };
+  tick(); A.poll = setInterval(tick, 2000); $("#logc").scrollIntoView({behavior: "smooth"}); }
+
+// ---------------------------------------------------------------- core agent (owner)
+async function agents() {
+  const {profiles, engines} = await api("/admin/agents");
+  const eng = Object.entries(engines).filter(([k]) => k !== "demo");
+  $("#main").innerHTML = topbar("Core agent", "Agent lõi chạy Plan trên tài khoản của owner · mỗi profile = một tài khoản đăng nhập riêng (HOME riêng)") + `<div class="body">
+  <div class="grid g2">${eng.map(([k, e]) => `<div class="card"><div class="row"><b class="grow">${esc(e.label)}</b>${pill(e.installed ? "ok" : "not_installed").replace(/>[^<]*</, e.installed ? ">đã cài<" : ">chưa cài<")}</div>
+    <p class="hint" style="margin:6px 0">Lệnh cài: <code>${esc(e.install)}</code></p><button class="sm" data-install="${k}" type="button">${e.installed ? "Cài lại / cập nhật" : "Cài đặt CLI"}</button></div>`).join("")}</div>
+  <div class="row" style="margin:20px 0 10px"><h2 class="grow" style="margin:0">Tài khoản agent</h2><span class="hint">Job chạy trên profile <b>đang dùng</b>; nếu bật tự chuyển, hết quota sẽ chuyển sang profile kế tiếp theo ưu tiên.</span></div>
+  <div class="grid g2">${profiles.map(profCard).join("") || '<div class="card hint">Chưa có profile. Tạo profile đầu tiên bên dưới — mặc định là Antigravity CLI.</div>'}</div>
+  <div class="card" id="termc" style="margin-top:14px" hidden><div class="row"><h2 class="grow" style="margin:0" id="tt">Terminal</h2><button class="sm danger" id="tstop" type="button">Đóng terminal</button></div>
+    <p class="hint">Mở link đăng nhập bên dưới trên trình duyệt của bạn, đăng nhập tài khoản Google/Anthropic, rồi dán mã xác nhận (nếu CLI yêu cầu) vào ô nhập. Với Claude: sau khi xong, CLI in ra token dài hạn → bấm <b>Lưu token</b> trên thẻ profile.</p>
+    <div class="urls" id="turls"></div><pre class="term" id="tout"></pre>
+    <form class="row" id="tin" style="margin-top:8px"><input id="ttext" class="grow" placeholder="Gõ vào terminal (mã xác nhận, /usage, /logout…)" autocomplete="off"><button class="pri">Gửi ⏎</button>
+    <button class="ghost" type="button" data-key="\\u001b[B">↓</button><button class="ghost" type="button" data-key="\\u001b[A">↑</button><button class="ghost" type="button" data-key="\\r">Enter</button><button class="ghost" type="button" data-key="\\u0003">Ctrl+C</button></form></div>
+  <form class="card" id="af" style="margin-top:14px;max-width:760px"><h2>Thêm tài khoản agent</h2><div class="grid g2" style="gap:0 12px">
+    <div><label for="an">Tên profile</label><input id="an" required placeholder="Ví dụ: Google Ryan chính"></div>
+    <div><label for="ae">Engine</label><select id="ae">${Object.entries(engines).map(([k, e]) => `<option value="${k}">${esc(e.label)}</option>`).join("")}</select></div>
+    <div><label for="am">Cách xác thực</label><select id="am"><option value="account">Đăng nhập tài khoản (OAuth trong terminal)</option><option value="api_key">API key</option></select></div>
+    <div><label for="al">Nhãn tài khoản (email)</label><input id="al" placeholder="để nhận ra tài khoản nào"></div>
+    <div id="akr" hidden><label for="ak" id="akl">API key</label><input id="ak" type="password" autocomplete="off"></div>
+    <div><label for="amo">Model (tuỳ chọn)</label><input id="amo" placeholder="lấy danh sách sau khi đăng nhập"></div>
+    <div><label for="ap">Ưu tiên (số nhỏ chạy trước)</label><input id="ap" type="number" value="100"></div></div>
+    <p class="err" id="amsg"></p><button class="pri">Tạo profile</button></form></div>`;
+  const syncMode = () => { $("#akr").hidden = $("#am").value !== "api_key"; $("#akl").textContent = engines[$("#ae").value]?.key_label || "API key"; };
+  $("#am").onchange = $("#ae").onchange = syncMode; syncMode();
+  $("#af").onsubmit = async e => { e.preventDefault(); try { await api("/admin/agents", {body: {name: $("#an").value, engine: $("#ae").value, auth_mode: $("#am").value,
+    key: $("#ak").value, model: $("#amo").value, account_label: $("#al").value, priority: $("#ap").value}}); toast("Đã tạo profile"); agents(); } catch (x) { $("#amsg").textContent = x.message; } };
+  $$("[data-install]").forEach(b => b.onclick = async () => { if (!confirm(`Chạy lệnh cài ${b.dataset.install} trên máy chủ?`)) return; const r = await api("/admin/agents/install", {body: {engine: b.dataset.install}}); toast("Đang cài — xem log ở Jobs #" + r.job_id); location.hash = "jobs"; });
+  $$(".prof").forEach(card => { const id = +card.dataset.p, p = profiles.find(x => x.id === id);
+    card.querySelectorAll("[data-a]").forEach(b => b.onclick = () => profAction(p, b.dataset.a, b));
+    const ms = card.querySelector(".msel"); if (ms) ms.onchange = async () => { await api("/admin/agents/" + id, {method: "PATCH", body: {model: ms.value}}); toast("Model: " + (ms.value || "mặc định")); };
+    const bu = card.querySelector(".budget"); if (bu) bu.onchange = async () => { await api("/admin/agents/" + id, {method: "PATCH", body: {budget_tokens_month: bu.value ? +bu.value : null}}); agents(); }; });
+  const live = profiles.find(p => p.terminal); if (live) openTerm(live);
+}
+function profCard(p) {
+  const pct = p.budget_tokens_month ? Math.min(100, p.tokens_month / p.budget_tokens_month * 100) : null;
+  const models = [...new Set([p.model, ...p.models].filter(Boolean))];
+  return `<div class="prof ${p.is_active ? "act" : ""}" data-p="${p.id}"><div class="row"><h3 class="grow">${esc(p.name)}</h3>${p.is_active ? '<span class="pill core">đang dùng</span>' : ""}${pill(p.enabled ? p.status || "new" : "disabled")}</div>
+  <div class="kv"><span>Engine</span><span>${esc(p.engine)} ${p.installed ? "" : '<span class="err">· chưa cài CLI</span>'}</span><span>Xác thực</span><span>${p.auth_mode === "api_key" ? `API key ${esc(p.key_hint || "(chưa có)")}` : "đăng nhập tài khoản"}${p.account_label ? " · " + esc(p.account_label) : ""}</span>
+  <span>Phiên bản</span><span>${esc(p.version || "—")}</span><span>Model</span><span><select class="msel" style="padding:4px 8px"><option value="">mặc định</option>${models.map(m => `<option ${m === p.model ? "selected" : ""}>${esc(m)}</option>`).join("")}</select></span>
+  <span>Tháng này</span><span>${tok(p.tokens_month)} token · ${p.jobs_month} lượt</span>
+  <span>Ngân sách</span><span><input class="budget" type="number" value="${p.budget_tokens_month ?? ""}" placeholder="token/tháng (tuỳ chọn)" style="padding:4px 8px"></span></div>
+  ${pct != null ? `<div class="meter" title="${Math.round(pct)}% ngân sách"><i style="width:${pct}%;background:${pct > 85 ? "var(--bad)" : "var(--core)"}"></i></div>` : ""}
+  ${p.quota_text ? `<details style="margin-top:8px"><summary class="hint">Quota đọc lúc ${ago(p.quota_checked)}</summary><pre class="log" style="max-height:200px">${esc(p.quota_text.slice(-2500))}</pre></details>` : ""}
+  <div class="row" style="margin-top:10px">${p.is_active ? "" : '<button class="sm pri" data-a="activate" type="button">Dùng tài khoản này</button>'}
+  <button class="sm" data-a="check" type="button">Kiểm tra</button>${p.engine !== "demo" ? `${p.auth_mode === "account" ? '<button class="sm" data-a="login" type="button">Đăng nhập</button>' : ""}
+  <button class="sm" data-a="usage" type="button">Xem quota</button><button class="sm" data-a="models" type="button">Lấy model</button>
+  ${p.auth_mode === "account" ? `${p.engine === "claude" ? `<button class="sm ghost" data-a="key" type="button">${p.key_hint ? "Thay" : "Lưu"} token</button>` : ""}<button class="sm ghost" data-a="logout" type="button">Đăng xuất</button>` : '<button class="sm ghost" data-a="key" type="button">Đổi key</button>'}` : ""}
+  ${["quota_exhausted", "needs_login"].includes(p.status) ? '<button class="sm ghost" data-a="reset" type="button">Đặt lại trạng thái</button>' : ""}
+  <button class="sm ghost" data-a="toggle" type="button">${p.enabled ? "Tắt" : "Bật"}</button><button class="sm ghost danger" data-a="del" type="button">Xoá</button></div></div>`;
+}
+async function profAction(p, a, btn) {
+  const P = "/admin/agents/" + p.id;
+  try {
+    if (a === "activate") { await api(P + "/activate", {method: "POST"}); toast(`Đã chuyển sang ${p.name}`); }
+    if (a === "check") { btn.textContent = "…"; const r = await api(P + "/check", {method: "POST"}); toast(r.ok ? "OK · " + r.output.split("\n")[0] : r.output); }
+    if (a === "models") { btn.textContent = "…"; const r = await api(P + "/models", {method: "POST"}); toast(r.models.length ? `${r.models.length} model` : (r.output || "Không đọc được danh sách").slice(0, 160)); }
+    if (["login", "usage", "logout"].includes(a)) { if (a === "logout" && !confirm("Đăng xuất tài khoản này khỏi agent?")) return;
+      await api(P + "/terminal", {body: {action: a}}); return openTerm(p, a); }
+    if (a === "key") { const k = prompt(p.auth_mode === "account" ? "Dán token mà `claude setup-token` in ra sau khi đăng nhập" : "API key mới"); if (!k) return; await api(P, {method: "PATCH", body: {key: k}}); }
+    if (a === "reset") await api(P, {method: "PATCH", body: {reset_status: true}});
+    if (a === "toggle") await api(P, {method: "PATCH", body: {enabled: !p.enabled}});
+    if (a === "del") { if (!confirm(`Xoá profile ${p.name}? Phiên đăng nhập lưu trong profile cũng bị xoá.`)) return; await api(P, {method: "DELETE"}); }
+  } catch (x) { toast(x.message); }
+  agents();
+}
+function openTerm(p, action) {
+  clearInterval(A.poll); const c = $("#termc"); c.hidden = false; $("#tt").textContent = `Terminal · ${p.name}${action ? " · " + action : ""}`;
+  const P = "/admin/agents/" + p.id + "/terminal";
+  const tick = async () => { if (!$("#tout")) return clearInterval(A.poll); const v = await api(P); const o = $("#tout"), end = o.scrollTop + o.clientHeight >= o.scrollHeight - 30;
+    o.textContent = v.output || "Đang khởi động…"; if (end) o.scrollTop = o.scrollHeight;
+    $("#turls").innerHTML = v.urls.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`).join("");
+    if (!v.alive) { clearInterval(A.poll); $("#tt").textContent += " · đã đóng"; } };
+  $("#tin").onsubmit = async e => { e.preventDefault(); await api(P + "/input", {body: {text: $("#ttext").value}}); $("#ttext").value = ""; };
+  $$("#tin [data-key]").forEach(b => b.onclick = () => api(P + "/input", {body: {text: JSON.parse('"' + b.dataset.key + '"'), enter: false}}));
+  $("#tstop").onclick = async () => { await api(P + "/stop", {method: "POST"}); clearInterval(A.poll); agents(); };
+  tick(); A.poll = setInterval(tick, 1200); c.scrollIntoView({behavior: "smooth"});
+}
+
+// ---------------------------------------------------------------- usage
+async function usage() {
+  const u = await api("/admin/usage");
+  const tbl = (rows, cols) => `<table class="t"><thead><tr>${cols.map(c => `<th class="${c[2] || ""}">${c[0]}</th>`).join("")}</tr></thead><tbody>${rows.map(r => `<tr>${cols.map(c => `<td class="${c[2] || ""}">${c[1](r)}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${cols.length}" class="hint">Chưa có dữ liệu.</td></tr>`}</tbody></table>`;
+  $("#main").innerHTML = topbar("Quota & usage", "Tháng này · token đọc từ phản hồi của API / CLI") + `<div class="body"><div class="grid g2">
+  <div class="card"><h2>Tài khoản hệ thống (core agent)</h2>${tbl(u.by_profile, [["Profile", r => esc(r.name) + `<div class="hint">${esc(r.engine)}</div>`], ["Vào", r => tok(r.i), "num"], ["Ra", r => tok(r.o), "num"], ["Chi phí ước", r => r.c ? "$" + r.c.toFixed(2) : "—", "num"], ["Lượt", r => r.n, "num"]])}
+  <p class="hint">Quota thật của tài khoản (gói, tín dụng còn lại) chỉ đọc được trong TUI: vào <a href="#agents">Core agent</a> → <b>Xem quota</b>.</p></div>
+  <div class="card"><h2>Theo người dùng</h2>${tbl(u.by_user, [["Người dùng", r => esc(r.email)], ["Loại", r => r.source === "chat" ? "chat (key user)" : "job"], ["Vào", r => tok(r.i), "num"], ["Ra", r => tok(r.o), "num"], ["Lượt", r => r.n, "num"]])}</div>
+  <div class="card"><h2>Theo provider / model</h2>${tbl(u.by_provider, [["Provider", r => esc(r.provider)], ["Model", r => esc(r.model || "—")], ["Vào", r => tok(r.i), "num"], ["Ra", r => tok(r.o), "num"], ["Lượt", r => r.n, "num"]])}</div></div></div>`;
+}
+
+// ---------------------------------------------------------------- settings (owner)
+async function settings() {
+  const s = await api("/admin/settings");
+  const f = (k, l, t = "text", h = "") => `<div><label for="s_${k}">${l}</label><input id="s_${k}" data-k="${k}" type="${t}" value="${esc(s[k])}">${h ? `<div class="hint">${h}</div>` : ""}</div>`;
+  const sel = (k, l, opts, h = "") => `<div><label for="s_${k}">${l}</label><select id="s_${k}" data-k="${k}">${opts.map(([v, t]) => `<option value="${v}" ${s[k] === v ? "selected" : ""}>${t}</option>`).join("")}</select>${h ? `<div class="hint">${h}</div>` : ""}</div>`;
+  const yn = [["1", "Bật"], ["0", "Tắt"]];
+  $("#main").innerHTML = topbar("Cài đặt hệ thống") + `<div class="body"><form id="sf" class="grid" style="max-width:900px">
+  <div class="card"><h2>Chung</h2><div class="grid g2" style="gap:0 14px">${f("site_name", "Tên hệ thống")}${sel("allow_signup", "Cho phép tự đăng ký", yn)}
+    ${f("public_base_url", "URL công khai", "url", "Dùng cho Google OAuth redirect, ví dụ https://plan.afi.io")}</div></div>
+  <div class="card"><h2>Chạy Plan & hạn mức</h2><div class="grid g2" style="gap:0 14px">
+    ${sel("plan_billing", "Ai trả chi phí chạy Plan", [["either", "Người dùng chọn: tài khoản hệ thống hoặc key riêng"], ["owner", "Chỉ tài khoản hệ thống (core agent)"], ["user_key", "Chỉ API key của người dùng"]])}
+    ${f("default_quota_jobs_month", "Số lần chạy bằng tài khoản hệ thống / user / tháng", "number")}${f("default_quota_projects", "Số dự án tối đa / user", "number")}
+    ${f("job_timeout_min", "Thời gian tối đa mỗi job (phút)", "number")}${f("max_concurrent_jobs", "Số job chạy song song", "number")}
+    ${sel("auto_failover", "Tự chuyển tài khoản agent khi hết quota", yn)}${sel("allow_demo_engine", "Cho phép chế độ demo (không key)", yn)}</div></div>
+  <div class="card"><h2>Đăng nhập Google (tuỳ chọn)</h2><p class="hint">Tạo OAuth Client (Web) ở Google Cloud Console, redirect URI: <code>${esc((s.public_base_url || location.origin) + "/api/auth/google/callback")}</code></p>
+    <div class="grid g2" style="gap:0 14px">${f("google_client_id", "Client ID")}<div><label for="gcs">Client secret</label><input id="gcs" type="password" placeholder="${s.google_client_secret_set ? "đã lưu — nhập để thay" : ""}" autocomplete="off"></div></div></div>
+  <div><button class="pri">Lưu cài đặt</button> <span class="hint" id="smsg"></span></div></form></div>`;
+  $("#sf").onsubmit = async e => { e.preventDefault(); const b = {}; $$("[data-k]").forEach(i => b[i.dataset.k] = i.value); if ($("#gcs").value) b.google_client_secret = $("#gcs").value;
+    await api("/admin/settings", {method: "PUT", body: b}); toast("Đã lưu cài đặt"); settings(); };
+}
+
+// ---------------------------------------------------------------- audit
+async function audit() {
+  const rows = await api("/admin/audit");
+  $("#main").innerHTML = topbar("Nhật ký", "300 thao tác gần nhất") + `<div class="body"><div class="card scroll-x"><table class="t"><thead><tr><th>Lúc</th><th>Người</th><th>Thao tác</th><th>Đối tượng</th><th>Chi tiết</th></tr></thead><tbody>
+  ${rows.map(r => `<tr><td class="hint" title="${esc(r.created)}">${ago(r.created)}</td><td>${esc(r.email || "—")}</td><td><code>${esc(r.action)}</code></td><td>${esc(r.target)}</td><td class="hint mono">${esc(r.detail || "")}</td></tr>`).join("")}</tbody></table></div></div>`;
+}
+
+(async () => { A.me = await api("/me"); $("#site").textContent = A.me.site_name; $("#who").textContent = A.me.email; render(); })();
+</script></body></html>

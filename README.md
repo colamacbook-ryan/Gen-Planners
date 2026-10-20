@@ -45,3 +45,9 @@ CLI trực tiếp: `pip install -r requirements.txt` (+ `pandoc` để ra docx/p
 07-business-model → 08-gtm → 09-financials → 10-deal → 11-risk → 12-pitch` — chi tiết checklist,
 điều kiện hoàn thành và các **human gate** (việc AI không làm thay được: báo giá thật, phỏng vấn khách,
 xác nhận mã HS, luật sư) trong `pipeline/stages.yaml`.
+
+## SaaS: phỏng vấn, brainstorm, chạy Plan, quản trị
+
+`saas/` là ứng dụng web nhiều người dùng: mỗi user tự thêm API key AI của mình để trợ lý phỏng vấn và brainstorm chốt điểm;
+core agent (Antigravity CLI mặc định) chạy Plan trên tài khoản của owner; owner quản lý người dùng, hạn mức, tài khoản agent,
+model, quota ở `/admin`. Xem `saas/README.md`.

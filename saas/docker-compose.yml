@@ -1,0 +1,12 @@
+# docker compose -f saas/docker-compose.yml up -d   → http://localhost:8080 (đặt sau reverse proxy HTTPS khi lên mạng)
+services:
+  gen-planner:
+    build: {context: .., dockerfile: saas/Dockerfile}
+    ports: ["8080:8080"]
+    environment:
+      GP_COOKIE_SECURE: "0"        # đặt "1" khi chạy sau HTTPS
+    volumes:
+      - gp-data:/data              # app.db, khoá mã hoá, workspace dự án, HOME của từng tài khoản agent
+    restart: unless-stopped
+volumes:
+  gp-data:
