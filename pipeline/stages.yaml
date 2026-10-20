@@ -1,0 +1,127 @@
+# Pipeline chuẩn cho MỌI dự án. Agent chạy theo thứ tự; stage chỉ được đánh "done"
+# khi đạt done_when và `python gen.py check <slug>` không còn ERROR mới.
+# writes: file SSOT mà stage được phép sửa. human_gate: việc AI KHÔNG thể tự làm thay.
+
+stages:
+  - id: "01-intake"
+    name: Làm rõ ý tưởng & giả thuyết cốt lõi
+    depends: []
+    writes: [idea.md, sections/01-executive-summary.md, assumptions.yaml]
+    checklist:
+      - Viết lại ý tưởng thành 1 câu (cho ai, vấn đề gì, giải pháp gì, vì sao bây giờ).
+      - Tách 3-7 giả thuyết sống còn (kill assumptions) — nếu sai thì dự án chết.
+      - Liệt kê câu hỏi mở chặn đường cho từng stage sau.
+      - Tạo khung assumptions.yaml (id + label + unit, status placeholder).
+    done_when: Có one-liner, danh sách kill assumptions, và khung assumptions.
+
+  - id: "02-market"
+    name: Thị trường & xu hướng
+    depends: ["01-intake"]
+    writes: [sections/02-market.md, assumptions.yaml, evidence.yaml]
+    checklist:
+      - TAM/SAM/SOM tính BOTTOM-UP (số khách × tần suất × giá), top-down chỉ để đối chiếu.
+      - Xu hướng 3-5 năm, có nguồn (báo cáo ngành, số liệu chính phủ, dữ liệu sàn TMĐT).
+      - Mọi số → assumptions.yaml kèm source ev-xxx; không có nguồn thì status estimate + note cách ước tính.
+    done_when: SOM năm 1-3 là assumptions có source hoặc có công thức ước tính rõ ràng.
+
+  - id: "03-competitors"
+    name: Đối thủ & định vị
+    depends: ["02-market"]
+    writes: [sections/03-competition.md, evidence.yaml, assumptions.yaml]
+    checklist:
+      - Tối thiểu 5 đối thủ/sản phẩm thay thế (trực tiếp + gián tiếp), giá bán thực tế có link.
+      - Bảng so sánh tiêu chí; nêu rõ lợi thế cạnh tranh có thể bảo vệ được (moat) hay không.
+    done_when: Có bảng so sánh, giá đối thủ có link nguồn.
+
+  - id: "04-customer"
+    name: Khách hàng & mức sẵn lòng chi trả
+    depends: ["01-intake"]
+    writes: [sections/04-customer.md, assumptions.yaml, evidence.yaml]
+    checklist:
+      - 2-3 persona, job-to-be-done, kênh tiếp cận.
+      - Bộ câu hỏi phỏng vấn khách hàng + khảo sát (Google Form) để Ryan đi thu thập.
+      - Giá sẵn lòng chi trả: tách rõ giả định vs dữ liệu thật.
+    human_gate: Phỏng vấn ≥ 15 khách hàng thật / khảo sát ≥ 100 phản hồi → ghi vào evidence type interview/survey.
+    done_when: Có persona + bộ công cụ phỏng vấn; WTP có ít nhất 1 nguồn dữ liệu thật trước khi gọi vốn.
+
+  - id: "05-product-supply"
+    name: Sản phẩm & chuỗi cung ứng
+    depends: ["01-intake"]
+    writes: [sections/05-product.md, assumptions.yaml, evidence.yaml]
+    checklist:
+      - Mô tả sản phẩm/MVP, kiến trúc kỹ thuật, những gì tự làm vs mua.
+      - Danh sách nhà cung cấp tiềm năng (≥ 3), MOQ, giá FOB/EXW, lead time — có link.
+      - Landed cost = giá mua + vận chuyển + bảo hiểm + thuế NK + VAT + chứng nhận + phí khác.
+    human_gate: Lấy báo giá chính thức + hàng mẫu từ nhà cung cấp.
+    done_when: Landed cost/đơn vị là assumption có cấu phần rõ ràng.
+
+  - id: "06-legal-tax"
+    name: Pháp lý, thuế & ưu đãi
+    depends: ["05-product-supply"]
+    writes: [sections/06-legal.md, assumptions.yaml, evidence.yaml]
+    checklist:
+      - Mã HS khả dĩ + thuế NK MFN/ACFTA/FTA liên quan + VAT; dẫn văn bản pháp luật hiện hành.
+      - Giấy phép/chứng nhận hợp quy cần có (vd thiết bị vô tuyến, đồ chơi, an toàn điện, dữ liệu cá nhân).
+      - Ưu đãi (công nghệ cao, khởi nghiệp sáng tạo, giáo dục) — điều kiện thực tế, đừng giả định là được.
+      - Loại hình doanh nghiệp + cấu trúc góp vốn hợp pháp.
+    human_gate: Xác nhận mã HS với đơn vị logistics/hải quan hoặc luật sư (có thể xin xác định trước mã số).
+    done_when: Thuế suất trong assumptions có source là văn bản pháp luật, kèm rủi ro phân loại sai mã.
+
+  - id: "07-business-model"
+    name: Mô hình kinh doanh & unit economics
+    depends: ["02-market", "04-customer", "05-product-supply", "06-legal-tax"]
+    writes: [sections/07-business-model.md, assumptions.yaml]
+    checklist:
+      - Các dòng doanh thu → model.revenue_streams (giá, sản lượng, % giá vốn).
+      - Unit economics: biên gộp/đơn vị, CAC, LTV, payback; dòng doanh thu lặp lại (subscription, dịch vụ).
+      - Pricing logic so với đối thủ và WTP.
+    done_when: Mỗi revenue stream có price/volume/cogs_pct là assumptions.
+
+  - id: "08-gtm"
+    name: Go-to-market & lộ trình
+    depends: ["07-business-model"]
+    writes: [sections/08-gtm.md, assumptions.yaml]
+    checklist:
+      - Kênh bán, chi phí marketing theo kênh, kế hoạch 90 ngày / 12 tháng / 3 năm.
+      - Milestones có đo lường được, gắn với từng đợt giải ngân.
+    done_when: Opex marketing/nhân sự trong model khớp với kế hoạch GTM.
+
+  - id: "09-financials"
+    name: Dự phóng tài chính & kịch bản
+    depends: ["07-business-model", "08-gtm"]
+    writes: [assumptions.yaml, sections/09-financials.md]
+    checklist:
+      - Hoàn thiện opex, capex, thuế TNDN, kịch bản bear/base/bull.
+      - Chạy build; kịch bản base không được âm tiền (nếu âm → tăng vốn gọi hoặc cắt chi).
+      - Phân tích độ nhạy: biến nào làm lệch kết quả nhiều nhất.
+    done_when: build sạch, check không lỗi model.
+
+  - id: "10-deal"
+    name: Cấu trúc gọi vốn & cổ phần
+    depends: ["09-financials"]
+    writes: [sections/10-deal.md, assumptions.yaml]
+    checklist:
+      - Số vốn gọi, use of funds, định giá pre-money có cơ sở.
+      - Cap table: vốn tiền vs cổ phần bằng công sức (sweat equity) — vesting, cliff, điều kiện rời đi.
+      - Giải ngân theo milestone, quyền của nhà đầu tư, cơ chế thoát.
+    human_gate: Luật sư soạn thỏa thuận cổ đông trước khi nhận tiền.
+    done_when: Có cap table + use of funds khớp model.
+
+  - id: "11-risk"
+    name: Rủi ro & red team
+    depends: ["09-financials", "10-deal"]
+    writes: [sections/11-risks.md]
+    checklist:
+      - Risk register (xác suất × tác động × giảm thiểu) — thị trường, cung ứng, pháp lý, tài chính, đội ngũ.
+      - Red team - đóng vai nhà đầu tư khó tính, 20 câu hỏi khó nhất + câu trả lời dựa trên SSOT.
+    done_when: Mỗi kill assumption ở stage 01 có kế hoạch kiểm chứng hoặc giảm thiểu.
+
+  - id: "12-pitch"
+    name: Pitch deck & tài liệu gọi vốn
+    depends: ["11-risk"]
+    writes: [deck.md, sections/12-appendix.md]
+    checklist:
+      - Deck 10-14 slide theo flow - Vấn đề → Giải pháp → Thị trường → Sản phẩm → Mô hình → Traction/bằng chứng → Đối thủ → GTM → Tài chính → Đội ngũ → Gọi vốn.
+      - Mọi số trên slide là biến từ SSOT; người không chuyên kỹ thuật đọc hiểu được.
+      - Build ra docx + pptx + xlsx; check sạch; không còn DRAFT trước khi đi gặp nhà đầu tư thật.
+    done_when: build sạch, check 0 lỗi, số assumption chưa verified được nêu rõ trong buổi pitch.

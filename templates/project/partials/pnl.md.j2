@@ -1,0 +1,16 @@
+{% set f = fin[scenario] %}
+| Chỉ tiêu ({{ meta.unit_label }}) |{% for y in f.years %} {{ y.year }} |{% endfor %}
+
+|---|{% for y in f.years %}---:|{% endfor %}
+
+| Doanh thu |{% for y in f.years %} {{ y.revenue|num }} |{% endfor %}
+
+| Lợi nhuận gộp |{% for y in f.years %} {{ y.gross_profit|num }} |{% endfor %}
+
+| Chi phí vận hành |{% for y in f.years %} {{ y.opex|num }} |{% endfor %}
+
+| EBITDA |{% for y in f.years %} {{ y.ebitda|num }} |{% endfor %}
+
+| Lợi nhuận ròng |{% for y in f.years %} {{ y.net_income|num }} |{% endfor %}
+
+| Tiền cuối kỳ |{% for y in f.years %} {{ y.cash_end|num }} |{% endfor %}

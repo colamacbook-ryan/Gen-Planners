@@ -1,0 +1,10 @@
+# Mỗi nguồn 1 id. assumptions.yaml trích dẫn bằng source: [ev-xxx].
+# type: report | gov | law | marketplace | supplier_quote | interview | survey | news | internal
+# KHÔNG bịa nguồn. Không tìm được → để assumption ở status estimate kèm note cách ước tính.
+ev-000:
+  title: Ước tính nội bộ của nhóm sáng lập
+  publisher: Founders
+  date: ""
+  url: ""
+  type: internal
+  note: Dùng tạm cho giả định chưa có nguồn ngoài.
