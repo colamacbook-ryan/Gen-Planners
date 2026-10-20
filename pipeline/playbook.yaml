@@ -1,0 +1,116 @@
+# PLAYBOOK CHUẨN — từ ý tưởng tới console khai phá. Đúc kết từ dự án mẫu projects/ai-robot-pet.
+# Agent lõi (agy / claude) đọc file này + AGENTS.md trước khi chạy một dự án.
+# Placeholder trong prompt: {idea} = idea.md, {brief} = brief.md (kết quả phỏng vấn + các điểm đã chốt), {country} = thị trường mục tiêu.
+
+principles:
+  - id: founder-first
+    rule: >-
+      Ý tưởng gốc và các mại điểm founder đã chốt trong brief.md là TRUNG TÂM. Nghiên cứu để làm nó mạnh lên bằng bằng chứng,
+      không thay nó bằng ý tưởng của agent. Đề xuất đổi hướng chỉ ghi vào mục "Phương án khác" và không được đặt làm luận điểm chính
+      khi founder chưa chốt.
+  - id: ssot
+    rule: Mọi con số nằm ở assumptions.yaml (có status + source); văn bản chỉ tham chiếu biến. gen.py check phải 0 lỗi.
+  - id: no-fabrication
+    rule: Không bịa nguồn, URL, video ID, báo giá, điều luật. Không tìm được thì ghi rõ là ước tính và cách ước tính.
+  - id: verified-media
+    rule: Mọi link phải mở được (HTTP 200); video YouTube phải xác nhận qua oEmbed; không dùng ảnh do AI vẽ làm bằng chứng.
+  - id: honest-numbers
+    rule: Mỗi câu kết luận dưới biểu đồ phải khớp số liệu thật trong model; kiểm tra lại trước khi xuất.
+  - id: illustrative-personas
+    rule: Chân dung khách hàng là minh hoạ ghép từ dữ liệu, phải ghi rõ "không phải người thật".
+  - id: gated-capital
+    rule: Lộ trình chia giai đoạn; giai đoạn 0 là kiểm chứng rẻ với tiêu chí qua/không qua đặt trước.
+
+# 1. Mổ xẻ ý tưởng — trước khi nghiên cứu
+decompose:
+  output: brief.md (mục "Cấu phần ý tưởng")
+  steps:
+    - Liệt kê từng mại điểm / cấu phần founder nêu (sản phẩm, kênh, dịch vụ, cộng đồng, mở rộng…), giữ nguyên tên gọi của founder.
+    - Với mỗi cấu phần, viết giả thuyết kinh doanh có thể kiểm chứng.
+    - Gom thành 3–5 tầng hệ sinh thái; mỗi tầng sẽ là một segment trong model tài chính.
+
+# 2. Nghiên cứu song song — mỗi dòng là một subagent, trả về báo cáo có URL cho từng số
+research_streams:
+  - id: R1
+    title: Thị trường dẫn đầu & toàn cầu
+    file: research/01-global-market.md
+    prompt: >-
+      Nghiên cứu thị trường toàn cầu và thị trường đi trước (thường là Trung Quốc/Mỹ/Nhật/Hàn) cho ý tưởng: {idea}. Quy mô và tăng trưởng
+      (2–4 nguồn để thấy biên độ), người chơi chính kèm giá bán, doanh số, vốn gọi được, mô hình thu tiền, bài học thất bại, rủi ro quy định.
+      Mỗi số kèm URL + nơi đăng + ngày. Kết thúc bằng 10 dữ kiện quan trọng nhất cho nhà đầu tư ở {country}.
+  - id: R2
+    title: Nguồn hàng, chi phí đơn vị, logistics
+    file: research/02-supply-cost.md
+    prompt: >-
+      Nguồn cung cho {idea}: nhà cung cấp/OEM, giá FOB, MOQ, BOM, chi phí vận hành lặp lại (ví dụ cloud/AI), vận chuyển về {country},
+      mô hình giá về kho theo 2–3 phân khúc. Mỗi số kèm URL; số tự ước tính ghi EST và cách tính.
+  - id: R3
+    title: Pháp lý, thuế, ưu đãi ở {country}
+    file: research/03-legal-tax.md
+    prompt: >-
+      Mã HS, thuế nhập khẩu (MFN/FTA), VAT, hợp quy bắt buộc, dữ liệu cá nhân, luật AI, ưu đãi thuế, cấu trúc doanh nghiệp và góp vốn
+      hợp pháp, giấy phép cho từng cấu phần trong brief: {brief}. Ghi số hiệu văn bản + URL; đánh dấu [V] đã xác nhận / [U] chưa.
+  - id: R4
+    title: Cầu nội địa & khách hàng
+    file: research/04-local-demand.md
+    prompt: >-
+      Dữ liệu cầu ở {country} cho các nhóm khách trong brief: dân số theo nhóm, thu nhập, chi tiêu liên quan, thái độ, chính sách tạo cầu.
+      Kết thúc bằng TAM/SAM/SOM bottom-up cho từng tầng hệ sinh thái, ghi rõ từng hệ số và nguồn.
+  - id: R5
+    title: Mô hình so sánh cho từng cấu phần
+    file: research/05-comparables.md
+    prompt: >-
+      Với mỗi cấu phần founder nêu ({brief}), tìm doanh nghiệp đã làm cấu phần tương tự (trong và ngoài nước): kinh tế đơn vị, giá,
+      doanh thu, biên, nhượng quyền nếu có. Kết thúc bằng P&L nháp cho cấu phần nặng vốn nhất.
+  - id: R6
+    title: Khoảng trống & use-case xoay quanh ý tưởng gốc
+    file: research/06-use-cases.md
+    prompt: >-
+      Tìm các use-case và khoảng trống giúp ý tưởng gốc mạnh hơn ở {country} (KHÔNG đổi ý tưởng): ai trả tiền, quy mô, ai đang làm,
+      vì sao bây giờ, thí nghiệm rẻ (< ngân sách nhỏ) để kiểm chứng trong 4–8 tuần.
+  - id: R7
+    title: Tín hiệu dài hạn 5–15 năm
+    file: research/07-frontier.md
+    prompt: >-
+      Lực cấu trúc và độ trễ thị trường liên quan tới {idea}: thứ đang bùng ở thị trường đi trước mà {country} chưa có, xu hướng dân số,
+      chính sách, công nghệ. Chấm điểm và nói rõ đâu là hype.
+  - id: R8
+    title: Hình ảnh & clip sản phẩm/cấu phần cốt lõi
+    file: research/08-media-core.md
+    prompt: >-
+      Tìm ảnh thật, bài viết và video YouTube minh hoạ ĐÚNG các cấu phần cốt lõi của ý tưởng ({brief}): sản phẩm tương tự, demo,
+      nhà máy/hội chợ nguồn hàng. Với mỗi mục: tiêu đề, nơi đăng, ngày, URL trang (đã mở được), og:image, video ID (đã xác nhận oEmbed),
+      vì sao minh hoạ đúng. Không bịa URL/ID; không dùng ảnh AI vẽ.
+  - id: R9
+    title: Hình ảnh & clip cho các tầng hệ sinh thái và bối cảnh
+    file: research/09-media-ecosystem.md
+    prompt: >-
+      Tương tự R8 cho các tầng còn lại trong brief (kênh trải nghiệm, cộng đồng, đào tạo, dịch vụ, nhượng quyền…) và bối cảnh người tiêu dùng
+      ở {country}. Ưu tiên ảnh có người thật dùng sản phẩm/dịch vụ.
+
+# 3. Tổng hợp vào SSOT
+synthesis:
+  - file: evidence.yaml
+    note: Một id cho mỗi nguồn dùng trong văn bản.
+  - file: assumptions.yaml
+    note: >-
+      fact_* = dữ kiện có nguồn (verified); giả định kinh doanh = estimate kèm note cách ước tính; segments trong model = các tầng hệ sinh thái
+      của founder; kịch bản bear/base/bull + ít nhất một kịch bản "tầng yếu nhất chỉ đạt 60%".
+  - file: sections/01..12.md + deck.md
+    note: Văn bản Jinja, không gõ số tay.
+  - file: story.yaml
+    note: Câu chuyện console 6 bước — xem templates/project/story.yaml (thực trạng, nỗi đau, khoảng trống, giải pháp, lợi ích & lợi nhuận, lộ trình).
+  - file: datasets.yaml
+    note: Dashboard số liệu 6 nhóm — xem templates/project/datasets.yaml.
+  - file: products.yaml
+    note: Sản phẩm tham chiếu có ảnh thật và link.
+  - dir: media/
+    note: Ảnh và thumbnail clip đã tải về (≤ 640px JPEG), tên file khớp khoá trong story.yaml.
+
+# 4. Cổng chất lượng trước khi giao
+gates:
+  - python gen.py build <slug> && python gen.py check <slug>  → 0 lỗi
+  - python tools/export.py <slug>                              → ra out/<slug>/{project,dossier,documents}.json
+  - Đối chiếu từng takeaway biểu đồ với số trong export (năm, thứ hạng, tỷ lệ).
+  - Mở thử mọi URL trong story.yaml / products.yaml.
+  - Báo cáo cho founder: điều đã kiểm chứng, điều còn là ước tính, việc cần người thật làm.

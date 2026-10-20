@@ -18,6 +18,9 @@ assumptions:
   capex_plan:     {label: Đầu tư ban đầu, value: [200, 0, 0, 0, 0], unit: triệu đ, status: placeholder, confidence: low, source: []}
   cit_rate:       {label: Thuế TNDN, value: 0.2, unit: "%", status: placeholder, confidence: medium, source: []}
   discount_rate:  {label: Suất chiết khấu, value: 0.2, unit: "%", status: estimate, confidence: medium, source: []}
+  phase0_budget:  {label: Giai đoạn 0 - kiểm chứng, value: 300, unit: triệu đ, status: placeholder, confidence: low, source: []}
+  phase1_budget:  {label: Giai đoạn 1 - ra mắt, value: 3000, unit: triệu đ, status: placeholder, confidence: low, source: []}
+  phase2_budget:  {label: Giai đoạn 2 - mở rộng, value: 7000, unit: triệu đ, status: placeholder, confidence: low, source: []}
   exit_multiple:  {label: Hệ số định giá thoát vốn (×EBITDA), value: 6, unit: x, status: placeholder, confidence: low, source: []}
 
 model:
@@ -31,6 +34,9 @@ model:
   funding: raise_amount
   pre_money: pre_money
   discount_rate: discount_rate
+  phase0_budget:  {label: Giai đoạn 0 - kiểm chứng, value: 300, unit: triệu đ, status: placeholder, confidence: low, source: []}
+  phase1_budget:  {label: Giai đoạn 1 - ra mắt, value: 3000, unit: triệu đ, status: placeholder, confidence: low, source: []}
+  phase2_budget:  {label: Giai đoạn 2 - mở rộng, value: 7000, unit: triệu đ, status: placeholder, confidence: low, source: []}
   exit_multiple: exit_multiple
   scenarios:            # nhân hệ số lên base
     bear: {volume_x: 0.6, price_x: 0.9, opex_x: 1.1}

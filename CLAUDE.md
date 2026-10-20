@@ -15,6 +15,13 @@ model tài chính .xlsx) theo một pipeline chuẩn. Nguyên tắc: **plan-as-c
 4. Đổi 1 giả định = sửa đúng 1 dòng YAML → build → mọi tài liệu tự cập nhật. Không đi sửa từng file.
 5. Mỗi stage chỉ sửa các file trong `writes` của stage đó (`pipeline/stages.yaml`).
 
+## Playbook chuẩn
+
+Đọc `pipeline/playbook.yaml` trước khi chạy dự án mới. Nguyên tắc số 1: **ý tưởng gốc và các điểm founder
+đã chốt trong `brief.md` là trung tâm** — nghiên cứu để làm nó mạnh lên, không thay thế. Sau 12 stage, viết
+`story.yaml`, `datasets.yaml`, `products.yaml`, tải ảnh/thumbnail clip đã kiểm chứng vào `media/`, rồi chạy
+`python tools/export.py <slug>` để ra dữ liệu cho console (`studio/index.html`).
+
 ## Quy trình chạy 1 stage
 
 1. Đọc `pipeline/stages.yaml` (checklist, depends, writes, human_gate) + `idea.md` + SSOT hiện tại.

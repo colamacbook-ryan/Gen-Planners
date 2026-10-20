@@ -1,0 +1,12 @@
+# Dashboard số liệu. Nhóm "finance" do tools/export.py tự tính từ model.
+# type: bar (vertical?, log?, refs?) | range | dots | funnel | line | stacked (percent?) | grouped | waterfall | donut
+# status: actual | forecast | estimate | model. Mỗi chart: id, group, title, takeaway (khớp số!), unit, sources[{t,u}]
+groups:
+  - {id: market, name: "Thị trường"}
+  - {id: people, name: "Dân số & khách hàng"}
+  - {id: demand, name: "Nhu cầu & hành vi"}
+  - {id: cases, name: "Đối chiếu sản phẩm tương tự"}
+  - {id: supply, name: "Chi phí & chuỗi cung ứng"}
+  - {id: finance, name: "Vốn & lợi nhuận"}
+kpis: []
+charts: []

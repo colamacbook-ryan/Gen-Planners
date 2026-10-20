@@ -126,7 +126,7 @@ model:
     service: Dịch vụ sửa chữa, bảo dưỡng
     franchise: Nhượng quyền
   revenue_streams:
-    - {id: pet, segment: pet, price: pet_price, volume: pet_units, cogs_pct: pet_cogs}
+    - {id: pet, segment: pet, price: pet_price, volume: pet_units, cogs_pct: pet_cogs, core: true}
     - {id: acc, segment: acc, price: acc_spend, volume: ["cum:pet_units", pet_active], cogs_pct: acc_cogs}
     - {id: brain_sub, segment: brain, price: brain_sub_price, volume: ["cum:pet_units", brain_sub_rate], cogs_pct: brain_sub_cogs}
     - {id: corner, segment: club, price: corner_rev, volume: corner_count, cogs_pct: club_cogs}
