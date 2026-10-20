@@ -1,58 +1,41 @@
 ---
 title: "{{ p.name }}"
-subtitle: "Bộ não AI tiếng Việt cho thiết bị biết nói · v{{ version }}"
+subtitle: "Hệ sinh thái AI Robot Pet Việt · v{{ version }}"
 date: "{{ today }}"
 ---
 {% set b = fin.base %}
 
-## Mọi đồ vật sắp biết nói chuyện
+## Robot pet AI đã là ngành lớn ở Trung Quốc
 
-- Phần cứng đã rẻ: thiết bị giọng nói về kho khoảng {{ a.fact_landed_low }} USD
-- AI nghe–nói đã rẻ: dưới {{ a.fact_cloud_selfhost }} USD/người/tháng khi tự vận hành
-- Trung Quốc: thị trường AI toy {{ a.fact_cn_aitoy_2025 }} tỷ NDT (2025) → tới {{ a.fact_cn_aitoy_2030 }} tỷ NDT (2030), hơn {{ a.fact_cn_aitoy_firms|num }} công ty
-- **Câu hỏi: ai làm bộ não tiếng Việt cho chúng?**
-
-## Thứ đã thắng ở Trung Quốc
-
-- Fuzozo: {{ a.fact_fuzozo_units|num }} máy, {{ a.fact_fuzozo_minutes }} phút/ngày/người dùng
+- Thị trường AI toy {{ a.fact_cn_aitoy_2025 }} tỷ NDT (2025) → tới {{ a.fact_cn_aitoy_2030 }} tỷ NDT (2030)
+- Fuzozo: {{ a.fact_fuzozo_units|num }} máy, người dùng trò chuyện {{ a.fact_fuzozo_minutes }} phút/ngày
 - {{ a.fact_fuzozo_female|pct }} người dùng cốt lõi là nữ trưởng thành → nhu cầu là **bạn đồng hành**
-- Một nền tảng bộ não (Doubao) chạy trên hơn {{ a.fact_doubao_devices|num }} thiết bị
-- Mặt tối: trả hàng {{ a.fact_return_rate|pct }} vì hết hứng thú → **người giữ chân được người dùng mới thắng**
+- Việt Nam: chưa có robot pet nào nói tiếng Việt, chưa có CLB robotics cho giới trẻ
 
-## Việt Nam: 3 lực cấu trúc
+## Điểm yếu của cả ngành, và cơ hội của ta
 
-- **Già hoá:** {{ a.fact_vn_60plus }} triệu người 60+ → {{ a.fact_vn_60plus_2050 }} triệu năm 2050
-- **Giáo dục:** AI vào mọi trường từ 2026-27; tiếng Anh là ngôn ngữ thứ hai tới 2035
-- **Luật:** dữ liệu trẻ em & AI bị siết từ 2026 → server tại VN là lợi thế
-- **Độ trễ:** robot hút bụi VN +{{ a.fact_vn_vacuum_growth|pct }}/năm, hãng TQ áp đảo
+- Ở TQ, {{ a.fact_return_rate|pct }} AI plush bị trả lại vì chủ chán sau vài tuần
+- Người giữ được người dùng thắng: Ropet giữ {{ a.fact_ropet_retention|pct }} sau 90 ngày
+- **CLB, thi đấu, huấn luyện, nâng cấp = lý do để quay lại mỗi tuần**
 
-## Khoảng trống
+## Giải pháp: hệ sinh thái 4 tầng
 
-- Chưa có sản phẩm hay nền tảng AI đồng hành **nói tiếng Việt** ở cấp tiêu dùng
-- Hãng TQ có vỏ máy, không có tiếng Việt, không tuân thủ luật VN
-- Viettel/FPT làm hạ tầng giọng nói, không làm tính cách + nội dung + an toàn cho người già/trẻ em
+1. **Pet tháo rời não–thân**, thương hiệu riêng, não chạy server Việt Nam
+2. **CLB robotics**: góc trải nghiệm → CLB flagship: chơi, F&B, thi đấu
+3. **Học viện**: huấn luyện prompt, lập trình pet; gói giáo án cho trường
+4. **Nhượng quyền** khi CLB đầu có lãi
 
-## Giải pháp: một bộ não, nhiều thân
+## Sản phẩm
 
-- **Bộ não** (server tại VN): giọng tiếng Việt 3 miền · tính cách & trí nhớ · bộ lọc an toàn · nội dung
-- **Thân** mua OEM Thâm Quyến, firmware mở
-- Chứng minh bằng 2 sản phẩm của mình → cấp phép cho hãng khác
+- Một não, nhiều thân: bánh xe, chó 4 chân, thú bông, đế để bàn
+- Gói kỹ năng: bạn đồng hành · luyện tiếng Anh · chăm sóc ông bà · lập trình
+- Bộ pet {{ a.pet_price|money(2) }} · gói kỹ năng {{ (a.brain_sub_price / 12 * 1000)|num }} nghìn đ/tháng
+- Về kho khoảng {{ a.fact_landed_pet }} USD/bộ · thuế nhập khẩu {{ a.fact_acfta_duty|pct }} với form E
 
-## Hai sản phẩm đầu tiên
+## Mỗi pet bán ra mở một dòng chi tiêu
 
-- **"Con cháu":** bạn trò chuyện cho bố mẹ ở quê; con cái nhận tóm tắt, cảnh báo — {{ a.elder_price|money(2) }} + thuê bao
-- **Bạn luyện nói tiếng Anh:** 15 phút/ngày không màn hình; bán qua trung tâm — {{ a.eng_price|money(2) }} + thuê bao
-
-## Bản đồ vùng đất
-
-| Vùng | Phán quyết |
-|---|---|
-| Nền tảng bộ não B2B | Lõi giá trị |
-| Người già "Con cháu" | Mũi nhọn dài hạn |
-| Luyện nói tiếng Anh | Mũi nhọn ngắn hạn |
-| Giáo dục AI, dịch vụ dữ liệu | Dòng tiền sớm |
-| CLB, nhượng quyền | Năm 4+ |
-| Nhập robot về bán | Loại — đua giá |
+- Thân mới, skin, phụ kiện · gói kỹ năng · khoá học · sửa chữa, nâng cấp · vé CLB
+- Năm {{ b.last.year }}: phần lớn doanh thu đến từ hệ sinh thái, không phải bán máy
 
 ## Lợi nhuận theo mảng ({{ b.last.year }}, cơ sở)
 
@@ -65,32 +48,23 @@ date: "{{ today }}"
 {% with scenario = "base" %}{% include "partials/pnl.md.j2" %}{% endwith %}
 
 
-## Ba kịch bản
+## Các kịch bản
 
 {% for k, f in fin.items() %}
-- **{{ k }}**: doanh thu {{ f.last.year }} {{ f.last.revenue|ty }} · EBITDA {{ f.last.ebitda|ty }} · hoà vốn {{ f.metrics.breakeven_year or "chưa" }} · tiền thấp nhất {{ f.metrics.min_cash|ty }}
+- **{{ k }}**: doanh thu {{ f.last.year }} {{ f.last.revenue|ty }} · EBITDA {{ f.last.ebitda|ty }} · hoà vốn {{ f.metrics.breakeven_year or "chưa" }}
 {% endfor %}
 
 ## Lộ trình & cửa ải
 
-- **Giai đoạn 0** ({{ a.phase0_budget|money(0) }}, 8–12 tuần): 4 thí nghiệm, tiêu chí qua/không qua đặt trước
-- **Cửa ải 1:** bộ não khả thi + người dùng còn dùng sau 4–6 tuần + có người trả tiền
-- **Giai đoạn 1** ({{ a.phase1_budget|ty }}): ra mắt, 2 thương hiệu nền tảng
-- **Cửa ải 2:** giữ chân thuê bao 90 ngày, đơn vị kinh tế dương
-- **Giai đoạn 2** ({{ a.phase2_budget|ty }}): mở rộng ĐNA, B2B, CLB flagship
+- **Giai đoạn 0** ({{ a.phase0_budget|money(0) }}, 8–12 tuần): mẫu OEM, góc pop-up, workshop, đặt cọc
+- **Giai đoạn 1** ({{ a.phase1_budget|ty }}): lô đầu, 3 góc trải nghiệm, học viện
+- **Giai đoạn 2** ({{ a.phase2_budget|ty }}): CLB flagship, nhượng quyền
 
-## Rủi ro lớn nhất & cách xử lý
+## Đề xuất góp vốn
 
-- Hết hứng thú → đo ngay ở giai đoạn 0
-- An toàn trẻ em → bộ lọc 2 lớp, red-team
-- Luật dữ liệu → server VN, luật sư từ đầu
-- Chi phí AI → tự host, giới hạn sử dụng
-
-## Đề xuất
-
-- Bắt đầu bằng **{{ a.phase0_budget|money(0) }}** cho giai đoạn kiểm chứng
-- Vốn tiếp theo chỉ mở khi có số liệu thật
-- Công ty cổ phần; đội kỹ thuật nhận cổ phần theo vesting
+- Bắt đầu bằng {{ a.phase0_budget|money(0) }} cho giai đoạn kiểm chứng
+- Công ty cổ phần; bạn bè góp tiền, đội kỹ thuật nhận cổ phần theo vesting
+- Vốn tiếp theo mở theo cửa ải
 
 {% if draft %}
 ## Lưu ý

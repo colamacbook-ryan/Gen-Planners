@@ -1,44 +1,48 @@
-# Sản phẩm, công nghệ & nguồn hàng
+# Sản phẩm: pet tháo rời não–thân
 
-## Kiến trúc: một bộ não, nhiều thân
+## Thiết kế lõi
 
 ```
- Thiết bị (mua OEM Thâm Quyến, ESP32-S3: mic, loa, có/không màn hình, camera)
-        │  WebSocket / MQTT (firmware mở xiaozhi, trỏ về server của ta)
-        ▼
- BỘ NÃO (server đặt tại Việt Nam)
-   ├─ Nhận dạng giọng tiếng Việt (ASR) — mua/tích hợp, tinh chỉnh cho giọng người già, trẻ em, 3 miền
-   ├─ Tính cách & trí nhớ dài hạn — mỗi người dùng một "người bạn" nhớ chuyện cũ
-   ├─ Bộ lọc an toàn 2 lớp — trẻ em / người già (lừa đảo, y tế, nội dung nhạy cảm)
-   ├─ Mô hình ngôn ngữ — lớp chuyển đổi nhiều nhà cung cấp, ẩn danh trước khi gọi API nước ngoài
-   ├─ Nội dung — giáo án tiếng Anh theo cấp độ, chuyện kể, nhắc thuốc, trò chơi trí nhớ
-   └─ Tổng hợp giọng (TTS)
+ NÃO (module tháo rời: ESP32-S3, mic, loa, màn hình mắt, camera)
+   │  gắn vào
+   ├── Thân bánh xe / thân chó 4 chân / thân thú bông / đế để bàn  ← bán thêm, sưu tầm
+   │
+   │  WebSocket / MQTT (firmware mở xiaozhi, trỏ về server của ta)
+   ▼
+ SERVER TẠI VIỆT NAM
+   ├─ Giọng nói tiếng Việt 3 miền + tiếng Anh
+   ├─ Tính cách & trí nhớ riêng cho từng pet ("huấn luyện" được)
+   ├─ Gói kỹ năng: bạn đồng hành · luyện tiếng Anh · chăm sóc ông bà · trò chơi · lập trình
+   └─ Bộ lọc an toàn cho trẻ em, dữ liệu lưu trong nước
         │
         ▼
- App gia đình (con cái / phụ huynh): tóm tắt hằng ngày, cảnh báo, cài đặt
+ App: huấn luyện pet, theo dõi, thi đấu, mua thân/skin/kỹ năng
 ```
 
-Firmware mở cho phép tự host server — chỉ cần đổi địa chỉ và nạp lại {{ cite('ev-xiaozhi') }}. Đây là lý do một đội nhỏ có thể có sản phẩm chạy thật trong vài tuần.
+Vì sao tháo rời não–thân là mại điểm thật:
+- **Một não, nhiều thân** → người dùng mua thêm thân thay vì mua máy mới; ta bán thân với biên cao như hàng sưu tầm.
+- **Nâng cấp não** không phải bỏ thân → dịch vụ nâng cấp ở CLB.
+- **Dùng cho giáo dục**: học sinh lắp thân, lập trình hành vi — cùng sản phẩm, thêm thị trường.
+- Tham chiếu: LOOI dùng điện thoại làm não, gọi vốn cộng đồng thành công trên Kickstarter; Hiwonder MechDog là kit não ESP32 + thân robot chó (research/02).
 
-## Hai sản phẩm đầu tiên
+## Giá và giá vốn
 
-| | "Con cháu" (người già) | Bạn luyện nói tiếng Anh |
+| | Giá bán (giả định) | Giá vốn |
 |---|---|---|
-| Hình dạng | Loa/thú bông để bàn, nút bấm to, không màn hình | Thú bông hoặc robot để bàn, không màn hình |
-| Giá máy (giả định) | {{ a.elder_price|money(2) }} | {{ a.eng_price|money(2) }} |
-| Thuê bao (giả định) | {{ (a.elder_sub_price / 12 * 1000)|num }} nghìn đ/tháng | {{ (a.eng_sub_price / 12 * 1000)|num }} nghìn đ/tháng |
-| Tính năng lõi | Trò chuyện hằng ngày theo giọng địa phương, nhắc thuốc, kể chuyện, phát hiện cuộc gọi lừa đảo, tóm tắt cho con | 15 phút luyện nói mỗi ngày theo trình độ sách giáo khoa, sửa phát âm, báo cáo tiến bộ cho phụ huynh |
-| Người mua | Con cái | Phụ huynh / trung tâm tiếng Anh |
+| Bộ pet (não + 1 thân) | {{ a.pet_price|money(2) }} | Về kho khoảng {{ a.fact_landed_pet }} USD {{ cite('ev-alibaba-aipets') }}; tổng giá vốn + kênh {{ a.pet_cogs|pct }} giá bán |
+| Gói kỹ năng | {{ (a.brain_sub_price / 12 * 1000)|num }} nghìn đ/tháng | Chi phí AI mục tiêu dưới {{ a.gate_cloud_cost }} nghìn đ/pet/tháng khi tự vận hành {{ cite('ev-xiaozhi', 'ev-deepseek-pricing') }} |
+| Thân, skin, phụ kiện | Chi tiêu TB {{ a.acc_spend|money(1) }}/pet/năm | Giá vốn {{ a.acc_cogs|pct }} nhờ thiết kế riêng |
 
-## Nguồn hàng & giá vốn (chi tiết research/02)
+Chi phí AI dùng API realtime cao cấp khoảng {{ a.fact_cloud_realtime }} USD/người/tháng {{ cite('ev-openai-pricing') }} — vượt giá gói kỹ năng. Vì vậy **phải tự vận hành phần giọng nói và dùng mô hình rẻ** (khoảng {{ a.fact_cloud_selfhost }} USD/tháng trở xuống).
 
-- **Thị trường nguồn:** nhiều nhà cung cấp Thâm Quyến/Đông Quản, giá niêm yết từ vài chục USD; OEM thật (logo, firmware, server riêng) bắt đầu khoảng 1.000 máy {{ cite('ev-alibaba-aipets') }}.
-- **Giá về kho ước tính:** khoảng {{ a.fact_landed_low }} USD/máy (loại giọng nói cơ bản), {{ a.fact_landed_mid }} USD/máy (để bàn có màn hình + camera), đã gồm vận chuyển, VAT, hợp quy, bao bì {{ cite('ev-alibaba-aipets', 'ev-freight', 'ev-hs-9503') }}.
-- **Chi phí AI mỗi người dùng/tháng:** khoảng {{ a.fact_cloud_realtime }} USD nếu dùng API realtime cao cấp; mục tiêu dưới {{ a.fact_cloud_selfhost }} USD khi tự host ASR/TTS + mô hình rẻ {{ cite('ev-openai-pricing', 'ev-deepseek-pricing') }}. **Đây là ràng buộc thiết kế số 1**: chi phí AI là giá vốn lặp lại hằng tháng nên phải có thuê bao và giới hạn sử dụng hợp lý.
-- **Chuyến khảo sát Thâm Quyến:** khoảng {{ a.trip_budget|money(0) }}/người/5 ngày.
+## Nguồn hàng & lắp ráp
+
+- Nhà máy Thâm Quyến có sẵn thiết bị AI companion, giá niêm yết từ vài chục USD; OEM thật (logo, firmware, server riêng) từ khoảng 1.000 bộ {{ cite('ev-alibaba-aipets') }}.
+- **Lắp ráp tại VN**: nhập não và thân dạng linh kiện/bán thành phẩm, lắp, nạp firmware, kiểm tra, đóng gói tại VN — đủ để ghi "lắp ráp tại Việt Nam", kiểm soát chất lượng, và làm dịch vụ sửa chữa.
+- Chuyến khảo sát Thâm Quyến khoảng {{ a.trip_budget|money(0) }}/người/5 ngày; đội nói tiếng Trung đàm phán trực tiếp.
 
 ## Việc cần người thật làm
 
-- Gửi yêu cầu báo giá (RFQ) cho 3–5 nhà máy OEM Thâm Quyến ở mức 1.000 máy; đặt mẫu, nạp firmware trỏ về server riêng để thử.
-- Đo chất lượng nhận dạng giọng tiếng Việt với 30+ người già và 30+ trẻ em ở 3 miền.
-- Đo chi phí AI thật trên 20 người dùng thử trong 4 tuần.
+- RFQ 3–5 nhà máy cho thiết kế não tháo rời + 2 loại thân; đặt mẫu.
+- Nạp firmware trỏ về server riêng, thử giọng tiếng Việt với 30 người.
+- Đo chi phí AI thật trên 20 pet trong 4 tuần.
