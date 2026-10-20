@@ -51,6 +51,9 @@ assumptions:
   elder_active:      {label: Tỷ lệ máy đã bán còn trả thuê bao, value: 0.5, unit: "%", status: estimate, confidence: low, source: [ev-36kr-ropet, ev-36kr-returns], note: Giữa TB ngành (~70% còn giữ) và Ropet; trừ người không gia hạn}
   elder_sub_cogs:    {label: Giá vốn thuê bao (cloud + hỗ trợ), value: 0.3, unit: "%", status: estimate, confidence: medium, source: [ev-xiaozhi, ev-deepseek-pricing]}
 
+  elder_sub_months:  {label: Số tháng trả thuê bao trung bình (người già), value: 18, unit: tháng, status: estimate, confidence: low, source: [ev-36kr-ropet], note: Ropet giữ 80–90% sau 90 ngày; gym giữ ~66%/năm → giả định thận trọng 18 tháng}
+  eng_sub_months:    {label: Số tháng trả thuê bao trung bình (tiếng Anh), value: 12, unit: tháng, status: estimate, confidence: low, source: [ev-36kr-returns], note: Thấp hơn người già vì trẻ chán nhanh hơn}
+
   # ---------------------------------------------------------------- mảng 2: bạn luyện nói tiếng Anh
   eng_price:         {label: Giá thiết bị luyện nói tiếng Anh, value: 1.49, unit: triệu đ/máy, status: estimate, confidence: low, source: [ev-000], note: < 1 tháng học phí trung tâm; thí nghiệm A}
   eng_units:         {label: Máy tiếng Anh bán ra/năm, value: [300, 2000, 4000, 6000, 8000], unit: máy, status: estimate, confidence: low, source: [ev-000], note: Neo theo SOM B2C trẻ em ~4k máy/năm (research/04) + kênh trung tâm tiếng Anh}
