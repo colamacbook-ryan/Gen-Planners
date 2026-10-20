@@ -26,7 +26,7 @@ const DEFAULT_SETTINGS = {site_name: "Gen Planner", allow_signup: "1", plan_bill
 let D;
 const blank = () => ({seq: 1, users: [], session: null, keys: [], projects: [], messages: [], interview: {}, decisions: [],
   profiles: [], jobs: [], usage: [], settings: {...DEFAULT_SETTINGS}, audit: [], terminals: {}});
-function load() { try { D = JSON.parse(localStorage.getItem(KEY)) || blank(); } catch { D = blank(); } }
+function load() { try { D = JSON.parse(localStorage.getItem(KEY)) || blank(); } catch { D = blank(); } for (const k of ["shares", "invites", "changes"]) D[k] ??= []; }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(D)); } catch {} }
 load();
 const now = () => new Date().toISOString().replace(/\.\d+Z$/, "Z");
@@ -66,11 +66,18 @@ function quota(u) {
   const unl = ["owner", "admin"].includes(u.role);
   return {projects, projects_limit: unl ? null : lp, owner_jobs_month: used, owner_jobs_limit: unl ? null : lj};
 }
-function createUser(email, name, pw) {
+function validInvite(token, email) {
+  const i = D.invites.find(i => i.token === token);
+  if (!i || i.revoked || i.used_by || (i.expires && i.expires < now())) fail(400, "Lời mời không còn hiệu lực. Xin admin gửi lời mời mới.");
+  if (email && i.email && i.email !== email) fail(400, `Lời mời này dành cho ${i.email}.`);
+  return i;
+}
+function createUser(email, name, pw, inv) {
   const first = D.users.length === 0;
-  if (!first && S("allow_signup") !== "1") fail(403, "Hệ thống đang tắt đăng ký mới. Liên hệ admin.");
-  const u = {id: nid(), email, name: name || email.split("@")[0], pw: hashish(pw), role: first ? "owner" : "user", status: "active",
-    quota_projects: null, quota_jobs_month: null, created: now(), last_login: now()};
+  if (!first && !inv && S("allow_signup") !== "1") fail(403, "Hệ thống đang tắt đăng ký mới — cần lời mời từ admin.");
+  const u = {id: nid(), email, name: name || email.split("@")[0], pw: hashish(pw), role: first ? "owner" : inv ? inv.role : "user", status: "active",
+    quota_projects: inv?.quota_projects ?? null, quota_jobs_month: inv?.quota_jobs_month ?? null, invited_by: inv?.created_by ?? null, onboarding: {}, created: now(), last_login: now()};
+  if (inv) { inv.used_by = u.id; inv.used_at = now(); }
   D.users.push(u); audit(u.id, "signup", email, {role: u.role});
   if (first) seedSample(u);
   return u;
@@ -95,12 +102,26 @@ function slugify(name) {
 }
 function getProject(slug, u, write) {
   const p = D.projects.find(p => p.slug === slug); if (!p) fail(404, "Không có dự án");
-  if (p.user_id !== u.id && (write || !["owner", "admin"].includes(u.role))) fail(403, "Không phải dự án của bạn");
+  if (p.user_id !== u.id && (write || (!["owner", "admin"].includes(u.role) && !p.is_sample))) fail(403, "Không phải dự án của bạn");
   return p;
+}
+function onboarding(u) {
+  const ob = u.onboarding || {}, ps = D.projects.filter(p => p.user_id === u.id && !p.is_sample), ids = new Set(ps.map(p => p.id));
+  const steps = [["sample", "Xem một bộ hồ sơ mẫu hoàn chỉnh", !!ob.viewed_sample], ["key", "Thêm API key AI của bạn", D.keys.some(k => k.user_id === u.id)],
+    ["project", "Tạo dự án đầu tiên", ps.length > 0], ["interview", `Trả lời đủ ${QUESTIONS.filter(q => q.required).length} câu phỏng vấn bắt buộc`, ps.some(p => !progress(istate(p.id).answers).required_missing.length)],
+    ["locked", "Chốt ít nhất một điểm ở Brainstorm", D.decisions.some(d => ids.has(d.project_id) && d.status === "locked")],
+    ["plan", "Chạy Plan và xem hồ sơ", D.jobs.some(j => ids.has(j.project_id) && j.kind === "plan" && j.status === "done")],
+    ["share", "Gửi link hồ sơ cho nhà đầu tư", D.shares.some(x => ids.has(x.project_id))]];
+  return {steps: steps.map(([id, title, done]) => ({id, title, done})), done: steps.filter(x => x[2]).length, total: steps.length, dismissed: !!ob.dismissed};
+}
+let exportCache = {};
+async function exportJson(p, part) {
+  const id = p.is_sample ? "ai-robot-pet" : "mau-template", k = id + part;
+  return exportCache[k] ??= await (await realFetch(`data/projects/${id}/export/${part}.json`)).json();
 }
 function summary(p) {
   const j = [...D.jobs].reverse().find(j => j.project_id === p.id);
-  return {id: p.id, slug: p.slug, name: p.name, country: p.country, status: p.status, created: p.created, updated: p.updated,
+  return {id: p.id, slug: p.slug, name: p.name, country: p.country, status: p.status, created: p.created, updated: p.updated, is_sample: p.is_sample ? 1 : 0,
     progress: progress(istate(p.id).answers), last_job: j ? {id: j.id, status: j.status, engine: j.engine, billing: j.billing, created: j.created, finished: j.finished, error: j.error} : null,
     exported: !!p.exported, locked: D.decisions.filter(d => d.project_id === p.id && d.status === "locked").length};
 }
@@ -176,7 +197,7 @@ function buildBrief(p) {
 }
 function seedSample(owner) {
   if (D.projects.some(p => p.slug === SAMPLE_SLUG)) return;
-  const p = {id: nid(), slug: SAMPLE_SLUG, user_id: owner.id, name: "Hệ sinh thái AI Robot Pet Việt (mẫu)", country: "Việt Nam", status: "done", exported: true,
+  const p = {id: nid(), slug: SAMPLE_SLUG, user_id: owner.id, name: "Hệ sinh thái AI Robot Pet Việt (mẫu)", country: "Việt Nam", status: "done", exported: true, is_sample: 1,
     idea: "Pet AI tháo rời não–thân mang thương hiệu Việt, OEM từ Trung Quốc, lắp ráp và server tại Việt Nam; chuỗi CLB robotics để chơi, mua, F&B; lớp huấn luyện prompt và lập trình pet; thi đấu có giải; dịch vụ sửa chữa, nâng cấp, trang trí; rồi nhượng quyền.",
     created: now(), updated: now(), brief_md: null};
   D.projects.push(p); startInterview(p);
@@ -238,12 +259,14 @@ function termInput(prof, text) {
 const routes = [];
 const R = (m, re, fn) => routes.push([m, new RegExp("^" + re + "$"), fn]);
 
-R("GET", "/public", () => ({site_name: S("site_name"), allow_signup: S("allow_signup") === "1", google: false, has_owner: D.users.length > 0, demo: true}));
+R("GET", "/public", (b, m, q) => { let invite = null; if (q.get("invite")) { try { const i = validInvite(q.get("invite")); invite = {email: i.email, role: i.role}; } catch (e) { invite = {error: e.message}; } }
+  return {invite, ...PUBLIC()}; });
+const PUBLIC = () => ({site_name: S("site_name"), allow_signup: S("allow_signup") === "1", google: false, has_owner: D.users.length > 0, demo: true});
 R("POST", "/auth/signup", (b) => {
   const email = String(b.email || "").trim().toLowerCase(), pw = String(b.password || "");
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || pw.length < 8) fail(400, "Email không hợp lệ hoặc mật khẩu dưới 8 ký tự.");
   if (D.users.some(u => u.email === email)) fail(409, "Email đã có tài khoản.");
-  const u = createUser(email, b.name, pw); D.session = u.id; return {ok: true, role: u.role};
+  const u = createUser(email, b.name, pw, b.invite ? validInvite(b.invite, email) : null); D.session = u.id; return {ok: true, role: u.role};
 });
 R("POST", "/auth/login", (b) => {
   const u = D.users.find(u => u.email === String(b.email || "").trim().toLowerCase());
@@ -252,7 +275,8 @@ R("POST", "/auth/login", (b) => {
   D.session = u.id; u.last_login = now(); audit(u.id, "login", u.email); return {ok: true, role: u.role};
 });
 R("POST", "/auth/logout", () => { D.session = null; return {ok: true}; });
-R("GET", "/me", () => { const u = need(); return {...pub(u), has_keys: D.keys.some(k => k.user_id === u.id), site_name: S("site_name"), plan_billing: S("plan_billing"), quota: quota(u), demo_allowed: S("allow_demo_engine") === "1", ai_live: !aiOff}; });
+R("GET", "/me", () => { const u = need(); return {...pub(u), has_keys: D.keys.some(k => k.user_id === u.id), site_name: S("site_name"), plan_billing: S("plan_billing"), quota: quota(u), demo_allowed: S("allow_demo_engine") === "1", ai_live: !aiOff, onboarding: onboarding(u)}; });
+R("POST", "/me/onboarding", (b) => { const u = need(); u.onboarding ??= {}; for (const k of ["viewed_sample", "dismissed"]) if (k in b) u.onboarding[k] = !!b[k]; return {ok: true}; });
 R("POST", "/me/password", (b) => { const u = need(); if (u.pw !== hashish(b.old || "")) fail(400, "Mật khẩu cũ không đúng"); if (String(b.new || "").length < 8) fail(400, "Mật khẩu mới tối thiểu 8 ký tự"); u.pw = hashish(b.new); audit(u.id, "password_change", u.email); return {ok: true}; });
 
 R("GET", "/providers", () => (need(), PROVIDERS));
@@ -272,7 +296,8 @@ R("PATCH", "/keys/(\\d+)", (b, [id]) => { const u = need(), k = myKey(u, id); if
 R("DELETE", "/keys/(\\d+)", (b, [id]) => { const u = need(); myKey(u, id); D.keys = D.keys.filter(k => k.id !== +id); audit(u.id, "api_key_delete", id); return {ok: true}; });
 R("POST", "/keys/(\\d+)/test", (b, [id]) => { const k = myKey(need(), id); k.last_test = now(); k.last_test_ok = 0; return {ok: false, message: "Bản demo không lưu và không gửi key đi đâu. Trên máy chủ thật, nút này gọi thẳng API của nhà cung cấp."}; });
 
-R("GET", "/projects", () => { const u = need(); return D.projects.filter(p => p.user_id === u.id).sort((a, b) => b.updated.localeCompare(a.updated)).map(summary); });
+R("GET", "/samples", () => (need(), D.projects.filter(p => p.is_sample).map(summary)));
+R("GET", "/projects", () => { const u = need(); return D.projects.filter(p => p.user_id === u.id && !p.is_sample).sort((a, b) => b.updated.localeCompare(a.updated)).map(summary); });
 R("POST", "/projects", (b) => {
   const u = need(), name = String(b.name || "").trim(), idea = String(b.idea || "").trim();
   if (!name || idea.length < 20) fail(400, "Cần tên dự án và mô tả ý tưởng (tối thiểu vài câu).");
@@ -280,13 +305,31 @@ R("POST", "/projects", (b) => {
   const p = {id: nid(), slug: slugify(name), user_id: u.id, name, idea, country: b.country || "Việt Nam", status: "interview", exported: false, brief_md: null, created: now(), updated: now()};
   D.projects.push(p); startInterview(p); audit(u.id, "project_create", p.slug); return summary(p);
 });
-R("GET", "/projects/([\\w-]+)", (b, [slug]) => {
-  const u = need(), p = getProject(slug, u), st = istate(p.id);
+R("GET", "/projects/([\\w-]+)", async (b, [slug]) => {
+  const u = need(), p = getProject(slug, u), st = istate(p.id), kpi = p.exported ? (await exportJson(p, "project")).kpi : null;
   return {...summary(p), idea: p.idea, brief_md: p.brief_md, answers: st.answers, current_qid: st.current_qid, interview_done: st.done,
     questions: QUESTIONS, blocks: BLOCKS, categories: CATEGORIES,
     decisions: D.decisions.filter(d => d.project_id === p.id).sort((a, b) => ((b.status === "locked") - (a.status === "locked")) || b.id - a.id),
-    jobs: D.jobs.filter(j => j.project_id === p.id).sort((a, b) => b.id - a.id).slice(0, 10), mine: p.user_id === u.id};
+    jobs: D.jobs.filter(j => j.project_id === p.id).sort((a, b) => b.id - a.id).slice(0, 10), mine: p.user_id === u.id,
+    kpi, links: null, shares: p.user_id === u.id ? D.shares.filter(x => x.project_id === p.id && !x.revoked).reverse() : [],
+    changes: [], has_workspace: !!p.exported};
 });
+const DEMO_RO = "Bản demo chỉ xem được bảng số liệu — sửa và build lại cần máy chủ thật (Python).";
+R("GET", "/projects/([\\w-]+)/assumptions", async (b, [slug]) => {
+  const p = getProject(slug, need()); if (!p.exported) fail(404, "Dự án chưa có bộ số liệu — chạy Plan trước.");
+  const d = await exportJson(p, "dossier"), k = (await exportJson(p, "project")).kpi;
+  return {meta: {start_year: 2027}, kpi: k, readonly: DEMO_RO, assumptions: d.assumptions.map(a => ({...a, source: a.source || [], note: a.note || ""}))};
+});
+R("PATCH", "/projects/([\\w-]+)/assumptions/(\\w+)", () => fail(400, DEMO_RO));
+R("POST", "/projects/([\\w-]+)/rebuild", () => fail(400, DEMO_RO));
+R("POST", "/projects/([\\w-]+)/linkcheck", () => fail(400, "Bản demo không mở được mạng ngoài để kiểm link — tính năng chạy trên máy chủ thật."));
+R("POST", "/projects/([\\w-]+)/shares", (b, [slug]) => {
+  const u = need(), p = getProject(slug, u, true); if (!p.exported) fail(400, "Chưa có hồ sơ để chia sẻ — chạy Plan trước.");
+  const tok = Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 12);
+  const x = {id: nid(), project_id: p.id, token: tok, label: String(b.label || "").slice(0, 80), created: now(), views: 0, last_view: null, revoked: 0, url: "/s/" + tok};
+  D.shares.push(x); audit(u.id, "share_create", slug); return x;
+});
+R("DELETE", "/shares/(\\d+)", (b, [id]) => { const u = need(), x = D.shares.find(x => x.id === +id) || fail(404, "Không có"); getProject(D.projects.find(p => p.id === x.project_id).slug, u, true); x.revoked = 1; return {ok: true}; });
 R("PATCH", "/projects/([\\w-]+)", (b, [slug]) => { const p = getProject(slug, need(), true); for (const k of ["name", "idea", "country"]) if (b[k]) p[k] = String(b[k]).trim(); p.updated = now(); return summary(p); });
 R("DELETE", "/projects/([\\w-]+)", (b, [slug]) => { const u = need(), p = getProject(slug, u, true); D.projects = D.projects.filter(x => x.id !== p.id); D.messages = D.messages.filter(m => m.project_id !== p.id); D.decisions = D.decisions.filter(d => d.project_id !== p.id); delete D.interview[p.id]; audit(u.id, "project_delete", slug); return {ok: true}; });
 R("GET", "/projects/([\\w-]+)/messages", (b, [slug], q) => { const p = getProject(slug, need()); return D.messages.filter(m => m.project_id === p.id && m.room === q.get("room")); });
@@ -345,10 +388,35 @@ R("GET", "/admin/overview", () => {
     jobs_month: D.jobs.filter(j => j.created >= m && j.kind === "plan").length, jobs_failed_month: D.jobs.filter(j => j.created >= m && j.status === "failed").length,
     tokens_month: mu.reduce((s, x) => s + x.input_tokens + x.output_tokens, 0), owner_tokens_month: mu.filter(x => x.profile_id).reduce((s, x) => s + x.input_tokens + x.output_tokens, 0),
     days: Object.values(days).sort((a, b) => a.d.localeCompare(b.d)).slice(-30), active_agent: activeProfile(),
-    recent_jobs: [...D.jobs].reverse().slice(0, 8).map(joinJob)};
+    recent_jobs: [...D.jobs].reverse().slice(0, 8).map(joinJob),
+    new_users_7d: D.users.filter(u => Date.now() - new Date(u.created) < 7 * 864e5).length, invites_open: D.invites.filter(i => !i.used_by && !i.revoked).length,
+    funnel: (() => { const us = D.users.filter(u => u.role === "user"), f = {signup: us.length, key: 0, project: 0, plan: 0, share: 0};
+      for (const u of us) { const ob = onboarding(u).steps; for (const [k, s] of [["key", "key"], ["project", "project"], ["plan", "plan"], ["share", "share"]]) f[k] += ob.find(x => x.id === s).done ? 1 : 0; } return f; })()};
 });
+R("GET", "/admin/users/(\\d+)", (b, [id]) => {
+  needAdmin(); const t = D.users.find(u => u.id === +id) || fail(404, "Không có");
+  const ps = D.projects.filter(p => p.user_id === t.id && !p.is_sample), us = D.usage.filter(x => x.user_id === t.id && x.created >= month());
+  return {...pub(t), quota: quota(t), quota_projects: t.quota_projects, quota_jobs_month: t.quota_jobs_month, onboarding: onboarding(t),
+    keys: D.keys.filter(k => k.user_id === t.id).map(k => ({provider: k.provider, model: k.model, key_hint: k.key_hint})),
+    invited_by: D.users.find(u => u.id === t.invited_by)?.email || null, projects: ps.map(summary),
+    jobs: D.jobs.filter(j => j.user_id === t.id).reverse().slice(0, 15).map(j => ({...j, name: D.projects.find(p => p.id === j.project_id)?.name})),
+    usage: {i: us.reduce((s, x) => s + x.input_tokens, 0), o: us.reduce((s, x) => s + x.output_tokens, 0), n: us.length},
+    activity: D.audit.filter(a => a.user_id === t.id).reverse().slice(0, 20)};
+});
+R("GET", "/admin/invites", () => (needAdmin(), [...D.invites].reverse().map(i => ({...i, used_email: D.users.find(u => u.id === i.used_by)?.email}))));
+R("POST", "/admin/invites", (b) => {
+  const a = needAdmin(), email = String(b.email || "").trim().toLowerCase() || null;
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail(400, "Email không hợp lệ");
+  if (email && D.users.some(u => u.email === email)) fail(409, "Email này đã có tài khoản");
+  const days = Math.max(1, Math.min(+b.days || 7, 90)), num = k => b[k] === "" || b[k] == null ? null : +b[k];
+  const i = {id: nid(), token: Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2), email, role: ["user", "admin"].includes(b.role) && (a.role === "owner" || b.role === "user") ? b.role : "user",
+    quota_projects: num("quota_projects"), quota_jobs_month: num("quota_jobs_month"), note: String(b.note || "").slice(0, 200), created_by: a.id, created: now(),
+    expires: new Date(Date.now() + days * 864e5).toISOString().replace(/\.\d+Z$/, "Z"), used_by: null, revoked: 0};
+  D.invites.push(i); audit(a.id, "invite_create", email || "(link mở)"); return i;
+});
+R("DELETE", "/admin/invites/(\\d+)", (b, [id]) => { const a = needAdmin(), i = D.invites.find(i => i.id === +id); if (i) i.revoked = 1; audit(a.id, "invite_revoke", id); return {ok: true}; });
 R("GET", "/admin/users", () => { needAdmin(); return D.users.map(u => ({...pub(u), quota: quota(u), quota_projects: u.quota_projects, quota_jobs_month: u.quota_jobs_month,
-  keys: D.keys.filter(k => k.user_id === u.id).length, tokens_month: D.usage.filter(x => x.user_id === u.id && x.created >= month()).reduce((s, x) => s + x.input_tokens + x.output_tokens, 0), google: false})); });
+  onboarding: (o => ({done: o.done, total: o.total}))(onboarding(u)), keys: D.keys.filter(k => k.user_id === u.id).length, tokens_month: D.usage.filter(x => x.user_id === u.id && x.created >= month()).reduce((s, x) => s + x.input_tokens + x.output_tokens, 0), google: false})); });
 R("POST", "/admin/users", (b) => {
   const a = needAdmin(), email = String(b.email || "").trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || String(b.password || "").length < 8) fail(400, "Email hoặc mật khẩu (≥ 8 ký tự) không hợp lệ");
@@ -468,6 +536,8 @@ async function saveProjectFile(slug, f) {
 }
 window.addEventListener("message", e => { const m = e.data; if (m && m.gp === "download") saveProjectFile(m.project, m.file); });
 window.GPDEMO = {
+  invite: null,
+  openInvite(token) { D.session = null; save(); window.GPDEMO.invite = token; window.GPDEMO.nav("login"); },
   saveBrief(slug) { const p = D.projects.find(p => p.slug === slug); if (p) saveFile(`${slug}-brief.md`, p.brief_md || buildBrief(p)); },
   async reset() { if (!await ask("Xoá toàn bộ dữ liệu demo trên trình duyệt này?", "Xoá & làm lại")) return; try { localStorage.removeItem(KEY); } catch {} D = blank(); window.GPDEMO.nav("login"); },
   projectName(slug) { return D.projects.find(p => p.slug === slug)?.name || ""; },

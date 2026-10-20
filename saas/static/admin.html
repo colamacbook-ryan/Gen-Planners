@@ -38,7 +38,7 @@ async function overview() {
   const max = Math.max(1, ...o.days.map(d => d.i + d.o));
   $("#main").innerHTML = topbar("Tổng quan", "Sức khoẻ hệ thống tháng này") + `<div class="body">
   ${!ag && A.me.role === "owner" ? `<div class="banner"><b>Chưa có core agent.</b> Người dùng chưa chạy được Plan bằng tài khoản hệ thống. <a href="#agents">Cấu hình agent →</a></div>` : ""}
-  <div class="grid g4">${[["Người dùng", o.users, `${o.users_active_30d} hoạt động 30 ngày`], ["Dự án", o.projects, `${o.projects_done} đã có hồ sơ`],
+  <div class="grid g4">${[["Người dùng", o.users, `+${o.new_users_7d} trong 7 ngày · ${o.users_active_30d} hoạt động 30 ngày`], ["Dự án", o.projects, `${o.projects_done} đã có hồ sơ`],
     ["Job tháng này", o.jobs_month, `${o.jobs_failed_month} lỗi · ${o.jobs_running} đang chạy · ${o.jobs_queued} chờ`],
     ["Token tháng này", tok(o.tokens_month), `${tok(o.owner_tokens_month)} trên tài khoản hệ thống`]].map(([l, v, s]) => `<div class="card kpi"><div class="k">${l}</div><b>${v}</b><span>${s}</span></div>`).join("")}</div>
   <div class="grid g2" style="margin-top:14px">
@@ -46,7 +46,15 @@ async function overview() {
       <div class="axis"><span>${o.days[0].d}</span><span>${o.days.at(-1).d}</span></div>` : '<p class="hint">Chưa có lượt dùng.</p>'}</div>
     <div class="card"><div class="k">Core agent đang dùng</div>${ag ? `<h2 style="margin:6px 0">${esc(ag.name)}</h2><p>${esc(ag.engine)} · ${esc(ag.auth_mode === "api_key" ? "API key" : "tài khoản đăng nhập")} · model ${esc(ag.model || "mặc định")} ${pill(ag.status)}</p>` : '<p class="hint">Chưa cấu hình.</p>'}
       ${A.me.role === "owner" ? '<a href="#agents">Quản lý agent →</a>' : ""}</div></div>
-  <div class="card" style="margin-top:14px"><div class="k">Job gần đây</div>${jobTable(o.recent_jobs)}</div></div>`;
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card"><div class="row"><div class="k grow">Phễu kích hoạt người dùng</div>${o.invites_open ? `<a href="#users" class="hint">${o.invites_open} lời mời đang chờ</a>` : ""}</div>${funnelView(o.funnel)}</div>
+    <div class="card"><div class="k">Job gần đây</div>${jobTable(o.recent_jobs)}</div></div></div>`;
+}
+function funnelView(f) {
+  const steps = [["signup", "Đăng ký"], ["key", "Thêm API key"], ["project", "Tạo dự án"], ["plan", "Chạy Plan xong"], ["share", "Chia sẻ hồ sơ"]], max = Math.max(1, f.signup);
+  if (!f.signup) return '<p class="hint">Chưa có người dùng thường. <a href="#users">Mời người dùng đầu tiên →</a></p>';
+  return `<div class="funnel" style="margin-top:10px">${steps.map(([k, l]) => `<div class="fr"><span>${l}</span><span class="fb" style="width:${f[k] / max * 100}%"></span><span class="hint">${f[k]} · ${Math.round(f[k] / max * 100)}%</span></div>`).join("")}</div>
+    <p class="hint" style="margin:8px 0 0">Bước rơi nhiều nhất là nơi cần cải thiện trải nghiệm.</p>`;
 }
 function jobTable(rows, actions) {
   return `<div class="scroll-x"><table class="t"><thead><tr><th>#</th><th>Trạng thái</th><th>Dự án</th><th>Người dùng</th><th>Engine</th><th>Tính phí</th><th>Tạo</th>${actions ? "<th></th>" : ""}</tr></thead><tbody>
@@ -56,31 +64,93 @@ function jobTable(rows, actions) {
 }
 
 // ---------------------------------------------------------------- users
+const ROLE = {owner: "Owner", admin: "Admin", user: "Người dùng"};
 async function users() {
-  const us = await api("/admin/users"), owner = A.me.role === "owner";
-  $("#main").innerHTML = topbar("Người dùng", `${us.length} tài khoản · hạn mức để trống = mặc định hệ thống`) + `<div class="body"><div class="card scroll-x"><table class="t"><thead><tr>
-    <th>Tài khoản</th><th>Vai trò</th><th>Trạng thái</th><th class="num">Dự án</th><th class="num">Job hệ thống / tháng</th><th class="num">Token tháng</th><th>API key</th><th>Đăng nhập</th><th></th></tr></thead><tbody>
-    ${us.map(u => `<tr data-u="${u.id}"><td><b>${esc(u.name)}</b><div class="hint">${esc(u.email)}${u.google ? " · Google" : ""}</div></td>
-    <td>${owner && u.id !== A.me.id ? `<select data-f="role">${["user", "admin", "owner"].map(r => `<option ${u.role === r ? "selected" : ""}>${r}</option>`).join("")}</select>` : pill(u.role === "user" ? "active" : u.role).replace(/>[^<]*</, `>${u.role}<`)}</td>
-    <td>${pill(u.status)}</td>
-    <td class="num">${u.quota.projects} / <input data-f="quota_projects" value="${u.quota_projects ?? ""}" placeholder="${u.role === "user" ? "mặc định" : "∞"}" style="width:70px"></td>
-    <td class="num">${u.quota.owner_jobs_month} / <input data-f="quota_jobs_month" value="${u.quota_jobs_month ?? ""}" placeholder="${u.role === "user" ? "mặc định" : "∞"}" style="width:70px"></td>
-    <td class="num">${tok(u.tokens_month)}</td><td>${u.keys}</td><td class="hint">${ago(u.last_login)}</td>
-    <td class="row" style="flex-wrap:nowrap">${u.id !== A.me.id && (owner || u.role !== "owner") ? `<button class="sm ${u.status === "active" ? "danger" : ""}" data-a="status" type="button">${u.status === "active" ? "Khoá" : "Mở khoá"}</button>
-    <button class="sm ghost" data-a="pw" type="button">Đặt mật khẩu</button>` : ""}</td></tr>`).join("")}</tbody></table></div>
-    <form class="card" id="uf" style="margin-top:14px;max-width:640px"><h2>Tạo tài khoản</h2><div class="grid g2" style="gap:0 12px">
-    <div><label for="ue">Email</label><input id="ue" type="email" required></div><div><label for="un">Tên</label><input id="un"></div>
-    <div><label for="up">Mật khẩu tạm</label><input id="up" type="password" minlength="8" required autocomplete="new-password"></div>
-    <div><label for="ur">Vai trò</label><select id="ur"><option>user</option>${owner ? "<option>admin</option>" : ""}</select></div></div>
-    <p class="err" id="umsg"></p><button class="pri">Tạo</button></form></div>`;
-  $$("tr[data-u]").forEach(tr => { const id = tr.dataset.u, u = us.find(x => x.id == id);
-    tr.querySelectorAll("[data-f]").forEach(i => i.onchange = async () => { try { await api("/admin/users/" + id, {method: "PATCH", body: {[i.dataset.f]: i.value}}); toast("Đã lưu"); users(); } catch (x) { toast(x.message); users(); } });
-    tr.querySelectorAll("[data-a]").forEach(b => b.onclick = async () => {
-      if (b.dataset.a === "status") { if (!await ask(`${u.status === "active" ? "Khoá" : "Mở khoá"} ${u.email}?`, u.status === "active" ? "Khoá" : "Mở khoá")) return; await api("/admin/users/" + id, {method: "PATCH", body: {status: u.status === "active" ? "disabled" : "active"}}); }
-      else { const pw = await askText(`Mật khẩu mới cho ${u.email} (≥ 8 ký tự)`, "", "password"); if (!pw) return; await api("/admin/users/" + id, {method: "PATCH", body: {password: pw}}).catch(x => toast(x.message)); }
-      toast("Đã cập nhật"); users(); }); });
-  $("#uf").onsubmit = async e => { e.preventDefault(); try { await api("/admin/users", {body: {email: $("#ue").value, name: $("#un").value, password: $("#up").value, role: $("#ur").value}}); toast("Đã tạo"); users(); } catch (x) { $("#umsg").textContent = x.message; } };
+  const [us, inv] = await Promise.all([api("/admin/users"), api("/admin/invites")]), owner = A.me.role === "owner";
+  A.uf ??= {q: "", role: "", status: ""};
+  const pending = inv.filter(i => !i.used_by && !i.revoked && (!i.expires || i.expires > new Date().toISOString()));
+  $("#main").innerHTML = topbar("Người dùng", `${us.length} tài khoản · ${us.filter(u => u.status === "active").length} đang hoạt động · ${pending.length} lời mời đang chờ`,
+    `<button class="pri" id="invBtn" type="button">＋ Mời người dùng</button>`) + `<div class="body">
+    <section class="card" id="invPanel" hidden></section>
+    <div class="toolbar"><input id="uq" placeholder="Tìm theo tên hoặc email…" value="${esc(A.uf.q)}" style="min-width:240px">
+      <select id="ur2"><option value="">Mọi vai trò</option>${Object.entries(ROLE).map(([k, v]) => `<option value="${k}" ${A.uf.role === k ? "selected" : ""}>${v}</option>`).join("")}</select>
+      <select id="us2"><option value="">Mọi trạng thái</option><option value="active" ${A.uf.status === "active" ? "selected" : ""}>Hoạt động</option><option value="disabled" ${A.uf.status === "disabled" ? "selected" : ""}>Đã khoá</option></select>
+      <span class="grow"></span><span class="hint">Bấm vào một dòng để xem chi tiết · hạn mức để trống = mặc định hệ thống</span></div>
+    <div class="card scroll-x"><table class="t"><thead><tr><th>Tài khoản</th><th>Vai trò</th><th>Trạng thái</th><th>Bắt đầu</th><th class="num">Dự án</th><th class="num">Job hệ thống / tháng</th><th class="num">Token tháng</th><th>Hoạt động</th></tr></thead><tbody id="urows"></tbody></table></div>
+    ${pending.length || inv.length ? `<div class="card" style="margin-top:14px"><h2>Lời mời</h2><table class="t"><thead><tr><th>Gửi cho</th><th>Vai trò</th><th>Trạng thái</th><th>Hết hạn</th><th></th></tr></thead><tbody>
+    ${inv.slice(0, 30).map(i => { const st = i.used_by ? "used" : i.revoked ? "revoked" : i.expires < new Date().toISOString() ? "expired" : "open";
+      return `<tr><td>${esc(i.email || "Link mở (ai có link đều đăng ký được)")}${i.note ? `<div class="hint">${esc(i.note)}</div>` : ""}</td><td>${ROLE[i.role]}</td>
+      <td>${{used: `<span class="pill ok">đã dùng</span> <span class="hint">${esc(i.used_email || "")}</span>`, revoked: '<span class="pill bad">đã thu hồi</span>', expired: '<span class="pill">hết hạn</span>', open: '<span class="pill warn">đang chờ</span>'}[st]}</td>
+      <td class="hint">${i.expires ? new Date(i.expires).toLocaleDateString("vi-VN") : "—"}</td>
+      <td class="row" style="flex-wrap:nowrap">${st === "open" ? `<button class="sm" data-icopy="${esc(i.token)}" type="button">Sao chép link</button><button class="sm ghost danger" data-irev="${i.id}" type="button">Thu hồi</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>` : ""}</div>`;
+  const draw = () => { const f = A.uf, q = f.q.toLowerCase();
+    const rows = us.filter(u => (!q || (u.name + " " + u.email).toLowerCase().includes(q)) && (!f.role || u.role === f.role) && (!f.status || u.status === f.status));
+    $("#urows").innerHTML = rows.map(u => `<tr class="click" data-u="${u.id}"><td><b>${esc(u.name)}</b><div class="hint">${esc(u.email)}${u.google ? " · Google" : ""}</div></td>
+      <td>${ROLE[u.role]}</td><td>${pill(u.status)}</td>
+      <td>${u.onboarding ? `<div class="meter" style="width:80px" title="${u.onboarding.done}/${u.onboarding.total} bước bắt đầu"><i style="width:${u.onboarding.done / u.onboarding.total * 100}%"></i></div><span class="hint">${u.onboarding.done}/${u.onboarding.total}</span>` : ""}</td>
+      <td class="num">${u.quota.projects}${u.quota.projects_limit != null ? ` / ${u.quota.projects_limit}` : ""}</td>
+      <td class="num">${u.quota.owner_jobs_month}${u.quota.owner_jobs_limit != null ? ` / ${u.quota.owner_jobs_limit}` : ""}</td>
+      <td class="num">${tok(u.tokens_month)}</td><td class="hint">${ago(u.last_login)}</td></tr>`).join("") || '<tr><td colspan="8" class="hint">Không có người dùng khớp bộ lọc.</td></tr>';
+    $$("tr[data-u]").forEach(tr => tr.onclick = () => userDrawer(+tr.dataset.u)); };
+  $("#uq").oninput = e => { A.uf.q = e.target.value; draw(); };
+  $("#ur2").onchange = e => { A.uf.role = e.target.value; draw(); };
+  $("#us2").onchange = e => { A.uf.status = e.target.value; draw(); };
+  $("#invBtn").onclick = () => { const p = $("#invPanel"); p.hidden = !p.hidden; if (!p.hidden) invitePanel(owner); };
+  $$("[data-icopy]").forEach(b => b.onclick = () => copyText(inviteUrl(b.dataset.icopy)));
+  $$("[data-irev]").forEach(b => b.onclick = async () => { if (await ask("Thu hồi lời mời này?", "Thu hồi")) { await api("/admin/invites/" + b.dataset.irev, {method: "DELETE"}); users(); } });
+  draw();
 }
+const inviteUrl = t => `${location.origin}/login?invite=${encodeURIComponent(t)}`;
+function copyText(t) { navigator.clipboard?.writeText(t).then(() => toast("Đã sao chép link"), () => toast(t)) ?? toast(t); }
+function invitePanel(owner) {
+  const p = $("#invPanel");
+  p.innerHTML = `<div class="row"><h2 class="grow" style="margin:0">Mời người dùng</h2><button class="sm ghost" id="invX" type="button">Đóng</button></div>
+    <p class="hint">Tạo link mời — người nhận tự đặt mật khẩu. Link dùng được một lần, kể cả khi hệ thống đang tắt tự đăng ký.</p>
+    <form id="invF" class="grid g2" style="gap:0 12px"><div><label for="ie">Email (để trống = link mở cho bất kỳ ai)</label><input id="ie" type="email" placeholder="ten@congty.vn"></div>
+      <div><label for="ir">Vai trò</label><select id="ir"><option value="user">Người dùng</option>${owner ? '<option value="admin">Admin</option>' : ""}</select></div>
+      <div><label for="ip">Số dự án tối đa</label><input id="ip" type="number" min="0" placeholder="mặc định hệ thống"></div>
+      <div><label for="ij">Lần chạy Plan bằng tài khoản hệ thống / tháng</label><input id="ij" type="number" min="0" placeholder="mặc định hệ thống"></div>
+      <div><label for="id2">Hết hạn sau (ngày)</label><input id="id2" type="number" min="1" max="90" value="7"></div>
+      <div><label for="in">Ghi chú</label><input id="in" placeholder="Ví dụ: founder chương trình ươm tạo đợt 3"></div>
+      <div style="grid-column:1/-1" class="row"><button class="pri">Tạo link mời</button><span class="err" id="imsg"></span></div></form><div id="invOut"></div>`;
+  $("#invX").onclick = () => p.hidden = true;
+  $("#invF").onsubmit = async e => { e.preventDefault(); $("#imsg").textContent = "";
+    try { const r = await api("/admin/invites", {body: {email: $("#ie").value, role: $("#ir").value, quota_projects: $("#ip").value, quota_jobs_month: $("#ij").value, days: $("#id2").value, note: $("#in").value}});
+      const url = inviteUrl(r.token); copyText(url);
+      $("#invOut").innerHTML = `<div class="next" style="margin-top:12px"><span class="grow">Đã tạo và sao chép link mời${r.email ? ` cho <b>${esc(r.email)}</b>` : ""}: <code>${esc(url)}</code></span><button class="sm" type="button" id="invC">Sao chép lại</button></div>`;
+      $("#invC").onclick = () => copyText(url); e.target.reset(); $("#id2").value = 7; } catch (x) { $("#imsg").textContent = x.message; } };
+}
+async function userDrawer(uid) {
+  closeDrawer(); const u = await api("/admin/users/" + uid), owner = A.me.role === "owner", self = u.id === A.me.id, ob = u.onboarding;
+  const bg = document.createElement("div"); bg.className = "drawer-bg"; bg.onclick = closeDrawer;
+  const d = document.createElement("aside"); d.className = "drawer"; d.setAttribute("aria-label", "Chi tiết người dùng");
+  d.innerHTML = `<div class="row"><div class="grow"><h2 style="margin:0">${esc(u.name)}</h2><div class="hint">${esc(u.email)} · tham gia ${ago(u.created)}${u.invited_by ? ` · mời bởi ${esc(u.invited_by)}` : ""}</div></div><button class="sm ghost" type="button" id="dx">Đóng ✕</button></div>
+    <div class="row" style="margin:12px 0">${pill(u.status)} <span class="pill core">${ROLE[u.role]}</span> <span class="hint">Đăng nhập ${ago(u.last_login)}</span></div>
+    <div class="card"><div class="row"><b class="grow">Bắt đầu</b><span class="hint">${ob.done}/${ob.total}</span></div><div class="meter" style="margin:8px 0"><i style="width:${ob.done / ob.total * 100}%"></i></div>
+      <ul class="plain">${ob.steps.map(x => `<li>${x.done ? '<span class="ok">✓</span>' : '<span class="hint">○</span>'} ${esc(x.title)}</li>`).join("")}</ul></div>
+    <div class="card" style="margin-top:12px"><b>Hạn mức & quyền</b><div class="grid g2" style="gap:0 12px">
+      <div><label for="dq1">Số dự án tối đa</label><input id="dq1" type="number" min="0" value="${u.quota_projects ?? ""}" placeholder="mặc định (${u.quota.projects_limit ?? "∞"})"></div>
+      <div><label for="dq2">Lần chạy hệ thống / tháng</label><input id="dq2" type="number" min="0" value="${u.quota_jobs_month ?? ""}" placeholder="mặc định (${u.quota.owner_jobs_limit ?? "∞"})"></div>
+      ${owner && !self ? `<div><label for="drole">Vai trò</label><select id="drole">${Object.entries(ROLE).map(([k, v]) => `<option value="${k}" ${u.role === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>` : ""}</div>
+      <div class="row" style="margin-top:10px"><button class="pri sm" type="button" id="dsave">Lưu hạn mức</button>
+      ${!self && (owner || u.role !== "owner") ? `<button class="sm ghost" type="button" id="dpw">Đặt mật khẩu mới</button><button class="sm ${u.status === "active" ? "danger" : ""}" type="button" id="dlock">${u.status === "active" ? "Khoá tài khoản" : "Mở khoá"}</button>` : ""}</div></div>
+    <div class="card" style="margin-top:12px"><b>Dự án · ${u.projects.length}</b><table class="t"><tbody>${u.projects.map(p => `<tr><td>${esc(p.name)}<div class="hint">${p.progress.answered}/${p.progress.total} câu · ${p.locked} điểm chốt</div></td><td>${pill(p.status)}</td><td class="hint">${ago(p.updated)}</td><td>${p.exported ? `<a href="/viewer/${esc(p.slug)}" target="_blank" rel="noopener">Hồ sơ ↗</a>` : ""}</td></tr>`).join("") || '<tr><td class="hint">Chưa có dự án.</td></tr>'}</tbody></table></div>
+    <div class="card" style="margin-top:12px"><b>Sử dụng tháng này</b><p class="hint" style="margin:4px 0">${tok(u.usage.i + u.usage.o)} token · ${u.usage.n} lượt · ${u.keys.length} API key${u.keys.length ? ": " + u.keys.map(k => `${esc(k.provider)} ${esc(k.key_hint)}`).join(", ") : ""}</p>
+      <table class="t"><tbody>${u.jobs.map(j => `<tr><td>#${j.id}</td><td>${esc(j.name || j.kind)}</td><td>${pill(j.status)}</td><td class="hint">${ago(j.created)}</td></tr>`).join("") || '<tr><td class="hint">Chưa có job.</td></tr>'}</tbody></table></div>
+    <div class="card" style="margin-top:12px"><b>Hoạt động gần đây</b><ul class="plain">${u.activity.map(a => `<li><code>${esc(a.action)}</code> ${esc(a.target)} <span class="hint">${ago(a.created)}</span></li>`).join("") || '<li class="hint">—</li>'}</ul></div>`;
+  document.body.append(bg, d);
+  const done = async m => { toast(m); await users(); userDrawer(uid); };
+  $("#dx").onclick = closeDrawer;
+  $("#dsave").onclick = async () => { try { const b = {quota_projects: $("#dq1").value, quota_jobs_month: $("#dq2").value}; if ($("#drole") && $("#drole").value !== u.role) b.role = $("#drole").value;
+    await api("/admin/users/" + uid, {method: "PATCH", body: b}); done("Đã lưu"); } catch (x) { toast(x.message); } };
+  $("#dpw") && ($("#dpw").onclick = async () => { const pw = await askText(`Mật khẩu mới cho ${u.email} (≥ 8 ký tự)`, "", "password"); if (!pw) return;
+    try { await api("/admin/users/" + uid, {method: "PATCH", body: {password: pw}}); toast("Đã đặt mật khẩu — phiên cũ của người dùng bị đăng xuất"); } catch (x) { toast(x.message); } });
+  $("#dlock") && ($("#dlock").onclick = async () => { const lock = u.status === "active";
+    if (!await ask(lock ? `Khoá ${u.email}? Người dùng bị đăng xuất ngay và không đăng nhập được.` : `Mở khoá ${u.email}?`, lock ? "Khoá" : "Mở khoá", lock)) return;
+    await api("/admin/users/" + uid, {method: "PATCH", body: {status: lock ? "disabled" : "active"}}); done(lock ? "Đã khoá" : "Đã mở khoá"); });
+}
+function closeDrawer() { $$(".drawer,.drawer-bg").forEach(e => e.remove()); }
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
 
 // ---------------------------------------------------------------- projects
 async function projects() {

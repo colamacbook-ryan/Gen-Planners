@@ -41,6 +41,14 @@ CREATE TABLE IF NOT EXISTS usage(
   input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0, cost_usd REAL, created TEXT);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY, user_id INTEGER, action TEXT, target TEXT, detail TEXT, created TEXT);
+CREATE TABLE IF NOT EXISTS shares(
+  id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, token TEXT UNIQUE NOT NULL, label TEXT, created_by INTEGER,
+  created TEXT, revoked INTEGER NOT NULL DEFAULT 0, views INTEGER NOT NULL DEFAULT 0, last_view TEXT);
+CREATE TABLE IF NOT EXISTS invites(
+  id INTEGER PRIMARY KEY, token TEXT UNIQUE NOT NULL, email TEXT, role TEXT NOT NULL DEFAULT 'user', quota_projects INTEGER,
+  quota_jobs_month INTEGER, note TEXT, created_by INTEGER, created TEXT, expires TEXT, used_by INTEGER, used_at TEXT, revoked INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS changes(
+  id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, user_id INTEGER, key TEXT, label TEXT, old TEXT, new TEXT, created TEXT);
 CREATE INDEX IF NOT EXISTS ix_msg ON messages(project_id, room);
 CREATE INDEX IF NOT EXISTS ix_usage ON usage(created);
 """
@@ -65,6 +73,11 @@ _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 _conn.row_factory = sqlite3.Row
 _conn.execute("PRAGMA journal_mode=WAL")
 _conn.executescript(SCHEMA)
+# Cột thêm sau phiên bản đầu — thêm nếu DB cũ chưa có.
+for _t, _c, _d in (("jobs", "progress", "TEXT"), ("projects", "is_sample", "INTEGER NOT NULL DEFAULT 0"),
+                   ("users", "onboarding", "TEXT"), ("users", "invited_by", "INTEGER")):
+    if _c not in [r[1] for r in _conn.execute(f"PRAGMA table_info({_t})")]:
+        _conn.execute(f"ALTER TABLE {_t} ADD COLUMN {_c} {_d}")
 for k, v in DEFAULT_SETTINGS.items():
     _conn.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (k, v))
 _conn.commit()

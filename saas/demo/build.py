@@ -53,14 +53,22 @@ def build():
     ab = sub(ab, '<a href="/admin" id="navAdmin" hidden>', '<a href="#" onclick="GPDEMO.nav(\'admin\');return false" id="navAdmin" hidden>')
     aj = sub(aj, '<a href="/api/projects/${S.cur.slug}/brief.md"><button type="button">Tải brief.md</button></a>',
              '<button type="button" onclick="GPDEMO.saveBrief(\'${S.cur.slug}\')">Tải brief.md</button>')
-    aj = sub(aj, '<a href="/viewer/${p.slug}" target="_blank" rel="noopener"><button type="button">Mở toàn màn hình ↗</button></a>',
+    aj = sub(aj, '<a href="/viewer/${p.slug}" target="_blank" rel="noopener"><button type="button">Toàn màn hình ↗</button></a>',
              '<button type="button" onclick="document.querySelector(\'iframe.viewer\').requestFullscreen?.()">Toàn màn hình ⛶</button>')
     aj = sub(aj, 'src="/viewer/${p.slug}"', 'src="viewer.html#${encodeURIComponent(p.slug)}|${encodeURIComponent(p.name)}"')
+    aj = sub(aj, 'location.href = `/api/projects/${p.slug}/bundle.zip`; toast("Đang tạo gói .zip…");',
+             'toast("Bản demo: tải từng file ở tab Tải về của trình xem. Gói .zip trọn bộ có trên bản máy chủ.");')
+    aj = sub(aj, 'full = u => location.origin + u;', 'full = u => "https://<máy-chủ-của-bạn>" + u + "  (bản demo)";')
     aj += "\nwindow.go = go;"
     ds, db, dj = pages["admin"]
     db = sub(db, '<a href="/app">← Về ứng dụng</a>', '<a href="#" onclick="GPDEMO.nav(\'app\');return false">← Về ứng dụng</a>')
     dj = sub(dj, '<a href="/viewer/${esc(p.slug)}" target="_blank" rel="noopener">Xem hồ sơ ↗</a>',
              '<a href="#" onclick="GPDEMO.nav(\'app\',\'p=${esc(p.slug)}&t=dossier\');return false">Xem hồ sơ</a>')
+    dj = sub(dj, '<a href="/viewer/${esc(p.slug)}" target="_blank" rel="noopener">Hồ sơ ↗</a>',
+             '<a href="#" onclick="closeDrawer();GPDEMO.nav(\'app\',\'p=${esc(p.slug)}&t=dossier\');return false">Hồ sơ</a>')
+    dj = sub(dj, '$("#invC").onclick = () => copyText(url);',
+             '$("#invC").onclick = () => copyText(url); $("#invOut .next").insertAdjacentHTML("beforeend", `<button class="sm pri" type="button" onclick="GPDEMO.openInvite(\'${r.token}\')">Thử đăng ký bằng lời mời này</button>`);')
+    dj = sub(dj, 'const inviteUrl = t => `${location.origin}/login?invite=${encodeURIComponent(t)}`;', 'const inviteUrl = t => `https://<máy-chủ-của-bạn>/login?invite=${encodeURIComponent(t)}`;')
     dj = sub(dj, '<a href="/app#p=${esc(p.slug)}&t=interview">Mở</a>',
              '<a href="#" onclick="GPDEMO.nav(\'app\',\'p=${esc(p.slug)}&t=interview\');return false">Mở</a>')
     pages = {"login": (ls, lb, lj), "app": (as_, ab, aj), "admin": (ds, db, dj)}

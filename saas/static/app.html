@@ -9,9 +9,12 @@
   <aside class="side">
     <div class="brand"><b id="site">Gen Planner</b><small>Từ ý tưởng tới hồ sơ khai phá</small></div>
     <nav>
+      <a href="#home" id="navHome">⌂ Bắt đầu <span class="badge" id="obProg"></span></a>
       <button id="newBtn" type="button">＋ Dự án mới</button>
       <div class="sec">Dự án của tôi</div>
       <div id="plist"></div>
+      <div class="sec" id="ssec" hidden>Dự án mẫu</div>
+      <div id="slist"></div>
       <div class="sec">Tài khoản</div>
       <a href="#settings" id="navSettings">⚙ Cài đặt · API key</a>
       <a href="/admin" id="navAdmin" hidden>◆ Trang quản trị</a>
@@ -22,15 +25,17 @@
 </div>
 <script src="/static/gp.js"></script>
 <script>
-const S = {me: null, projects: [], cur: null, tab: "interview", keys: [], providers: {}, poll: null};
-const TABS = [["interview", "Phỏng vấn"], ["brainstorm", "Brainstorm"], ["brief", "Brief"], ["run", "Chạy Plan"], ["dossier", "Hồ sơ"]];
+const S = {me: null, projects: [], samples: [], cur: null, tab: "interview", keys: [], providers: {}, poll: null};
+const TABS = [["interview", "Phỏng vấn"], ["brainstorm", "Brainstorm"], ["brief", "Brief"], ["run", "Chạy Plan"], ["dossier", "Hồ sơ"], ["numbers", "Số liệu"]];
+const EXAMPLE = {name: "Chuỗi cà phê robot pha chế", idea: "Quán cà phê nhỏ (30–40 m²) nơi tay robot pha chế ngay trước mặt khách — vừa uống vừa xem như một màn trình diễn. Khách đặt món qua app, robot làm 60–80 ly/giờ. Có góc trải nghiệm cho trẻ em lập trình robot đơn giản vào cuối tuần, bán gói sinh nhật. Bắt đầu 1 điểm ở TP.HCM trong trung tâm thương mại, sau 2 năm nhượng quyền. Đội ngũ: tôi là kỹ sư tự động hoá, một bạn làm F&B 8 năm. Vốn tự có khoảng 800 triệu."};
 const CAT = {product: "Sản phẩm", customer: "Khách hàng", channel: "Kênh", revenue: "Doanh thu", ops: "Vận hành", team: "Đội ngũ", risk: "Rủi ro", roadmap: "Lộ trình", other: "Khác"};
 
 function route() {
   clearInterval(S.poll);
   const h = new URLSearchParams(location.hash.slice(1));
   if (location.hash === "#settings") return viewSettings();
-  if (location.hash === "#new" || (!h.get("p") && !S.projects.length)) return viewNew();
+  if (location.hash === "#new") return viewNew();
+  if (location.hash === "#home" || (!h.get("p") && !S.projects.length)) return viewHome();
   const slug = h.get("p") || S.projects[0].slug; S.tab = h.get("t") || S.tab;
   openProject(slug);
 }
@@ -43,7 +48,40 @@ function sideList() {
   $("#plist").innerHTML = S.projects.map(p => `<a href="#p=${esc(p.slug)}&t=${S.tab}" class="${p.slug === cur ? "on" : ""}">
     <span class="grow">${esc(p.name)}<span class="sub">${STATUS[p.status] || p.status} · ${p.progress.answered}/${p.progress.total} câu · ${p.locked} điểm chốt</span></span></a>`).join("")
     || '<p class="hint" style="padding:0 10px;color:var(--hero-muted)">Chưa có dự án.</p>';
+  $("#slist").innerHTML = S.samples.map(p => `<a href="#p=${esc(p.slug)}&t=dossier" class="${p.slug === cur ? "on" : ""}"><span class="grow">${esc(p.name)}<span class="sub">chỉ đọc · hồ sơ hoàn chỉnh</span></span></a>`).join("");
+  $("#ssec").hidden = !S.samples.length;
   $("#navSettings").className = location.hash === "#settings" ? "on" : "";
+  $("#navHome").className = location.hash === "#home" || (!cur && !location.hash.startsWith("#new") && location.hash !== "#settings") ? "on" : "";
+  const ob = S.me.onboarding; $("#obProg").textContent = ob && ob.done < ob.total ? `${ob.done}/${ob.total}` : "";
+}
+
+// ---------------------------------------------------------------- bắt đầu (người dùng mới)
+const STEP_GO = {sample: () => S.samples[0] && openSample(), key: () => location.hash = "settings", project: () => location.hash = "new",
+  interview: () => latest("interview"), locked: () => latest("brainstorm"), plan: () => latest("run"), share: () => latest("dossier")};
+function latest(tab) { if (S.projects[0]) go(S.projects[0].slug, tab); else location.hash = "new"; }
+function openSample() { const s = S.samples[0]; api("/me/onboarding", {body: {viewed_sample: true}}).catch(() => {}); go(s.slug, "dossier"); }
+function viewHome() {
+  S.cur = null; sideList();
+  const ob = S.me.onboarding, next = ob.steps.find(x => !x.done), sm = S.samples[0], first = S.me.name || S.me.email.split("@")[0];
+  $("#main").innerHTML = topbar(`Chào ${esc(first)}`) + `</div><div class="body">
+    <div class="grid g2" style="align-items:start">
+      <section class="card"><div class="row"><h2 class="grow" style="margin:0">Bắt đầu trong 7 bước</h2><span class="hint">${ob.done}/${ob.total}</span></div>
+        <div class="meter" style="margin:10px 0 6px"><i style="width:${ob.done / ob.total * 100}%"></i></div>
+        <ol class="checklist">${ob.steps.map(x => `<li class="${x.done ? "done" : x === next ? "next" : ""}"><span class="tick" aria-hidden="true">${x.done ? "✓" : ""}</span>
+          <span class="grow">${esc(x.title)}</span>${x.done ? "" : `<button type="button" class="sm ${x === next ? "pri" : "ghost"}" data-step="${x.id}">${x === next ? "Làm ngay" : "Mở"}</button>`}</li>`).join("")}</ol>
+        <p class="hint" style="margin:8px 0 0">Mỗi bước tự đánh dấu khi bạn làm xong trong ứng dụng.</p></section>
+      <div class="grid" style="gap:14px">
+        ${sm ? `<section class="card feature"><div class="k">Xem trước kết quả</div><h2 style="margin:6px 0">${esc(sm.name)}</h2>
+          <p class="hint">Bộ hồ sơ hoàn chỉnh do agent dựng: console câu chuyện 6 bước, dashboard số liệu, nguồn có URL, file Word · PowerPoint · Excel. Bạn sẽ nhận được bộ hồ sơ như thế này cho ý tưởng của mình.</p>
+          <button type="button" class="pri" id="openSample">Xem hồ sơ mẫu →</button></section>` : ""}
+        <section class="card"><div class="k">Ý tưởng của bạn</div><h2 style="margin:6px 0">Tạo dự án mới</h2>
+          <p class="hint">Chỉ cần tên và vài câu mô tả. Trợ lý sẽ phỏng vấn để hiểu sâu hơn — không cần chuẩn bị gì thêm.</p>
+          <button type="button" id="homeNew">＋ Dự án mới</button></section>
+        ${S.me.has_keys || S.me.ai_live ? "" : `<section class="card"><div class="k">Trợ lý AI</div><p class="hint" style="margin:6px 0 10px">Trợ lý phỏng vấn và brainstorm chạy bằng API key AI của bạn (Anthropic, OpenAI, Gemini hoặc OpenRouter). Key được mã hoá và không bao giờ hiện lại.</p><a href="#settings"><button type="button">Thêm API key</button></a></section>`}
+      </div></div></div>`;
+  $$("[data-step]").forEach(b => b.onclick = () => STEP_GO[b.dataset.step]());
+  $("#openSample") && ($("#openSample").onclick = openSample);
+  $("#homeNew").onclick = () => location.hash = "new";
 }
 function keyBanner() {
   if (S.me.ai_live) return `<div class="banner"><b>Bản demo:</b> trợ lý đang chạy bằng Claude trong tài khoản claude.ai của bạn — không cần API key. Trên bản máy chủ, mỗi người dùng thêm API key riêng ở Cài đặt.</div>`;
@@ -61,8 +99,9 @@ function viewNew() {
   $("#main").innerHTML = topbar("Dự án mới") + `</div><div class="body"><div class="grid g2">
     <form class="card" id="nf">${keyBanner()}
       <label for="nn">Tên dự án</label><input id="nn" required maxlength="120" placeholder="Ví dụ: Hệ sinh thái AI Robot Pet">
-      <label for="ni">Mô tả ý tưởng — viết tự nhiên, càng chi tiết càng tốt</label>
+      <div class="row" style="margin:10px 0 4px"><label for="ni" class="grow" style="margin:0">Mô tả ý tưởng — viết tự nhiên, càng chi tiết càng tốt</label><button type="button" class="sm ghost" id="fillEx">Điền ví dụ</button></div>
       <textarea id="ni" rows="12" required placeholder="Sản phẩm là gì, cho ai, kiếm tiền thế nào, các mảng xung quanh, nguồn lực đang có…"></textarea>
+      <div class="row hint" style="justify-content:space-between"><span id="niHint">Gợi ý: sản phẩm · khách hàng · cách kiếm tiền · nguồn lực</span><span id="niCount">0 ký tự</span></div>
       <label for="nc">Thị trường mục tiêu</label><input id="nc" value="Việt Nam">
       <p class="err" id="nmsg"></p><button class="pri">Tạo dự án & bắt đầu phỏng vấn</button>
       <p class="hint">Hạn mức: ${S.me.quota.projects_limit == null ? "không giới hạn" : `${S.me.quota.projects}/${S.me.quota.projects_limit} dự án`}.</p></form>
@@ -73,6 +112,13 @@ function viewNew() {
         <li><b>Brief</b> — tự biên dịch từ câu trả lời + điểm đã chốt; là neo bắt buộc cho agent.</li>
         <li><b>Chạy Plan</b> — core agent nghiên cứu R1–R9, dựng số liệu một nguồn, kiểm tra chất lượng.</li>
         <li><b>Hồ sơ</b> — console câu chuyện, dashboard, tải Word/PowerPoint/Excel.</li></ol></div></div></div>`;
+  const cover = () => { const t = $("#ni").value, has = [["sản phẩm", /sản phẩm|dịch vụ|bán|quán|app|máy/i], ["khách hàng", /khách|người dùng|cho ai|gia đình|trẻ|doanh nghiệp/i],
+      ["cách kiếm tiền", /giá|doanh thu|bán|phí|thu|lợi nhuận/i], ["nguồn lực", /vốn|đội|kinh nghiệm|nhà xưởng|mặt bằng|team/i]];
+    $("#niCount").textContent = t.length + " ký tự";
+    const miss = has.filter(([, re]) => !re.test(t)).map(([n]) => n);
+    $("#niHint").textContent = t.length < 20 ? "Gợi ý: sản phẩm · khách hàng · cách kiếm tiền · nguồn lực" : miss.length ? "Có thể thêm: " + miss.join(" · ") : "✓ Đủ ý để bắt đầu phỏng vấn"; };
+  $("#ni").oninput = cover;
+  $("#fillEx").onclick = () => { $("#nn").value ||= EXAMPLE.name; $("#ni").value = EXAMPLE.idea; cover(); };
   $("#nf").onsubmit = async e => { e.preventDefault();
     try { const p = await api("/projects", {body: {name: $("#nn").value, idea: $("#ni").value, country: $("#nc").value}});
       await loadProjects(); S.tab = "interview"; go(p.slug, "interview"); } catch (x) { $("#nmsg").textContent = x.message; } };
@@ -80,18 +126,31 @@ function viewNew() {
 
 // ---------------------------------------------------------------- project shell
 async function openProject(slug) {
-  try { S.cur = await api("/projects/" + slug); } catch (x) { toast(x.message); return viewNew(); }
+  try { S.cur = await api("/projects/" + slug); } catch (x) { toast(x.message); return viewHome(); }
+  if (S.cur.is_sample && S.tab === "interview") S.tab = "dossier";
   sideList(); renderProject();
+}
+function nextStep(p) {
+  if (!p.mine || p.is_sample) return p.is_sample ? ["Đây là dự án mẫu (chỉ đọc) — xem tab Hồ sơ và Số liệu để biết bộ hồ sơ cuối cùng trông thế nào.", null, null] : ["Bạn đang xem dự án của người khác (chỉ đọc).", null, null];
+  const running = p.jobs.find(j => ["queued", "starting", "running"].includes(j.status));
+  const miss = p.progress.required_missing.length;
+  if (running) { const pr = running.progress ? JSON.parse(running.progress) : null; return [`Đang chạy ${running.kind === "plan" ? "Plan" : "cập nhật"}${pr ? ` — xong ${pr.done}/${pr.total} stage` : ""}. Bạn có thể đóng trang, tiến độ vẫn chạy.`, "run", "Xem tiến trình"]; }
+  if (miss) return [`Bước tiếp: trả lời ${miss} câu phỏng vấn bắt buộc còn thiếu.`, "interview", "Tiếp tục phỏng vấn"];
+  if (!p.locked) return ["Bước tiếp: chốt ít nhất một điểm quan trọng ở Brainstorm — điểm đã chốt là neo cho agent.", "brainstorm", "Mở Brainstorm"];
+  if (!p.exported) return ["Đủ thông tin. Bước tiếp: chạy Plan để agent nghiên cứu và dựng hồ sơ.", "run", "Chạy Plan"];
+  if (!p.shares.length) return ["Hồ sơ đã xong. Bước tiếp: gửi link chỉ đọc cho nhà đầu tư, hoặc thử đổi giả định ở tab Số liệu.", "dossier", "Chia sẻ hồ sơ"];
+  return null;
 }
 function renderProject() {
   const p = S.cur, pr = p.progress, pct = Math.round(pr.answered / pr.total * 100);
   $("#main").innerHTML = topbar(esc(p.name), `${pill(p.status)}<div style="width:180px"><div class="hint">Phỏng vấn ${pr.answered}/${pr.total} · ${p.locked} điểm chốt</div><div class="meter"><i style="width:${pct}%"></i></div></div>`) +
     `<div class="tabs" role="tablist">${TABS.map(([k, l], i) => `<button type="button" role="tab" data-t="${k}" class="${S.tab === k ? "on" : ""}"><span class="n">${i + 1}</span>${l}</button>`).join("")}</div></div>
-    <div class="body" id="tab"></div>`;
+    <div class="body">${(n => n ? `<div class="next"><span class="grow">${n[0]}</span>${n[1] && n[1] !== S.tab ? `<button type="button" class="sm pri" data-next="${n[1]}">${n[2]} →</button>` : ""}</div>` : "")(nextStep(p))}<div id="tab"></div></div>`;
   $$(".tabs button").forEach(b => b.onclick = () => go(p.slug, b.dataset.t));
-  ({interview: tabInterview, brainstorm: tabBrainstorm, brief: tabBrief, run: tabRun, dossier: tabDossier}[S.tab] || tabInterview)();
+  $("[data-next]") && ($("[data-next]").onclick = e => go(p.slug, e.target.dataset.next));
+  ({interview: tabInterview, brainstorm: tabBrainstorm, brief: tabBrief, run: tabRun, dossier: tabDossier, numbers: tabNumbers}[S.tab] || tabInterview)();
 }
-async function refresh() { S.cur = await api("/projects/" + S.cur.slug); await loadProjects(); }
+async function refresh() { S.cur = await api("/projects/" + S.cur.slug); await loadProjects(); S.me = await api("/me"); sideList(); }
 
 // ---------------------------------------------------------------- chat (shared)
 async function chatBox(room, el, sideHtml, after) {
@@ -197,8 +256,9 @@ async function tabRun() {
     <div class="row" style="margin-top:14px"><button class="pri" id="go" ${running || !p.mine ? "disabled" : ""}>▶ Chạy Plan</button>
     ${miss.length ? '<label class="row hint" style="margin:0"><input type="checkbox" id="force" style="width:auto"> chạy dù còn thiếu</label>' : ""}</div><p class="err" id="rmsg"></p></div>
     <div class="card"><div class="row"><h2 class="grow" style="margin:0">Tiến trình</h2><span id="jst"></span><button class="sm danger" id="cancel" hidden type="button">Huỷ</button></div>
+    <div id="jprog" hidden style="margin-top:10px"><div class="row hint"><span class="grow">Tiến độ stage</span><span id="jprogT"></span></div><div class="meter"><i id="jprogB" style="width:0"></i></div></div>
     <pre class="log" id="jlog" style="margin-top:10px">${running ? "Đang tải…" : "Chưa có job đang chạy."}</pre>
-    <div class="k" style="margin-top:14px">Lịch sử</div><table class="t"><tbody>${p.jobs.map(j => `<tr><td>#${j.id}</td><td>${pill(j.status)}</td><td>${esc(j.engine)} · ${esc(j.billing)}</td><td class="hint">${ago(j.created)}</td><td><a href="#" data-j="${j.id}">log</a></td></tr>`).join("") || '<tr><td class="hint">Chưa chạy lần nào.</td></tr>'}</tbody></table></div></div>`;
+    <div class="k" style="margin-top:14px">Lịch sử</div><table class="t"><tbody>${p.jobs.map(j => `<tr><td>#${j.id}</td><td>${pill(j.status)}</td><td>${esc(JOBKIND[j.kind] || "Plan")}<div class="hint">${esc(j.engine)} · ${esc(j.billing)}</div></td><td class="hint">${ago(j.created)}</td><td><a href="#" data-j="${j.id}">log</a></td></tr>`).join("") || '<tr><td class="hint">Chưa chạy lần nào.</td></tr>'}</tbody></table></div></div>`;
   const sync = () => { const v = $("input[name=bill]:checked")?.value; $("#keyRow").hidden = v !== "user_key"; $$(".opt").forEach(o => o.classList.toggle("on", o.querySelector("input").checked)); };
   $$("input[name=bill]").forEach(r => r.onchange = sync); sync();
   $("#go").onclick = async () => { $("#rmsg").textContent = "";
@@ -207,6 +267,7 @@ async function tabRun() {
   $$("[data-j]").forEach(a => a.onclick = e => { e.preventDefault(); watch(+a.dataset.j); });
   if (running) watch(running.id); else if (p.jobs[0]) watch(p.jobs[0].id, true);
 }
+const JOBKIND = {plan: "Chạy Plan", rebuild: "Build lại sau khi sửa số liệu", linkcheck: "Kiểm tra link nguồn"};
 function watch(id, once) {
   clearInterval(S.poll);
   const tick = async () => { if (!$("#jlog")) return clearInterval(S.poll);
@@ -214,17 +275,106 @@ function watch(id, once) {
     el.textContent = `Job #${j.id} · ${j.engine} · ${j.billing}${j.model ? " · " + j.model : ""}\n` + (j.log || "…");
     if (atEnd) el.scrollTop = el.scrollHeight;
     $("#jst").innerHTML = pill(j.status); const live = ["queued", "starting", "running"].includes(j.status);
+    const pr = j.progress ? JSON.parse(j.progress) : null; $("#jprog").hidden = !pr;
+    if (pr) { $("#jprogT").textContent = `${pr.done}/${pr.total}`; $("#jprogB").style.width = pr.done / pr.total * 100 + "%"; }
     $("#cancel").hidden = !live || !S.cur.mine; $("#cancel").onclick = async () => { if (await ask("Huỷ job đang chạy?", "Huỷ job")) await api(`/jobs/${id}/cancel`, {method: "POST"}); };
-    if (!live) { clearInterval(S.poll); if (!once && j.status === "done") { await refresh(); toast("Plan đã xong — mở tab Hồ sơ"); renderProject(); } } };
+    if (!live) { clearInterval(S.poll); if (!once && j.status === "done") { await refresh(); toast(j.kind === "plan" ? "Plan đã xong — mở tab Hồ sơ" : "Đã cập nhật"); renderProject(); } } };
   tick(); if (!once) S.poll = setInterval(tick, 2000);
 }
 
 // ---------------------------------------------------------------- 5. dossier
 function tabDossier() {
   const p = S.cur;
-  $("#tab").innerHTML = p.exported ? `<div class="row" style="margin-bottom:10px"><p class="hint grow" style="margin:0">Console câu chuyện · dashboard số liệu · hồ sơ chi tiết · tải Word/PowerPoint/Excel ở tab Tải về của trình xem.</p>
-    <a href="/viewer/${p.slug}" target="_blank" rel="noopener"><button type="button">Mở toàn màn hình ↗</button></a></div><iframe class="viewer" src="/viewer/${p.slug}" title="Hồ sơ ${esc(p.name)}"></iframe>`
-    : `<div class="card empty">Chưa có hồ sơ. Hoàn tất phỏng vấn, chốt điểm, rồi <a href="#p=${p.slug}&t=run">Chạy Plan</a>.</div>`;
+  if (p.is_sample && !S.me.onboarding.steps[0].done) api("/me/onboarding", {body: {viewed_sample: true}}).then(async () => { S.me = await api("/me"); sideList(); }).catch(() => {});
+  if (!p.exported) { $("#tab").innerHTML = `<div class="card empty">Chưa có hồ sơ. Hoàn tất phỏng vấn, chốt điểm, rồi <a href="#p=${p.slug}&t=run">Chạy Plan</a>.</div>`; return; }
+  const L = p.links;
+  $("#tab").innerHTML = `<div class="toolbar">
+      <button type="button" id="zip">⬇ Tải trọn bộ .zip</button>
+      ${p.mine && !p.is_sample ? `<button type="button" id="shareBtn" class="${p.shares.length ? "" : "pri"}">↗ Chia sẻ cho nhà đầu tư${p.shares.length ? ` · ${p.shares.length}` : ""}</button>` : ""}
+      <span class="linkstat ${L && L.broken.length ? "warn" : ""}">${L ? `Nguồn: <b>${L.ok}/${L.checked}</b> link mở được${L.blocked ? ` · ${L.blocked} chặn bot` : ""}${L.broken.length ? ` · <a href="#" id="showBroken">${L.broken.length} hỏng</a>` : " ✓"}` : "Chưa kiểm tra link nguồn"}</span>
+      ${p.mine || ["owner", "admin"].includes(S.me.role) ? '<button type="button" class="sm ghost" id="chk">Kiểm tra link</button>' : ""}
+      <span class="grow"></span><a href="/viewer/${p.slug}" target="_blank" rel="noopener"><button type="button">Toàn màn hình ↗</button></a></div>
+    <section class="card" id="sharePanel" hidden></section>
+    <section class="card" id="brokenPanel" hidden><div class="row"><h3 class="grow" style="margin:0">Link nguồn không mở được</h3><button type="button" class="sm ghost" data-close="brokenPanel">Đóng</button></div>
+      <p class="hint">Agent phải thay nguồn khác hoặc hạ giả định về "ước tính". Link "chặn bot" thường vẫn mở được trên trình duyệt.</p>
+      <ul class="plain">${(L?.broken || []).map(b => `<li><span class="pill bad">${esc(String(b.code || b.error || "lỗi"))}</span> <a href="${esc(b.url)}" target="_blank" rel="noopener">${esc(b.title || b.url)}</a> <span class="hint">${esc(b.where)}</span></li>`).join("")}</ul></section>
+    <iframe class="viewer" src="/viewer/${p.slug}" title="Hồ sơ ${esc(p.name)}"></iframe>`;
+  $("#zip").onclick = () => { location.href = `/api/projects/${p.slug}/bundle.zip`; toast("Đang tạo gói .zip…"); };
+  $("#showBroken") && ($("#showBroken").onclick = e => { e.preventDefault(); $("#brokenPanel").hidden = false; });
+  $$("[data-close]").forEach(b => b.onclick = () => $("#" + b.dataset.close).hidden = true);
+  $("#chk") && ($("#chk").onclick = async () => { try { const r = await api(`/projects/${p.slug}/linkcheck`, {method: "POST"}); toast("Đang kiểm tra link nguồn…"); await waitJob(r.job_id); await refresh(); tabDossier(); toast("Đã kiểm tra xong"); } catch (x) { toast(x.message); } });
+  $("#shareBtn") && ($("#shareBtn").onclick = () => { const sp = $("#sharePanel"); sp.hidden = !sp.hidden; if (!sp.hidden) sharePanel(); });
+}
+function sharePanel() {
+  const p = S.cur, sp = $("#sharePanel"), full = u => location.origin + u;
+  sp.innerHTML = `<div class="row"><h3 class="grow" style="margin:0">Link chỉ đọc cho nhà đầu tư</h3><button type="button" class="sm ghost" data-close="sharePanel">Đóng</button></div>
+    <p class="hint">Người nhận xem console, dashboard và tải file — không cần tài khoản, không sửa được gì. Mỗi người một link để biết ai đã mở; thu hồi bất cứ lúc nào.</p>
+    <form class="row" id="sf"><input id="sl" class="grow" placeholder="Gửi cho ai? Ví dụ: Anh Minh — quỹ ABC" maxlength="80"><button class="pri">Tạo link</button></form>
+    <table class="t" style="margin-top:10px"><tbody>${p.shares.map(x => `<tr><td><b>${esc(x.label || "Không tên")}</b><div class="hint mono">${esc(full(x.url))}</div></td>
+      <td class="hint">${x.views} lượt xem${x.last_view ? " · " + ago(x.last_view) : ""}</td>
+      <td class="row" style="flex-wrap:nowrap"><button type="button" class="sm" data-copy="${esc(full(x.url))}">Sao chép</button><button type="button" class="sm ghost danger" data-revoke="${x.id}">Thu hồi</button></td></tr>`).join("") || '<tr><td class="hint">Chưa có link nào.</td></tr>'}</tbody></table>`;
+  $$("[data-close]", sp).forEach(b => b.onclick = () => sp.hidden = true);
+  $("#sf").onsubmit = async e => { e.preventDefault(); try { const r = await api(`/projects/${p.slug}/shares`, {body: {label: $("#sl").value}}); await refresh(); copy(full(r.url)); renderProject(); setTimeout(() => { $("#sharePanel").hidden = false; sharePanel(); }, 0); } catch (x) { toast(x.message); } };
+  $$("[data-copy]", sp).forEach(b => b.onclick = () => copy(b.dataset.copy));
+  $$("[data-revoke]", sp).forEach(b => b.onclick = async () => { if (!await ask("Thu hồi link này? Người đang giữ link sẽ không mở được nữa.", "Thu hồi")) return;
+    await api("/shares/" + b.dataset.revoke, {method: "DELETE"}); await refresh(); sharePanel(); });
+}
+function copy(t) { navigator.clipboard?.writeText(t).then(() => toast("Đã sao chép link"), () => toast(t)) ?? toast(t); }
+async function waitJob(id) { for (;;) { const j = await api("/jobs/" + id); if (!["queued", "starting", "running"].includes(j.status)) return j; await new Promise(r => setTimeout(r, 1500)); } }
+
+// ---------------------------------------------------------------- 6. số liệu (what-if)
+const STAT = {verified: "kiểm chứng", estimate: "ước tính", placeholder: "chưa có"};
+const vnum = (x, d = 1) => x == null || isNaN(x) ? "—" : Number(x).toLocaleString("vi-VN", {maximumFractionDigits: d});
+function kpiStrip(k, before) {
+  if (!k) return "";
+  const d = (a, b) => before && b != null && a !== b ? `<span class="delta ${a > b ? "up" : "down"}">${a > b ? "▲" : "▼"} ${vnum(Math.abs(a - b) / 1000)} tỷ</span>` : "";
+  const bs = k.by_status || {};
+  return `<div class="grid g4 kpis">
+    <div class="card kpi"><div class="k">Doanh thu ${k.year_last}</div><b>${vnum(k.revenue_last / 1000)} tỷ</b>${d(k.revenue_last, before?.revenue_last)}</div>
+    <div class="card kpi"><div class="k">EBITDA ${k.year_last}</div><b>${vnum(k.ebitda_last / 1000)} tỷ</b>${d(k.ebitda_last, before?.ebitda_last)}</div>
+    <div class="card kpi"><div class="k">Năm hoà vốn</div><b>${k.breakeven || "chưa"}</b>${before && before.breakeven !== k.breakeven ? `<span class="delta">trước: ${before.breakeven || "chưa"}</span>` : ""}</div>
+    <div class="card kpi"><div class="k">Độ tin cậy số liệu</div><b>${bs.verified || 0}<small> / ${(bs.verified || 0) + (bs.estimate || 0) + (bs.placeholder || 0)}</small></b><span>đã kiểm chứng · ${bs.estimate || 0} ước tính · ${bs.placeholder || 0} chưa có</span></div></div>`;
+}
+async function tabNumbers() {
+  const p = S.cur, before = S.numbersBefore; S.numbersBefore = null;
+  if (!p.has_workspace) { $("#tab").innerHTML = `<div class="card empty">Bảng số liệu xuất hiện sau khi chạy Plan. <a href="#p=${p.slug}&t=run">Chạy Plan →</a></div>`; return; }
+  let A; try { A = await api(`/projects/${p.slug}/assumptions`); } catch (x) { $("#tab").innerHTML = `<div class="card empty">${esc(x.message)}</div>`; return; }
+  const y0 = A.meta.start_year, edits = {}, F = {q: "", st: "", facts: false};
+  $("#tab").innerHTML = `${kpiStrip(A.kpi, before)}
+    <div class="card" style="margin-top:14px"><div class="row" style="margin-bottom:10px">
+      <div class="grow"><h2 style="margin:0">Giả định & what-if</h2><p class="hint" style="margin:2px 0 0">Mọi con số trong hồ sơ đều tính từ bảng này. Đổi một giá trị → build lại → Word, PowerPoint, Excel và dashboard cập nhật theo.${A.readonly ? " " + esc(A.readonly) : p.mine ? "" : " (Chỉ đọc)"}</p></div>
+      <input id="nq" placeholder="Tìm giả định…" style="max-width:220px">
+      <select id="nst" style="width:auto"><option value="">Mọi trạng thái</option>${Object.entries(STAT).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select>
+      <label class="row hint" style="margin:0"><input type="checkbox" id="nfact" style="width:auto"> hiện dữ kiện thị trường</label></div>
+      <div class="scroll-x"><table class="t num-table"><thead><tr><th>Giả định</th><th>Giá trị${A.assumptions.some(a => Array.isArray(a.value)) ? ` <span class="hint">(theo năm ${y0}→)</span>` : ""}</th><th>Đơn vị</th><th>Trạng thái</th><th>Nguồn / ghi chú</th></tr></thead><tbody id="nrows"></tbody></table></div></div>
+    ${p.changes.length ? `<div class="card" style="margin-top:14px"><h3>Lịch sử thay đổi</h3><table class="t"><tbody>${p.changes.map(c => `<tr><td>${esc(c.label)}</td><td class="mono hint">${esc(c.old)} → <b>${esc(c.new)}</b></td><td class="hint">${ago(c.created)}</td></tr>`).join("")}</tbody></table></div>` : ""}
+    <div class="savebar" id="savebar" hidden><span class="grow" id="saveN"></span><button type="button" class="ghost" id="undo">Huỷ thay đổi</button><button type="button" class="pri" id="save">Lưu & build lại</button></div>`;
+  const draw = () => {
+    const rows = A.assumptions.filter(a => (F.facts || !a.id.startsWith("fact_")) && (!F.st || a.status === F.st) && (!F.q || (a.label + a.id).toLowerCase().includes(F.q)));
+    $("#nrows").innerHTML = rows.map(a => { const v = a.id in edits ? edits[a.id] : a.value, ro = !p.mine || p.is_sample || A.readonly || typeof (Array.isArray(a.value) ? a.value[0] : a.value) !== "number";
+      const inp = (val, i) => `<input class="nv" data-id="${a.id}" ${i != null ? `data-i="${i}" title="${y0 + i}"` : ""} value="${esc(val)}" inputmode="decimal" ${ro ? "readonly" : ""}>`;
+      return `<tr class="${a.id in edits ? "edited" : ""}"><td><b>${esc(a.label)}</b><div class="hint mono">${esc(a.id)}</div></td>
+        <td><div class="vals">${Array.isArray(a.value) ? v.map((x, i) => inp(x, i)).join("") : inp(v)}</div></td><td class="hint">${esc(a.unit || "")}</td>
+        <td><span class="chip c-${esc(a.status)}">${STAT[a.status] || esc(a.status || "")}</span></td>
+        <td class="hint">${a.source.filter(x => x !== "ev-000").map(x => `<code>${esc(x)}</code>`).join(" ")} ${esc(a.note || "")}</td></tr>`; }).join("") || '<tr><td colspan="5" class="hint">Không có giả định khớp bộ lọc.</td></tr>';
+    $$(".nv").forEach(el => el.onchange = () => { const a = A.assumptions.find(x => x.id === el.dataset.id), n = Number(String(el.value).replace(",", "."));
+      if (isNaN(n)) { toast("Cần nhập số"); el.value = a.value; return; }
+      if (Array.isArray(a.value)) { const cur = [...(edits[a.id] || a.value)]; cur[+el.dataset.i] = n; edits[a.id] = cur; } else edits[a.id] = n;
+      if (JSON.stringify(edits[a.id]) === JSON.stringify(a.value)) delete edits[a.id];
+      bar(); el.closest("tr").classList.toggle("edited", a.id in edits); });
+  };
+  const bar = () => { const n = Object.keys(edits).length; $("#savebar").hidden = !n; $("#saveN").textContent = `${n} giả định đã đổi — chưa lưu`; };
+  $("#nq").oninput = e => { F.q = e.target.value.toLowerCase(); draw(); };
+  $("#nst").onchange = e => { F.st = e.target.value; draw(); };
+  $("#nfact").onchange = e => { F.facts = e.target.checked; draw(); };
+  $("#undo").onclick = () => { for (const k in edits) delete edits[k]; draw(); bar(); };
+  $("#save").onclick = async () => { const b = $("#save"); b.disabled = true; b.textContent = "Đang lưu…";
+    try { for (const [k, v] of Object.entries(edits)) await api(`/projects/${p.slug}/assumptions/${k}`, {method: "PATCH", body: {value: v}});
+      b.textContent = "Đang build lại…"; const r = await api(`/projects/${p.slug}/rebuild`, {method: "POST"}); const j = await waitJob(r.job_id);
+      if (j.status !== "done") throw new Error("Build lại thất bại — xem log ở tab Chạy Plan");
+      await refresh(); toast("Đã cập nhật toàn bộ hồ sơ"); S.numbersBefore = A.kpi; renderProject();
+    } catch (x) { toast(x.message); b.disabled = false; b.textContent = "Lưu & build lại"; } };
+  draw();
 }
 
 // ---------------------------------------------------------------- settings
@@ -260,7 +410,7 @@ async function viewSettings() {
   $("#pf").onsubmit = async e => { e.preventDefault(); try { await api("/me/password", {body: {old: $("#po").value, new: $("#pn").value}}); toast("Đã đổi mật khẩu"); e.target.reset(); } catch (x) { $("#pmsg").textContent = x.message; } };
 }
 
-async function loadProjects() { S.projects = await api("/projects"); sideList(); }
+async function loadProjects() { [S.projects, S.samples] = await Promise.all([api("/projects"), api("/samples")]); sideList(); }
 (async () => {
   S.me = await api("/me"); $("#site").textContent = S.me.site_name; document.title = S.me.site_name;
   $("#who").textContent = S.me.email; $("#navAdmin").hidden = !["owner", "admin"].includes(S.me.role);

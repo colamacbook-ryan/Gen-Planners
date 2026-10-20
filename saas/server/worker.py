@@ -12,7 +12,7 @@ import sys
 import threading
 import time
 
-from . import agents, db, interview
+from . import agents, db, interview, ssot
 from .config import JOBS_HOME, ROOT, WORKSPACE, which
 from .security import dec
 
@@ -99,6 +99,7 @@ def run_agent(job, engine, env, model, project_dir, p):
                             start_new_session=True)
     _running[job["id"]] = proc
     db.update("jobs", job["id"], pid=proc.pid)
+    threading.Thread(target=watch_progress, args=(job["id"], p["slug"], proc), daemon=True).start()
     usage, tail, t0 = None, [], time.time()
     for line in proc.stdout:
         line = line.strip()
@@ -121,6 +122,32 @@ def run_agent(job, engine, env, model, project_dir, p):
     return proc.returncode, usage, "\n".join(tail)
 
 
+def watch_progress(jid, slug, proc):
+    """Agent đánh dấu stage done trong project.yaml — đọc định kỳ để UI hiện tiến độ."""
+    last = None
+    while proc.poll() is None:
+        pr = ssot.stage_progress(slug)
+        if pr and pr != last:
+            db.update("jobs", jid, progress=json.dumps(pr))
+            last = pr
+        time.sleep(5)
+
+
+def post_build(jid, p, link_check=True):
+    """build + check + export (+ kiểm link nguồn). Trả (ok, số lỗi check)."""
+    bcode, _ = sh(jid, [*GEN, "build", p["slug"]])
+    ccode, cout = sh(jid, [*GEN, "check", p["slug"]])
+    sh(jid, [*EXPORT, p["slug"], "--media-base", f"/api/projects/{p['slug']}/media"])
+    if link_check and bcode == 0:
+        log(jid, "Kiểm tra link nguồn…")
+        try:
+            r = ssot.link_check(p["slug"])
+            log(jid, f"✓ {r['ok']}/{r['checked']} link mở được · {r['blocked']} bị chặn bot · {len(r['broken'])} hỏng")
+        except Exception as e:  # noqa: BLE001 — kiểm link lỗi không làm hỏng job
+            log(jid, f"(bỏ qua kiểm link: {e})")
+    return bcode == 0, cout.count("ERROR")
+
+
 # ------------------------------------------------------------------ main job
 def run_job(job):
     jid = job["id"]
@@ -130,6 +157,15 @@ def run_job(job):
             code, _ = sh(jid, ["bash", "-lc", agents.ENGINES[job["engine"]]["install"]], timeout=900)
             return finish(jid, "done" if code == 0 else "failed", None if code == 0 else f"exit {code}")
         p = db.one("SELECT * FROM projects WHERE id=?", (job["project_id"],))
+        if job["kind"] in ("rebuild", "linkcheck"):
+            if job["kind"] == "linkcheck":
+                r = ssot.link_check(p["slug"])
+                log(jid, f"✓ {r['ok']}/{r['checked']} link mở được · {r['blocked']} bị chặn bot · {len(r['broken'])} hỏng")
+                for b in r["broken"][:20]:
+                    log(jid, f"  ✗ {b.get('code') or b.get('error')}  {b['url']}")
+                return finish(jid, "done")
+            ok, errors = post_build(jid, p, link_check=False)
+            return finish(jid, "done" if ok else "failed", None if ok else "Build lỗi", p)
         d = ensure_project(jid, p)
         db.update("projects", p["id"], status="running", updated=db.now())
         usage, engine, profile = None, job["engine"], None
@@ -171,11 +207,8 @@ def run_job(job):
                         return
                     return finish(jid, "failed", f"Tài khoản agent {STATUS_VI[reason]} — báo owner (admin → Core agent)", p)
                 return finish(jid, "failed", f"Agent thoát mã {code}", p)
-        bcode, _ = sh(jid, [*GEN, "build", p["slug"]])
-        ccode, cout = sh(jid, [*GEN, "check", p["slug"]])
-        sh(jid, [*EXPORT, p["slug"], "--media-base", f"/api/projects/{p['slug']}/media"])
-        errors = cout.count("ERROR")
-        if bcode != 0:
+        ok, errors = post_build(jid, p, link_check=engine != "demo")
+        if not ok:
             return finish(jid, "failed", "Build lỗi", p)
         finish(jid, "done", f"check: {errors} lỗi" if errors else None, p)
     except Exception as e:  # noqa: BLE001 — mọi lỗi phải hiện trong log job

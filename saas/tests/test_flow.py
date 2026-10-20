@@ -73,5 +73,77 @@ def test_full_flow():
         uid = next(u["id"] for u in owner.get("/api/admin/users").json() if u["email"] == "u@x.io")
         owner.patch(f"/api/admin/users/{uid}", json={"status": "disabled"})
         assert user.get("/api/me").status_code == 401                    # bị khoá → phiên mất hiệu lực
-        assert owner.get("/api/admin/overview").json()["projects"] == 1
+        assert owner.get("/api/admin/overview").json()["projects"] >= 1
         assert any(a["action"] == "job_create" for a in owner.get("/api/admin/audit").json())
+
+
+def wait_job(c, jid, timeout=180):
+    for _ in range(timeout * 2):
+        j = c.get(f"/api/jobs/{jid}").json()
+        if j["status"] in ("done", "failed", "cancelled"):
+            return j
+        time.sleep(0.5)
+    raise AssertionError("job treo")
+
+
+def test_growth_features():
+    """Lời mời, dự án mẫu, onboarding, sửa số liệu + build lại, link chia sẻ, gói zip, chi tiết user."""
+    with client() as owner, client() as user, client() as anon:
+        if owner.post("/api/auth/login", json={"email": "owner@x.io", "password": "password1"}).status_code != 200:
+            owner.post("/api/auth/signup", json={"email": "owner@x.io", "password": "password1"})   # chạy riêng test này
+        owner.put("/api/admin/settings", json={"allow_signup": "0", "default_quota_jobs_month": "3"})
+        assert user.post("/api/auth/signup", json={"email": "new@x.io", "password": "password1"}).status_code == 403
+        inv = owner.post("/api/admin/invites", json={"email": "new@x.io", "quota_projects": 2, "days": 3}).json()
+        assert anon.get(f"/api/public?invite={inv['token']}").json()["invite"]["email"] == "new@x.io"
+        assert user.post("/api/auth/signup", json={"email": "other@x.io", "password": "password1", "invite": inv["token"]}).status_code == 400
+        assert user.post("/api/auth/signup", json={"email": "new@x.io", "password": "password1", "invite": inv["token"]}).status_code == 200
+        assert anon.post("/api/auth/signup", json={"email": "x@x.io", "password": "password1", "invite": inv["token"]}).status_code == 400  # dùng 1 lần
+        me = user.get("/api/me").json()
+        assert me["quota"]["projects_limit"] == 2 and me["onboarding"]["done"] == 0
+
+        # dự án mẫu dùng chung: user đọc được, không ghi được
+        if not owner.get("/api/samples").json():
+            owner.post("/api/admin/seed-sample")
+        for _ in range(120):
+            sm = user.get("/api/samples").json()
+            if sm and sm[0]["exported"] and sm[0]["status"] == "done":
+                break
+            time.sleep(0.5)
+        slug_s = sm[0]["slug"]
+        assert user.get(f"/api/projects/{slug_s}").status_code == 200
+        assert user.post(f"/api/projects/{slug_s}/brief").status_code == 403
+        user.post("/api/me/onboarding", json={"viewed_sample": True})
+
+        # dự án riêng → demo build → sửa số liệu → build lại
+        p = user.post("/api/projects", json={"name": "Tiệm bánh", "idea": "Tiệm bánh mì thủ công giao tận nhà trong khu căn hộ."}).json()
+        slug = p["slug"]
+        assert wait_job(user, user.post(f"/api/projects/{slug}/run", json={"billing": "demo", "force": True}).json()["job_id"])["status"] == "done"
+        A = user.get(f"/api/projects/{slug}/assumptions").json()
+        price = next(a for a in A["assumptions"] if a["id"] == "price_main")
+        rev0 = A["kpi"]["revenue_last"]
+        assert user.patch(f"/api/projects/{slug}/assumptions/price_main", json={"value": price["value"] * 2}).json()["value"] == price["value"] * 2
+        assert user.patch(f"/api/projects/{slug}/assumptions/volume_main", json={"value": "1 2"}).status_code == 400   # sai số năm
+        assert user.patch(f"/api/projects/{slug}/assumptions/price_main", json={"value": 3, "status": "verified"}).status_code == 400  # chưa có nguồn
+        assert wait_job(user, user.post(f"/api/projects/{slug}/rebuild").json()["job_id"])["status"] == "done"
+        d = user.get(f"/api/projects/{slug}").json()
+        assert d["kpi"]["revenue_last"] > rev0 and d["changes"][0]["key"] == "price_main"
+        assert "# SINGLE SOURCE OF TRUTH" in (main.WORKSPACE / slug / "assumptions.yaml").read_text()   # comment được giữ
+
+        # gói zip + link chia sẻ công khai
+        z = user.get(f"/api/projects/{slug}/bundle.zip")
+        assert z.status_code == 200 and z.content[:2] == b"PK"
+        sh = user.post(f"/api/projects/{slug}/shares", json={"label": "Nhà đầu tư A"}).json()
+        assert anon.get(sh["url"]).status_code == 200
+        assert anon.get(f"/api/share/{sh['token']}/projects/{slug}/export/project").status_code == 200
+        assert anon.get(f"/api/projects/{slug}/export/project").status_code == 401
+        user.delete(f"/api/shares/{sh['id']}")
+        assert anon.get(sh["url"]).status_code == 404
+        ob = user.get("/api/me").json()["onboarding"]
+        assert {s["id"] for s in ob["steps"] if s["done"]} >= {"sample", "project", "plan", "share"}
+
+        # owner xem chi tiết user + phễu
+        uid = user.get("/api/me").json()["id"]
+        det = owner.get(f"/api/admin/users/{uid}").json()
+        assert det["projects"][0]["slug"] == slug and det["invited_by"]
+        assert owner.get("/api/admin/overview").json()["funnel"]["plan"] >= 1
+        owner.put("/api/admin/settings", json={"allow_signup": "1"})

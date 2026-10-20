@@ -14,7 +14,10 @@ import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
-from . import agents, db, interview, llm, worker
+import datetime as dt
+import threading
+
+from . import agents, db, interview, llm, ssot, worker
 from .config import COOKIE_SECURE, ROOT, SAAS, WORKSPACE
 from .security import check_pw, dec, enc, hash_pw, hint, sign, unsign
 
@@ -92,13 +95,29 @@ def throttle(request: Request):
     _attempts[ip].append(now)
 
 
-def create_user(email, name, pw=None, google_sub=None):
+def valid_invite(token, email=None):
+    inv = db.one("SELECT * FROM invites WHERE token=?", (token,)) if token else None
+    if not inv or inv["revoked"] or inv["used_by"] or (inv["expires"] and inv["expires"] < db.now()):
+        raise HTTPException(400, "Lời mời không còn hiệu lực. Xin admin gửi lời mời mới.")
+    if email and inv["email"] and inv["email"].lower() != email.lower():
+        raise HTTPException(400, f"Lời mời này dành cho {inv['email']}.")
+    return inv
+
+
+def create_user(email, name, pw=None, google_sub=None, invite=None):
     first = db.one("SELECT COUNT(*) n FROM users")["n"] == 0
-    if not first and db.setting("allow_signup") != "1":
-        raise HTTPException(403, "Hệ thống đang tắt đăng ký mới. Liên hệ admin.")
+    if not first and not invite and db.setting("allow_signup") != "1":
+        raise HTTPException(403, "Hệ thống đang tắt đăng ký mới — cần lời mời từ admin.")
+    role = "owner" if first else (invite["role"] if invite else "user")
     uid = db.insert("users", email=email, name=name or email.split("@")[0], pw_hash=hash_pw(pw) if pw else None,
-                    google_sub=google_sub, role="owner" if first else "user", status="active", created=db.now())
-    db.audit(uid, "signup", email, {"role": "owner" if first else "user"})
+                    google_sub=google_sub, role=role, status="active", created=db.now(),
+                    quota_projects=invite["quota_projects"] if invite else None,
+                    quota_jobs_month=invite["quota_jobs_month"] if invite else None, invited_by=invite["created_by"] if invite else None)
+    if invite:
+        db.update("invites", invite["id"], used_by=uid, used_at=db.now())
+    db.audit(uid, "signup", email, {"role": role, "invite": invite["id"] if invite else None})
+    if first:
+        threading.Thread(target=ensure_sample, args=(uid,), daemon=True).start()
     return db.one("SELECT * FROM users WHERE id=?", (uid,))
 
 
@@ -147,8 +166,15 @@ def static(f: str):
 
 # ------------------------------------------------------------------ auth API
 @app.get("/api/public")
-def public():
-    return {"site_name": db.setting("site_name"), "allow_signup": db.setting("allow_signup") == "1",
+def public(invite: str = ""):
+    inv = None
+    if invite:
+        try:
+            i = valid_invite(invite)
+            inv = {"email": i["email"], "role": i["role"]}
+        except HTTPException as e:
+            inv = {"error": e.detail}
+    return {"invite": inv, "site_name": db.setting("site_name"), "allow_signup": db.setting("allow_signup") == "1",
             "google": bool(db.setting("google_client_id")), "has_owner": db.one("SELECT COUNT(*) n FROM users")["n"] > 0}
 
 
@@ -161,7 +187,8 @@ async def signup(request: Request):
         raise HTTPException(400, "Email không hợp lệ hoặc mật khẩu dưới 8 ký tự.")
     if db.one("SELECT id FROM users WHERE email=?", (email,)):
         raise HTTPException(409, "Email đã có tài khoản.")
-    return login_response(create_user(email, b.get("name"), pw))
+    inv = valid_invite(b["invite"], email) if b.get("invite") else None
+    return login_response(create_user(email, b.get("name"), pw, invite=inv))
 
 
 @app.post("/api/auth/login")
@@ -228,7 +255,38 @@ def google_cb(request: Request, code: str = "", state: str = ""):
 def me(u=Depends(need_user)):
     keys = db.one("SELECT COUNT(*) n FROM api_keys WHERE user_id=?", (u["id"],))["n"]
     return {**public_user(u), "has_keys": keys > 0, "site_name": db.setting("site_name"),
-            "plan_billing": db.setting("plan_billing"), "quota": quota(u), "demo_allowed": db.setting("allow_demo_engine") == "1"}
+            "plan_billing": db.setting("plan_billing"), "quota": quota(u), "demo_allowed": db.setting("allow_demo_engine") == "1",
+            "onboarding": onboarding(u, keys > 0)}
+
+
+def onboarding(u, has_keys):
+    """Checklist cho người mới — tính từ dữ liệu thật, không phải cờ tự đánh dấu (trừ 'đã xem mẫu')."""
+    ob = json.loads(u.get("onboarding") or "{}")
+    pids = [r["id"] for r in db.q("SELECT id FROM projects WHERE user_id=? AND is_sample=0", (u["id"],))]
+    ph = ",".join("?" * len(pids)) or "NULL"
+    interviewed = any(not interview.progress(interview.state(pid)["answers"])["required_missing"] for pid in pids)
+    steps = [
+        ("sample", "Xem một bộ hồ sơ mẫu hoàn chỉnh", bool(ob.get("viewed_sample"))),
+        ("key", "Thêm API key AI của bạn", has_keys),
+        ("project", "Tạo dự án đầu tiên", bool(pids)),
+        ("interview", f"Trả lời đủ {sum(1 for q in interview.QUESTIONS if q.get('required'))} câu phỏng vấn bắt buộc", interviewed),
+        ("locked", "Chốt ít nhất một điểm ở Brainstorm", bool(pids) and db.one(f"SELECT COUNT(*) n FROM decisions WHERE status='locked' AND project_id IN ({ph})", pids)["n"] > 0),
+        ("plan", "Chạy Plan và xem hồ sơ", bool(pids) and db.one(f"SELECT COUNT(*) n FROM jobs WHERE kind='plan' AND status='done' AND project_id IN ({ph})", pids)["n"] > 0),
+        ("share", "Gửi link hồ sơ cho nhà đầu tư", bool(pids) and db.one(f"SELECT COUNT(*) n FROM shares WHERE project_id IN ({ph})", pids)["n"] > 0),
+    ]
+    return {"steps": [{"id": i, "title": t, "done": d} for i, t, d in steps], "done": sum(d for *_, d in steps),
+            "total": len(steps), "dismissed": bool(ob.get("dismissed"))}
+
+
+@app.post("/api/me/onboarding")
+async def onboarding_mark(request: Request, u=Depends(need_user)):
+    b = await body(request)
+    ob = json.loads(u.get("onboarding") or "{}")
+    for k in ("viewed_sample", "dismissed"):
+        if k in b:
+            ob[k] = bool(b[k])
+    db.update("users", u["id"], onboarding=json.dumps(ob))
+    return {"ok": True}
 
 
 @app.post("/api/me/password")
@@ -337,15 +395,17 @@ def get_project(slug, u, write=False):
     p = db.one("SELECT * FROM projects WHERE slug=?", (slug,))
     if not p:
         raise HTTPException(404, "Không có dự án")
-    if p["user_id"] != u["id"] and (write or u["role"] not in ("owner", "admin")):
+    if p["user_id"] != u["id"] and (write or (u["role"] not in ("owner", "admin") and not p["is_sample"])):
         raise HTTPException(403, "Không phải dự án của bạn")
+    if write and p["is_sample"]:
+        raise HTTPException(403, "Dự án mẫu chỉ đọc — tạo dự án mới để thử.")
     return p
 
 
 def project_summary(p):
     j = db.one("SELECT id,status,engine,billing,created,finished,error FROM jobs WHERE project_id=? ORDER BY id DESC LIMIT 1", (p["id"],))
     st = interview.state(p["id"])
-    return {**{k: p[k] for k in ("id", "slug", "name", "country", "status", "created", "updated")},
+    return {**{k: p[k] for k in ("id", "slug", "name", "country", "status", "created", "updated", "is_sample")},
             "progress": interview.progress(st["answers"]), "last_job": j,
             "exported": (WORKSPACE / p["slug"] / "build" / "export" / "project.json").exists(),
             "locked": db.one("SELECT COUNT(*) n FROM decisions WHERE project_id=? AND status='locked'", (p["id"],))["n"]}
@@ -353,7 +413,12 @@ def project_summary(p):
 
 @app.get("/api/projects")
 def my_projects(u=Depends(need_user)):
-    return [project_summary(p) for p in db.q("SELECT * FROM projects WHERE user_id=? ORDER BY updated DESC", (u["id"],))]
+    return [project_summary(p) for p in db.q("SELECT * FROM projects WHERE user_id=? AND is_sample=0 ORDER BY updated DESC", (u["id"],))]
+
+
+@app.get("/api/samples")
+def samples(u=Depends(need_user)):
+    return [project_summary(p) for p in db.q("SELECT * FROM projects WHERE is_sample=1 ORDER BY id")]
 
 
 @app.post("/api/projects")
@@ -382,9 +447,13 @@ def project_detail(slug: str, u=Depends(need_user)):
             "current_qid": st["current_qid"], "interview_done": bool(st["done"]),
             "questions": interview.QUESTIONS, "blocks": interview.BLOCKS, "categories": interview.CATEGORIES,
             "decisions": db.q("SELECT * FROM decisions WHERE project_id=? ORDER BY status='locked' DESC, id DESC", (p["id"],)),
-            "jobs": db.q("SELECT id,status,engine,billing,model,created,started,finished,error,usage FROM jobs WHERE project_id=? "
-                         "ORDER BY id DESC LIMIT 10", (p["id"],)),
-            "mine": p["user_id"] == u["id"]}
+            "jobs": db.q("SELECT id,kind,status,engine,billing,model,created,started,finished,error,usage,progress FROM jobs "
+                         "WHERE project_id=? ORDER BY id DESC LIMIT 10", (p["id"],)),
+            "mine": p["user_id"] == u["id"], "kpi": ssot.kpi(slug), "links": ssot.link_summary(slug),
+            "shares": [share_row(r) for r in db.q("SELECT * FROM shares WHERE project_id=? AND revoked=0 ORDER BY id DESC", (p["id"],))]
+            if p["user_id"] == u["id"] else [],
+            "changes": db.q("SELECT key,label,old,new,created FROM changes WHERE project_id=? ORDER BY id DESC LIMIT 20", (p["id"],)),
+            "has_workspace": (WORKSPACE / slug / "assumptions.yaml").exists()}
 
 
 @app.patch("/api/projects/{slug}")
@@ -616,6 +685,136 @@ def viewer(slug: str, request: Request):
                         headers={"Cache-Control": "no-store"})
 
 
+# ------------------------------------------------------------------ số liệu (what-if), build lại, kiểm link, gói tải về
+def queue_job(p, u, kind):
+    if db.one("SELECT id FROM jobs WHERE project_id=? AND status IN ('queued','starting','running')", (p["id"],)):
+        raise HTTPException(409, "Dự án đang có job chạy — đợi xong rồi thử lại.")
+    jid = db.insert("jobs", kind=kind, project_id=p["id"], user_id=u["id"], engine="local", billing="none", status="queued", created=db.now())
+    db.audit(u["id"], f"job_{kind}", p["slug"], {"job": jid})
+    return jid
+
+
+def need_workspace(slug):
+    if not (WORKSPACE / slug / "assumptions.yaml").exists():
+        raise HTTPException(404, "Dự án chưa có bộ số liệu — chạy Plan trước.")
+
+
+@app.get("/api/projects/{slug}/assumptions")
+def assumptions(slug: str, u=Depends(need_user)):
+    get_project(slug, u)
+    need_workspace(slug)
+    return {**ssot.read_assumptions(slug), "kpi": ssot.kpi(slug)}
+
+
+@app.patch("/api/projects/{slug}/assumptions/{key}")
+async def set_assumption(slug: str, key: str, request: Request, u=Depends(need_user)):
+    p, b = get_project(slug, u, True), await body(request)
+    need_workspace(slug)
+    try:
+        r = ssot.set_value(slug, key, b.get("value"), b.get("status"))
+    except ssot.SSOTError as e:
+        raise HTTPException(400, str(e))
+    db.insert("changes", project_id=p["id"], user_id=u["id"], key=key, label=r["label"], old=json.dumps(r["old"]),
+              new=json.dumps(r["value"]), created=db.now())
+    db.update("projects", p["id"], updated=db.now())
+    db.audit(u["id"], "assumption_set", slug, {"key": key, "old": r["old"], "new": r["value"]})
+    return r
+
+
+@app.post("/api/projects/{slug}/rebuild")
+def rebuild(slug: str, u=Depends(need_user)):
+    p = get_project(slug, u, True)
+    need_workspace(slug)
+    return {"job_id": queue_job(p, u, "rebuild")}
+
+
+@app.post("/api/projects/{slug}/linkcheck")
+def linkcheck(slug: str, u=Depends(need_user)):
+    p = get_project(slug, u)
+    if p["user_id"] != u["id"] and u["role"] not in ("owner", "admin"):
+        raise HTTPException(403, "Không phải dự án của bạn")
+    need_workspace(slug)
+    return {"job_id": queue_job(p, u, "linkcheck")}
+
+
+@app.get("/api/projects/{slug}/bundle.zip")
+def bundle(slug: str, u=Depends(need_user)):
+    get_project(slug, u)
+    need_workspace(slug)
+    return Response(ssot.bundle(slug), media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{slug}-ho-so.zip"'})
+
+
+# ------------------------------------------------------------------ link chia sẻ cho nhà đầu tư (chỉ đọc, không cần đăng nhập)
+def share_row(r):
+    return {k: r[k] for k in ("id", "token", "label", "created", "views", "last_view")} | {"url": f"/s/{r['token']}"}
+
+
+@app.post("/api/projects/{slug}/shares")
+async def create_share(slug: str, request: Request, u=Depends(need_user)):
+    p, b = get_project(slug, u, True), await body(request)
+    if not (export_dir(slug) / "project.json").exists():
+        raise HTTPException(400, "Chưa có hồ sơ để chia sẻ — chạy Plan trước.")
+    sid = db.insert("shares", project_id=p["id"], token=secrets.token_urlsafe(18), label=str(b.get("label") or "")[:80],
+                    created_by=u["id"], created=db.now())
+    db.audit(u["id"], "share_create", slug, {"share": sid})
+    return share_row(db.one("SELECT * FROM shares WHERE id=?", (sid,)))
+
+
+@app.delete("/api/shares/{sid}")
+def revoke_share(sid: int, u=Depends(need_user)):
+    r = db.one("SELECT s.*, p.user_id, p.slug FROM shares s JOIN projects p ON p.id=s.project_id WHERE s.id=?", (sid,))
+    if not r or (r["user_id"] != u["id"] and u["role"] != "owner"):
+        raise HTTPException(404)
+    db.update("shares", sid, revoked=1)
+    db.audit(u["id"], "share_revoke", r["slug"], {"share": sid})
+    return {"ok": True}
+
+
+def share_project(token):
+    r = db.one("SELECT s.id sid, p.* FROM shares s JOIN projects p ON p.id=s.project_id WHERE s.token=? AND s.revoked=0", (token,))
+    if not r:
+        raise HTTPException(404, "Link chia sẻ không tồn tại hoặc đã bị thu hồi.")
+    return r
+
+
+@app.get("/s/{token}")
+def share_page(token: str):
+    p = share_project(token)
+    db.x("UPDATE shares SET views=views+1, last_view=? WHERE id=?", (db.now(), p["sid"]))
+    html = (ROOT / "studio" / "index.html").read_text()
+    inject = f'<script>window.GP={{api:{json.dumps("/api/share/" + token)},project:{json.dumps(p["slug"])}}}</script>'
+    return HTMLResponse(html.replace("<script>", inject + "<script>", 1), headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex"})
+
+
+@app.get("/api/share/{token}/projects/{slug}/export/{part}")
+def share_export(token: str, slug: str, part: str):
+    p = share_project(token)
+    f = export_dir(p["slug"]) / f"{part}.json"
+    if slug != p["slug"] or part not in ("project", "dossier", "documents") or not f.exists():
+        raise HTTPException(404)
+    text = f.read_text().replace(f"/api/projects/{slug}/media/", f"/api/share/{token}/projects/{slug}/media/")
+    return Response(text, media_type="application/json")
+
+
+@app.get("/api/share/{token}/projects/{slug}/media/{name}")
+def share_media(token: str, slug: str, name: str):
+    p = share_project(token)
+    f = WORKSPACE / p["slug"] / "media" / name
+    if slug != p["slug"] or not re.fullmatch(r"[\w.-]+", name) or not f.exists():
+        raise HTTPException(404)
+    return FileResponse(f)
+
+
+@app.get("/api/share/{token}/projects/{slug}/files/{name}")
+def share_files(token: str, slug: str, name: str):
+    p = share_project(token)
+    f = WORKSPACE / p["slug"] / "build" / name
+    if slug != p["slug"] or name not in FILES or not f.exists():
+        raise HTTPException(404)
+    return FileResponse(f, filename=f"{slug}-{name}")
+
+
 # ------------------------------------------------------------------ admin
 @app.get("/api/admin/overview")
 def overview(a=Depends(need_admin)):
@@ -632,6 +831,8 @@ def overview(a=Depends(need_admin)):
             "tokens_month": db.one("SELECT COALESCE(SUM(input_tokens+output_tokens),0) n FROM usage WHERE created>=?", (month,))["n"],
             "owner_tokens_month": db.one("SELECT COALESCE(SUM(input_tokens+output_tokens),0) n FROM usage WHERE created>=? AND profile_id IS NOT NULL", (month,))["n"],
             "days": days, "active_agent": agents.active_profile(),
+            "new_users_7d": c("SELECT COUNT(*) n FROM users WHERE created >= ?", ((dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)).isoformat(),)),
+            "funnel": funnel(), "invites_open": c("SELECT COUNT(*) n FROM invites WHERE used_by IS NULL AND revoked=0"),
             "recent_jobs": db.q("SELECT j.id,j.status,j.engine,j.billing,j.created,p.slug,p.name,u.email FROM jobs j LEFT JOIN projects p ON p.id=j.project_id "
                                 "LEFT JOIN users u ON u.id=j.user_id ORDER BY j.id DESC LIMIT 8")}
 
@@ -641,10 +842,71 @@ def admin_users(a=Depends(need_admin)):
     out = []
     for u in db.q("SELECT * FROM users ORDER BY id"):
         tok = db.one("SELECT COALESCE(SUM(input_tokens+output_tokens),0) n FROM usage WHERE user_id=? AND created>=?", (u["id"], db.now()[:7] + "-01"))["n"]
+        nkeys = db.one("SELECT COUNT(*) n FROM api_keys WHERE user_id=?", (u["id"],))["n"]
         out.append({**public_user(u), "quota": quota(u), "quota_projects": u["quota_projects"], "quota_jobs_month": u["quota_jobs_month"],
-                    "keys": db.one("SELECT COUNT(*) n FROM api_keys WHERE user_id=?", (u["id"],))["n"], "tokens_month": tok,
-                    "google": bool(u["google_sub"])})
+                    "keys": nkeys, "tokens_month": tok, "google": bool(u["google_sub"]),
+                    "onboarding": {k: v for k, v in onboarding(u, nkeys > 0).items() if k in ("done", "total")}})
     return out
+
+
+def funnel():
+    """Phễu kích hoạt người dùng thường: đăng ký → có key → có dự án → phỏng vấn xong → chạy Plan xong → chia sẻ."""
+    us = db.q("SELECT id FROM users WHERE role='user'")
+    steps = {"signup": len(us), "key": 0, "project": 0, "plan": 0, "share": 0}
+    for u in us:
+        steps["key"] += db.one("SELECT COUNT(*) n FROM api_keys WHERE user_id=?", (u["id"],))["n"] > 0
+        steps["project"] += db.one("SELECT COUNT(*) n FROM projects WHERE user_id=? AND is_sample=0", (u["id"],))["n"] > 0
+        steps["plan"] += db.one("SELECT COUNT(*) n FROM jobs WHERE user_id=? AND kind='plan' AND status='done'", (u["id"],))["n"] > 0
+        steps["share"] += db.one("SELECT COUNT(*) n FROM shares s JOIN projects p ON p.id=s.project_id WHERE p.user_id=?", (u["id"],))["n"] > 0
+    return steps
+
+
+@app.get("/api/admin/users/{uid}")
+def admin_user_detail(uid: int, a=Depends(need_admin)):
+    t = db.one("SELECT * FROM users WHERE id=?", (uid,))
+    if not t:
+        raise HTTPException(404)
+    keys = db.q("SELECT provider, model, key_hint, created, last_test_ok FROM api_keys WHERE user_id=?", (uid,))
+    return {**public_user(t), "quota": quota(t), "quota_projects": t["quota_projects"], "quota_jobs_month": t["quota_jobs_month"],
+            "onboarding": onboarding(t, bool(keys)), "keys": keys,
+            "invited_by": (db.one("SELECT email FROM users WHERE id=?", (t["invited_by"],)) or {}).get("email") if t["invited_by"] else None,
+            "projects": [project_summary(p) for p in db.q("SELECT * FROM projects WHERE user_id=? AND is_sample=0 ORDER BY updated DESC", (uid,))],
+            "jobs": db.q("SELECT j.id,j.kind,j.status,j.engine,j.billing,j.created,j.error,p.name FROM jobs j LEFT JOIN projects p ON p.id=j.project_id "
+                         "WHERE j.user_id=? ORDER BY j.id DESC LIMIT 15", (uid,)),
+            "usage": db.one("SELECT COALESCE(SUM(input_tokens),0) i, COALESCE(SUM(output_tokens),0) o, COUNT(*) n FROM usage WHERE user_id=? AND created>=?",
+                            (uid, db.now()[:7] + "-01")),
+            "activity": db.q("SELECT action, target, created FROM audit WHERE user_id=? ORDER BY id DESC LIMIT 20", (uid,))}
+
+
+@app.get("/api/admin/invites")
+def list_invites(a=Depends(need_admin)):
+    return db.q("SELECT i.*, u.email used_email, c.email created_email FROM invites i LEFT JOIN users u ON u.id=i.used_by "
+                "LEFT JOIN users c ON c.id=i.created_by ORDER BY i.id DESC LIMIT 100")
+
+
+@app.post("/api/admin/invites")
+async def create_invite(request: Request, a=Depends(need_admin)):
+    b = await body(request)
+    email = str(b.get("email") or "").strip().lower() or None
+    if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        raise HTTPException(400, "Email không hợp lệ")
+    if email and db.one("SELECT id FROM users WHERE email=?", (email,)):
+        raise HTTPException(409, "Email này đã có tài khoản")
+    role = b.get("role") if b.get("role") in ("user", "admin") and (a["role"] == "owner" or b.get("role") == "user") else "user"
+    days = max(1, min(int(b.get("days") or 7), 90))
+    num = lambda k: None if b.get(k) in (None, "") else int(b[k])  # noqa: E731
+    iid = db.insert("invites", token=secrets.token_urlsafe(18), email=email, role=role, quota_projects=num("quota_projects"),
+                    quota_jobs_month=num("quota_jobs_month"), note=str(b.get("note") or "")[:200], created_by=a["id"], created=db.now(),
+                    expires=(dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=days)).replace(microsecond=0).isoformat())
+    db.audit(a["id"], "invite_create", email or "(link mở)", {"role": role, "days": days})
+    return db.one("SELECT * FROM invites WHERE id=?", (iid,))
+
+
+@app.delete("/api/admin/invites/{iid}")
+def revoke_invite(iid: int, a=Depends(need_admin)):
+    db.update("invites", iid, revoked=1)
+    db.audit(a["id"], "invite_revoke", iid)
+    return {"ok": True}
 
 
 @app.post("/api/admin/users")
@@ -885,20 +1147,28 @@ async def put_settings(request: Request, o=Depends(need_owner)):
     return get_settings(o)
 
 
-@app.post("/api/admin/seed-sample")
-def seed_sample(o=Depends(need_owner)):
-    """Nạp dự án mẫu projects/ai-robot-pet vào workspace của owner để xem trình xem với dữ liệu thật."""
-    slug = "ai-robot-pet-mau"
-    if db.one("SELECT id FROM projects WHERE slug=?", (slug,)):
-        raise HTTPException(409, "Đã nạp mẫu rồi")
-    src, dst = ROOT / "projects" / "ai-robot-pet", WORKSPACE / slug
+SAMPLE_SLUG = "ai-robot-pet-mau"
+
+
+def ensure_sample(owner_id):
+    """Dự án mẫu dùng chung: mọi người dùng mới xem được ngay một bộ hồ sơ hoàn chỉnh (chỉ đọc)."""
+    if db.one("SELECT id FROM projects WHERE slug=?", (SAMPLE_SLUG,)):
+        return False
+    src, dst = ROOT / "projects" / "ai-robot-pet", WORKSPACE / SAMPLE_SLUG
     shutil.copytree(src, dst, ignore=shutil.ignore_patterns("build"), dirs_exist_ok=True)
-    idea = (src / "idea.md").read_text()
-    pid = db.insert("projects", slug=slug, user_id=o["id"], name="Hệ sinh thái AI Robot Pet Việt (mẫu)", idea=idea,
-                    status="done", created=db.now(), updated=db.now())
+    pid = db.insert("projects", slug=SAMPLE_SLUG, user_id=owner_id, name="Hệ sinh thái AI Robot Pet Việt (mẫu)",
+                    idea=(src / "idea.md").read_text(), status="running", is_sample=1, created=db.now(), updated=db.now())
     interview.start_interview(db.one("SELECT * FROM projects WHERE id=?", (pid,)))
     env = worker.base_env()
-    for cmd in (["gen.py", "build", slug], ["tools/export.py", slug, "--media-base", f"/api/projects/{slug}/media"]):
+    for cmd in (["gen.py", "build", SAMPLE_SLUG], ["tools/export.py", SAMPLE_SLUG, "--media-base", f"/api/projects/{SAMPLE_SLUG}/media"]):
         subprocess.run([sys.executable, str(ROOT / cmd[0]), *cmd[1:]], env=env, cwd=ROOT, capture_output=True, timeout=600)
-    db.audit(o["id"], "seed_sample", slug)
-    return {"slug": slug}
+    db.update("projects", pid, status="done", updated=db.now())
+    return True
+
+
+@app.post("/api/admin/seed-sample")
+def seed_sample(o=Depends(need_owner)):
+    if not ensure_sample(o["id"]):
+        raise HTTPException(409, "Đã nạp mẫu rồi")
+    db.audit(o["id"], "seed_sample", SAMPLE_SLUG)
+    return {"slug": SAMPLE_SLUG}

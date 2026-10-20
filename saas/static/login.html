@@ -44,18 +44,22 @@
 <script src="/static/gp.js"></script>
 <script>
 let mode = "login", pub = {};
+const INVITE = new URLSearchParams(location.search).get("invite") || window.GPDEMO?.invite || "";
 function draw() {
   const su = mode === "signup";
   $("#title").textContent = su ? (pub.has_owner ? "Tạo tài khoản" : "Tạo tài khoản owner") : "Đăng nhập";
-  $("#sub").textContent = su ? (pub.has_owner ? "Mỗi tài khoản có không gian dự án và API key riêng." : "Tài khoản đầu tiên là owner — toàn quyền quản trị hệ thống.") : "Chào mừng trở lại.";
+  const inv = pub.invite;
+  $("#sub").textContent = inv?.error ? inv.error : su && inv ? `Bạn được mời tham gia ${pub.site_name}${inv.role === "admin" ? " với vai trò admin" : ""}. Đặt mật khẩu để bắt đầu.`
+    : su ? (pub.has_owner ? "Mỗi tài khoản có không gian dự án và API key riêng." : "Tài khoản đầu tiên là owner — toàn quyền quản trị hệ thống.") : "Chào mừng trở lại.";
+  if (su && inv?.email) { $("#email").value = inv.email; $("#email").readOnly = true; }
   $("#nameRow").hidden = !su; $("#go").textContent = su ? "Tạo tài khoản" : "Đăng nhập";
   $("#pw").autocomplete = su ? "new-password" : "current-password";
-  $("#switch").innerHTML = su ? `Đã có tài khoản? <a href="#" data-m="login">Đăng nhập</a>` : pub.allow_signup || !pub.has_owner ? `Chưa có tài khoản? <a href="#" data-m="signup">Tạo tài khoản</a>` : "Đăng ký mới đang tắt — liên hệ admin.";
+  $("#switch").innerHTML = su ? `Đã có tài khoản? <a href="#" data-m="login">Đăng nhập</a>` : pub.allow_signup || !pub.has_owner || (inv && !inv.error) ? `Chưa có tài khoản? <a href="#" data-m="signup">Tạo tài khoản</a>` : "Đăng ký mới đang tắt — cần lời mời từ admin.";
 }
 $("#switch").onclick = e => { const m = e.target.dataset.m; if (m) { e.preventDefault(); mode = m; draw(); } };
 $("#f").onsubmit = async e => { e.preventDefault(); $("#msg").textContent = "";
-  try { const r = await api("/auth/" + mode, {body: {email: $("#email").value, password: $("#pw").value, name: $("#name").value}});
+  try { const r = await api("/auth/" + mode, {body: {email: $("#email").value, password: $("#pw").value, name: $("#name").value, invite: mode === "signup" ? INVITE : ""}});
     location.href = r.role === "owner" && mode === "signup" ? "/admin" : "/app"; } catch (x) { $("#msg").textContent = x.message; } };
-api("/public").then(p => { pub = p; $("#site").textContent = p.site_name; document.title = p.site_name + " — Đăng nhập";
+api("/public" + (INVITE ? "?invite=" + encodeURIComponent(INVITE) : "")).then(p => { pub = p; if (p.invite && !p.invite.error) mode = "signup"; $("#site").textContent = p.site_name; document.title = p.site_name + " — Đăng nhập";
   $("#google").hidden = !p.google; if (!p.has_owner) mode = "signup"; draw(); });
 </script></body></html>
