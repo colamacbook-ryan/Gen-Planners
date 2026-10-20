@@ -53,14 +53,36 @@ Biến môi trường: `GP_DATA` (mặc định `saas/data/`, đã gitignore), `
 `GP_SESSION_SECRET` / `GP_FERNET_KEY` nếu muốn quản lý khoá ngoài file. **Sao lưu `GP_DATA/fernet.key`** — mất file này là
 mất mọi API key đã lưu.
 
-Kiểm thử: `GP_DATA=$(mktemp -d) python -m pytest saas/tests -q` (luồng đầy đủ: phân quyền, phỏng vấn, brainstorm, brief,
-job demo, hồ sơ, admin, khoá tài khoản).
+Kiểm thử: `GP_DATA=$(mktemp -d) python -m pytest saas/tests -q` — 21 test: luồng đầy đủ; quét quyền mọi route (người lạ,
+người dùng khác, user→admin, admin→owner); sửa số liệu trên mọi giả định thật; đường ống agent với CLI giả lập (stream-json,
+token, tiến độ, huỷ, hết quota → chuyển tài khoản, khởi động lại); cô lập agent; agent ngoài qua API token; dữ liệu đầu vào lạ.
+
+## Agent ngoài (Claude Code, Antigravity… của người dùng)
+
+Người dùng chọn **Chạy Plan → Agent ngoài của tôi**: job chuyển sang trạng thái *chờ agent* và hiện một bản giao việc
+(`pipeline/external-agent-prompt.md`). Người dùng tạo **API token** ở Cài đặt, đưa token + bản giao việc cho agent của mình.
+Agent làm việc qua HTTP:
+
+| Lệnh | Việc |
+|---|---|
+| `GET /api/jobs/{id}/handoff` | bản giao việc + danh sách file chuẩn |
+| `GET /api/standard/<file>` | AGENTS.md, playbook, stages, template story/datasets… |
+| `GET/PUT /api/projects/{slug}/ssot/<path>` | đọc/ghi SSOT (chỉ các đường dẫn cho phép, YAML được kiểm cú pháp, ≤ 2 MB) |
+| `POST /api/projects/{slug}/check` | build + check, trả lỗi để sửa tới 0 ERROR |
+| `POST /api/jobs/{id}/progress` · `/complete` | báo tiến độ · nộp bài → máy chủ build, kiểm link, xuất hồ sơ |
+
+Header: `Authorization: Bearer gp_…`. Token không tạo được token khác, thu hồi là mất quyền ngay; chi phí AI do người dùng tự trả.
 
 ## Bảo mật
 
 - Mật khẩu scrypt; phiên là cookie ký (HttpOnly, SameSite=Lax), khoá tài khoản hay đổi mật khẩu làm phiên cũ mất hiệu lực.
 - Mọi lệnh ghi cần header `X-GP` (chặn CSRF từ form chéo site). Đăng nhập giới hạn 10 lần / 5 phút / IP.
 - Dữ liệu dự án cô lập theo user; admin chỉ đọc. Trang Core agent và Cài đặt chỉ owner.
+- **Cô lập core agent:** agent có quyền shell và đọc nội dung do người dùng viết (có thể bị prompt-injection). Khi máy chủ chạy
+  bằng root và có user hệ thống `gpagent` (Dockerfile tạo sẵn; đổi tên bằng `GP_AGENT_USER`), mỗi job chạy dưới user đó và chỉ
+  được trao quyền vào thư mục dự án + HOME của job; `app.db`, khoá phiên, khoá mã hoá, dự án khác đều không đọc được, biến môi
+  trường bí mật bị loại. Không có user đó → trang Core agent hiện cảnh báo. Test: `saas/tests/test_hardening.py`.
+- Kiểm link nguồn chặn địa chỉ nội bộ (localhost, 10.x, 169.254.x…) ở mọi bước chuyển hướng.
 - Job chạy bằng key của user dùng HOME tạm, xoá ngay khi job kết thúc. Agent chỉ được ghi trong thư mục dự án (theo prompt
   `pipeline/core-agent-prompt.md`); nên chạy trong container riêng vì agent có quyền shell.
 

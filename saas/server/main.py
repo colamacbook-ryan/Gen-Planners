@@ -15,9 +15,10 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 import datetime as dt
+import hashlib
 import threading
 
-from . import agents, db, interview, llm, ssot, worker
+from . import agents, db, interview, llm, sandbox, ssot, worker
 from .config import COOKIE_SECURE, ROOT, SAAS, WORKSPACE
 from .security import check_pw, dec, enc, hash_pw, hint, sign, unsign
 
@@ -29,6 +30,7 @@ _attempts: dict[str, list[float]] = defaultdict(list)
 
 @app.on_event("startup")
 def _start():
+    sandbox.lock_down()
     worker.start()
 
 
@@ -36,7 +38,7 @@ def _start():
 async def csrf(request: Request, call_next):
     # Mọi lệnh ghi phải mang header X-GP (form chéo site không đặt được header tuỳ ý)
     if request.method in ("POST", "PUT", "PATCH", "DELETE") and request.url.path.startswith("/api/") \
-            and request.headers.get("x-gp") != "1":
+            and request.headers.get("x-gp") != "1" and not request.headers.get("authorization", "").startswith("Bearer gp_"):
         return JSONResponse({"detail": "Thiếu header X-GP"}, status_code=403)
     resp = await call_next(request)
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -45,7 +47,20 @@ async def csrf(request: Request, call_next):
 
 
 # ------------------------------------------------------------------ auth helpers
+def token_hash(t):
+    return hashlib.sha256(t.encode()).hexdigest()
+
+
 def current_user(request: Request):
+    auth = request.headers.get("authorization", "")
+    if auth.startswith("Bearer gp_"):                              # API token cho agent ngoài (không dùng cookie → không có CSRF)
+        t = db.one("SELECT * FROM api_tokens WHERE token_hash=? AND revoked=0", (token_hash(auth[7:].strip()),))
+        u = db.one("SELECT * FROM users WHERE id=?", (t["user_id"],)) if t else None
+        if not u or u["status"] != "active":
+            return None
+        if not t["last_used"] or t["last_used"][:16] != db.now()[:16]:
+            db.update("api_tokens", t["id"], last_used=db.now())
+        return u
     s = unsign(request.cookies.get(COOKIE, ""))
     if not s:
         return None
@@ -86,13 +101,27 @@ def public_user(u):
     return {k: u[k] for k in ("id", "email", "name", "role", "status", "created", "last_login")}
 
 
-def throttle(request: Request):
-    ip = request.client.host if request.client else "?"
+def throttle(request: Request, who="", record=True):
+    """Chặn dò mật khẩu: tối đa 10 lần THẤT BẠI / 5 phút cho mỗi (IP, email). Đứng sau proxy: chạy uvicorn --proxy-headers."""
+    k = f"{request.client.host if request.client else '?'}|{who}"
     now = time.time()
-    _attempts[ip] = [t for t in _attempts[ip] if now - t < 300]
-    if len(_attempts[ip]) >= 10:
+    _attempts[k] = [t for t in _attempts[k] if now - t < 300]
+    if len(_attempts[k]) >= 10:
         raise HTTPException(429, "Thử quá nhiều lần, đợi 5 phút.")
-    _attempts[ip].append(now)
+    if record:
+        _attempts[k].append(now)
+
+
+def to_int(v, name, lo=0, hi=10**9, allow_none=True):
+    if v in (None, "") and allow_none:
+        return None
+    try:
+        n = int(str(v).strip())
+    except ValueError:
+        raise HTTPException(400, f"{name}: cần một số nguyên") from None
+    if not lo <= n <= hi:
+        raise HTTPException(400, f"{name}: cần trong khoảng {lo}–{hi}")
+    return n
 
 
 def valid_invite(token, email=None):
@@ -123,9 +152,10 @@ def create_user(email, name, pw=None, google_sub=None, invite=None):
 
 async def body(request: Request) -> dict:
     try:
-        return await request.json()
+        b = await request.json()
     except (json.JSONDecodeError, ValueError):
         return {}
+    return b if isinstance(b, dict) else {}
 
 
 # ------------------------------------------------------------------ pages
@@ -159,7 +189,7 @@ def admin_page(request: Request):
 @app.get("/static/{f}")
 def static(f: str):
     p = STATIC / f
-    if not re.fullmatch(r"[\w.-]+", f) or not p.exists():
+    if not re.fullmatch(r"\w[\w.-]*", f) or not p.is_file():
         raise HTTPException(404)
     return FileResponse(p)
 
@@ -180,23 +210,25 @@ def public(invite: str = ""):
 
 @app.post("/api/auth/signup")
 async def signup(request: Request):
-    throttle(request)
+    throttle(request, "signup")
     b = await body(request)
     email, pw = str(b.get("email", "")).strip().lower(), str(b.get("password", ""))
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email) or len(pw) < 8:
         raise HTTPException(400, "Email không hợp lệ hoặc mật khẩu dưới 8 ký tự.")
     if db.one("SELECT id FROM users WHERE email=?", (email,)):
         raise HTTPException(409, "Email đã có tài khoản.")
-    inv = valid_invite(b["invite"], email) if b.get("invite") else None
+    inv = valid_invite(str(b["invite"]), email) if b.get("invite") else None
     return login_response(create_user(email, b.get("name"), pw, invite=inv))
 
 
 @app.post("/api/auth/login")
 async def login(request: Request):
-    throttle(request)
     b = await body(request)
-    u = db.one("SELECT * FROM users WHERE email=?", (str(b.get("email", "")).strip().lower(),))
+    email = str(b.get("email", "")).strip().lower()
+    throttle(request, email, record=False)
+    u = db.one("SELECT * FROM users WHERE email=?", (email,))
     if not u or not check_pw(str(b.get("password", "")), u["pw_hash"]):
+        throttle(request, email)
         raise HTTPException(401, "Sai email hoặc mật khẩu.")
     if u["status"] != "active":
         raise HTTPException(403, "Tài khoản đang bị khoá.")
@@ -272,7 +304,7 @@ def onboarding(u, has_keys):
         ("interview", f"Trả lời đủ {sum(1 for q in interview.QUESTIONS if q.get('required'))} câu phỏng vấn bắt buộc", interviewed),
         ("locked", "Chốt ít nhất một điểm ở Brainstorm", bool(pids) and db.one(f"SELECT COUNT(*) n FROM decisions WHERE status='locked' AND project_id IN ({ph})", pids)["n"] > 0),
         ("plan", "Chạy Plan và xem hồ sơ", bool(pids) and db.one(f"SELECT COUNT(*) n FROM jobs WHERE kind='plan' AND status='done' AND project_id IN ({ph})", pids)["n"] > 0),
-        ("share", "Gửi link hồ sơ cho nhà đầu tư", bool(pids) and db.one(f"SELECT COUNT(*) n FROM shares WHERE project_id IN ({ph})", pids)["n"] > 0),
+        ("share", "Gửi link hồ sơ cho nhà đầu tư", bool(pids) and db.one(f"SELECT COUNT(*) n FROM shares WHERE revoked=0 AND project_id IN ({ph})", pids)["n"] > 0),
     ]
     return {"steps": [{"id": i, "title": t, "done": d} for i, t, d in steps], "done": sum(d for *_, d in steps),
             "total": len(steps), "dismissed": bool(ob.get("dismissed"))}
@@ -303,11 +335,15 @@ async def change_pw(request: Request, u=Depends(need_user)):
 
 def quota(u):
     month = db.now()[:7] + "-01"
-    used_jobs = db.one("SELECT COUNT(*) n FROM jobs WHERE user_id=? AND billing='owner' AND engine!='demo' AND created>=? "
-                       "AND status NOT IN ('cancelled')", (u["id"], month))["n"]
-    projects = db.one("SELECT COUNT(*) n FROM projects WHERE user_id=?", (u["id"],))["n"]
-    lim_p = u["quota_projects"] if u["quota_projects"] is not None else int(db.setting("default_quota_projects", "5"))
-    lim_j = u["quota_jobs_month"] if u["quota_jobs_month"] is not None else int(db.setting("default_quota_jobs_month", "3"))
+    # Lần chạy bằng tài khoản hệ thống: tính khi job đã chờ/đã bắt đầu (huỷ giữa chừng vẫn tính — chống lách quota),
+    # không tính lỗi do phía hệ thống (tài khoản agent hết quota / chưa đăng nhập, máy chủ khởi động lại).
+    used_jobs = db.one("SELECT COUNT(*) n FROM jobs WHERE user_id=? AND billing='owner' AND engine!='demo' AND kind='plan' AND created>=? "
+                       "AND (started IS NOT NULL OR status IN ('queued','starting')) "
+                       "AND NOT (status='failed' AND (COALESCE(error,'') LIKE 'Tài khoản agent%' OR COALESCE(error,'') LIKE 'Máy chủ khởi động lại%'))",
+                       (u["id"], month))["n"]
+    projects = db.one("SELECT COUNT(*) n FROM projects WHERE user_id=? AND is_sample=0", (u["id"],))["n"]
+    lim_p = u["quota_projects"] if u["quota_projects"] is not None else db.setting_int("default_quota_projects", 5)
+    lim_j = u["quota_jobs_month"] if u["quota_jobs_month"] is not None else db.setting_int("default_quota_jobs_month", 3)
     unlimited = u["role"] in ("owner", "admin")
     return {"projects": projects, "projects_limit": None if unlimited else lim_p,
             "owner_jobs_month": used_jobs, "owner_jobs_limit": None if unlimited else lim_j}
@@ -371,15 +407,32 @@ def del_key(kid: int, u=Depends(need_user)):
     return {"ok": True}
 
 
+@app.get("/api/keys/{kid}/models")
+def key_models(kid: int, u=Depends(need_user)):
+    k = my_key(u, kid)
+    try:
+        return {"models": llm.list_models(k["provider"], dec(k["key_enc"])), "current": k["model"]}
+    except llm.LLMError as e:
+        raise HTTPException(502, str(e))
+
+
 @app.post("/api/keys/{kid}/test")
 def test_key(kid: int, u=Depends(need_user)):
     k = my_key(u, kid)
-    try:
-        text, usage = llm.chat(k["provider"], dec(k["key_enc"]), k["model"], "Trả lời đúng một từ: OK",
-                               [{"role": "user", "content": "ping"}], max_tokens=10)
-        ok, msg = True, text.strip()[:60] or "OK"
-    except llm.LLMError as e:
-        ok, msg = False, str(e)
+    model, note = k["model"], ""
+    for _ in range(2):
+        try:
+            text, usage = llm.chat(k["provider"], dec(k["key_enc"]), model, "Trả lời đúng một từ: OK",
+                                   [{"role": "user", "content": "ping"}], max_tokens=20)
+            ok, msg = True, (text.strip()[:60] or "OK") + note
+            break
+        except llm.LLMError as e:
+            ok, msg = False, str(e)
+            if not e.suggested:
+                break
+            note = f" · model {model} đã bị ngừng, đã chuyển sang {e.suggested}"
+            model = e.suggested
+            db.update("api_keys", kid, model=model)
     db.update("api_keys", kid, last_test=db.now(), last_test_ok=int(ok))
     return {"ok": ok, "message": msg}
 
@@ -467,7 +520,9 @@ async def edit_project(slug: str, request: Request, u=Depends(need_user)):
 @app.delete("/api/projects/{slug}")
 def delete_project(slug: str, u=Depends(need_user)):
     p = get_project(slug, u, True)
-    for t in ("messages", "decisions", "interview"):
+    for j in db.q("SELECT id FROM jobs WHERE project_id=? AND status IN ('queued','starting','running','waiting')", (p["id"],)):
+        worker.cancel(j["id"])                                        # không để agent chạy tiếp trong thư mục sắp xoá
+    for t in ("messages", "decisions", "interview", "changes", "shares"):
         db.x(f"DELETE FROM {t} WHERE project_id=?", (p["id"],))
     db.x("DELETE FROM projects WHERE id=?", (p["id"],))
     shutil.rmtree(WORKSPACE / p["slug"], ignore_errors=True)
@@ -570,13 +625,19 @@ def make_brief(slug: str, u=Depends(need_user)):
 @app.post("/api/projects/{slug}/run")
 async def run_plan(slug: str, request: Request, u=Depends(need_user)):
     p, b = get_project(slug, u, True), await body(request)
-    if db.one("SELECT id FROM jobs WHERE project_id=? AND status IN ('queued','starting','running')", (p["id"],)):
+    if db.one("SELECT id FROM jobs WHERE project_id=? AND status IN ('queued','starting','running','waiting')", (p["id"],)):
         raise HTTPException(409, "Dự án đang có job chạy.")
     missing = interview.progress(interview.state(p["id"])["answers"])["required_missing"]
     if missing and not b.get("force"):
         raise HTTPException(400, "Còn câu phỏng vấn bắt buộc chưa trả lời: " + ", ".join(missing))
     interview.build_brief(p)
     billing, mode = b.get("billing", "owner"), db.setting("plan_billing")
+    if billing == "external":
+        jid = db.insert("jobs", project_id=p["id"], user_id=u["id"], kind="plan", status="queued", created=db.now(),
+                        engine="external", billing="external")
+        db.update("projects", p["id"], status="running", updated=db.now())
+        db.audit(u["id"], "job_create", slug, {"job": jid, "billing": "external"})
+        return {"job_id": jid}
     kw = dict(project_id=p["id"], user_id=u["id"], kind="plan", status="queued", created=db.now(), model=b.get("model") or None)
     if billing == "demo":
         if db.setting("allow_demo_engine") != "1":
@@ -625,7 +686,7 @@ def job(jid: int, u=Depends(need_user)):
 @app.post("/api/jobs/{jid}/cancel")
 def job_cancel(jid: int, u=Depends(need_user)):
     j = get_job(jid, u)
-    if j["status"] in ("queued", "starting", "running"):
+    if j["status"] in ("queued", "starting", "running", "waiting"):
         worker.cancel(jid)
         db.audit(u["id"], "job_cancel", jid)
     return {"ok": True}
@@ -649,7 +710,7 @@ def export_part(slug: str, part: str, u=Depends(need_user)):
 def media(slug: str, name: str, u=Depends(need_user)):
     get_project(slug, u)
     f = WORKSPACE / slug / "media" / name
-    if not re.fullmatch(r"[\w.-]+", name) or not f.exists():
+    if not re.fullmatch(r"\w[\w.-]*", name) or not f.is_file():
         raise HTTPException(404)
     return FileResponse(f)
 
@@ -687,7 +748,7 @@ def viewer(slug: str, request: Request):
 
 # ------------------------------------------------------------------ số liệu (what-if), build lại, kiểm link, gói tải về
 def queue_job(p, u, kind):
-    if db.one("SELECT id FROM jobs WHERE project_id=? AND status IN ('queued','starting','running')", (p["id"],)):
+    if db.one("SELECT id FROM jobs WHERE project_id=? AND status IN ('queued','starting','running','waiting')", (p["id"],)):
         raise HTTPException(409, "Dự án đang có job chạy — đợi xong rồi thử lại.")
     jid = db.insert("jobs", kind=kind, project_id=p["id"], user_id=u["id"], engine="local", billing="none", status="queued", created=db.now())
     db.audit(u["id"], f"job_{kind}", p["slug"], {"job": jid})
@@ -710,6 +771,8 @@ def assumptions(slug: str, u=Depends(need_user)):
 async def set_assumption(slug: str, key: str, request: Request, u=Depends(need_user)):
     p, b = get_project(slug, u, True), await body(request)
     need_workspace(slug)
+    if db.one("SELECT id FROM jobs WHERE project_id=? AND status IN ('queued','starting','running','waiting')", (p["id"],)):
+        raise HTTPException(409, "Dự án đang có job chạy — đợi xong rồi sửa số liệu.")
     try:
         r = ssot.set_value(slug, key, b.get("value"), b.get("status"))
     except ssot.SSOTError as e:
@@ -801,7 +864,7 @@ def share_export(token: str, slug: str, part: str):
 def share_media(token: str, slug: str, name: str):
     p = share_project(token)
     f = WORKSPACE / p["slug"] / "media" / name
-    if slug != p["slug"] or not re.fullmatch(r"[\w.-]+", name) or not f.exists():
+    if slug != p["slug"] or not re.fullmatch(r"\w[\w.-]*", name) or not f.is_file():
         raise HTTPException(404)
     return FileResponse(f)
 
@@ -813,6 +876,147 @@ def share_files(token: str, slug: str, name: str):
     if slug != p["slug"] or name not in FILES or not f.exists():
         raise HTTPException(404)
     return FileResponse(f, filename=f"{slug}-{name}")
+
+
+# ------------------------------------------------------------------ API token + agent ngoài (Claude Code, Antigravity… của người dùng)
+@app.get("/api/tokens")
+def list_tokens(u=Depends(need_user)):
+    return db.q("SELECT id, name, prefix, created, last_used FROM api_tokens WHERE user_id=? AND revoked=0 ORDER BY id DESC", (u["id"],))
+
+
+@app.post("/api/tokens")
+async def create_token(request: Request, u=Depends(need_user)):
+    if request.headers.get("authorization"):
+        raise HTTPException(403, "Token không tạo được token khác — dùng giao diện web")
+    b = await body(request)
+    if db.one("SELECT COUNT(*) n FROM api_tokens WHERE user_id=? AND revoked=0", (u["id"],))["n"] >= 10:
+        raise HTTPException(400, "Tối đa 10 token — thu hồi bớt token cũ")
+    t = "gp_" + secrets.token_urlsafe(30)
+    tid = db.insert("api_tokens", user_id=u["id"], name=str(b.get("name") or "Agent ngoài")[:60], token_hash=token_hash(t),
+                    prefix=t[:9] + "…", created=db.now())
+    db.audit(u["id"], "token_create", tid)
+    return {"id": tid, "token": t, "note": "Chỉ hiện một lần — sao chép ngay."}
+
+
+@app.delete("/api/tokens/{tid}")
+def revoke_token(tid: int, u=Depends(need_user)):
+    db.x("UPDATE api_tokens SET revoked=1 WHERE id=? AND user_id=?", (tid, u["id"]))
+    db.audit(u["id"], "token_revoke", tid)
+    return {"ok": True}
+
+
+STANDARD = {"AGENTS.md", "CLAUDE.md", "pipeline/playbook.yaml", "pipeline/stages.yaml", "pipeline/interview.yaml",
+            "templates/project/story.yaml", "templates/project/datasets.yaml", "templates/project/products.yaml",
+            "templates/project/assumptions.yaml", "templates/project/deck.md"}
+SSOT_PATH = re.compile(r"^(idea\.md|brief\.md|project\.yaml|assumptions\.yaml|evidence\.yaml|story\.yaml|datasets\.yaml|products\.yaml|deck\.md"
+                       r"|(sections|research|partials)/\w[\w.-]*\.md|media/\w[\w.-]*\.(jpg|jpeg|png|webp))$")
+READ_ONLY = {"brief.md"}
+
+
+@app.get("/api/standard/{path:path}")
+def standard(path: str, u=Depends(need_user)):
+    if path not in STANDARD:
+        raise HTTPException(404, "Các file chuẩn: " + ", ".join(sorted(STANDARD)))
+    return Response((ROOT / path).read_text(), media_type="text/plain; charset=utf-8")
+
+
+def external_job(p, jid=None):
+    q = "SELECT * FROM jobs WHERE project_id=? AND engine='external' AND status='waiting'" + (" AND id=?" if jid else "")
+    j = db.one(q + " ORDER BY id DESC", (p["id"], jid) if jid else (p["id"],))
+    if not j:
+        raise HTTPException(409, "Không có job agent ngoài đang chờ cho dự án này — bấm Chạy Plan → Agent ngoài trước.")
+    return j
+
+
+@app.get("/api/jobs/{jid}/handoff")
+def handoff(jid: int, request: Request, u=Depends(need_user)):
+    j = get_job(jid, u)
+    if j["engine"] != "external":
+        raise HTTPException(400, "Job này không phải agent ngoài")
+    p = db.one("SELECT * FROM projects WHERE id=?", (j["project_id"],))
+    base = db.setting("public_base_url") or str(request.base_url).rstrip("/")
+    return {"job": jid, "status": j["status"], "project": p["slug"], "prompt": worker.handoff_text(jid, p, base),
+            "standard": sorted(STANDARD)}
+
+
+@app.get("/api/projects/{slug}/ssot")
+def ssot_list(slug: str, u=Depends(need_user)):
+    get_project(slug, u)
+    d = WORKSPACE / slug
+    if not d.exists():
+        raise HTTPException(404, "Dự án chưa có workspace — bấm Chạy Plan trước.")
+    return [{"path": str(f.relative_to(d)), "size": f.stat().st_size} for f in sorted(d.rglob("*"))
+            if f.is_file() and SSOT_PATH.match(str(f.relative_to(d)))]
+
+
+@app.get("/api/projects/{slug}/ssot/{path:path}")
+def ssot_read(slug: str, path: str, u=Depends(need_user)):
+    get_project(slug, u)
+    f = WORKSPACE / slug / path
+    if not SSOT_PATH.match(path) or not f.is_file():
+        raise HTTPException(404, "Không có file")
+    return FileResponse(f) if path.startswith("media/") else Response(f.read_text(), media_type="text/plain; charset=utf-8")
+
+
+@app.put("/api/projects/{slug}/ssot/{path:path}")
+async def ssot_write(slug: str, path: str, request: Request, u=Depends(need_user)):
+    p = get_project(slug, u, True)
+    external_job(p)
+    if not SSOT_PATH.match(path) or path in READ_ONLY:
+        raise HTTPException(400, "Đường dẫn không được phép ghi")
+    data = await request.body()
+    if len(data) > 2 * 1024 * 1024:
+        raise HTTPException(413, "File tối đa 2 MB")
+    if not path.startswith("media/"):
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            raise HTTPException(400, "File văn bản phải là UTF-8") from None
+        if path.endswith(".yaml"):
+            try:
+                import yaml
+                yaml.safe_load(text)
+            except yaml.YAMLError as e:
+                raise HTTPException(400, f"YAML lỗi: {e}") from None
+    f = WORKSPACE / slug / path
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_bytes(data)
+    db.update("projects", p["id"], updated=db.now())
+    j = external_job(p)
+    if path == "project.yaml" and (pr := ssot.stage_progress(slug)):
+        db.update("jobs", j["id"], progress=json.dumps(pr))
+    return {"ok": True, "path": path, "size": len(data)}
+
+
+@app.post("/api/projects/{slug}/check")
+def ssot_check(slug: str, u=Depends(need_user)):
+    p = get_project(slug, u, True)
+    external_job(p)
+    env = worker.base_env()
+    out = []
+    for cmd in (["build", slug], ["check", slug]):
+        r = subprocess.run([sys.executable, str(ROOT / "gen.py"), *cmd], env=env, cwd=ROOT, capture_output=True, text=True, timeout=300)
+        out.append((r.stdout + r.stderr).strip())
+    text = "\n".join(out).replace(str(WORKSPACE) + "/", "")
+    return {"errors": text.count("ERROR"), "output": text[-8000:]}
+
+
+@app.post("/api/jobs/{jid}/progress")
+async def job_progress(jid: int, request: Request, u=Depends(need_user)):
+    j, b = get_job(jid, u), await body(request)
+    if j["engine"] != "external" or j["status"] != "waiting":
+        raise HTTPException(409, "Job không ở trạng thái chờ agent ngoài")
+    worker.log(jid, "› " + str(b.get("message", ""))[:1000])
+    return {"ok": True}
+
+
+@app.post("/api/jobs/{jid}/complete")
+async def job_complete(jid: int, request: Request, u=Depends(need_user)):
+    j, b = get_job(jid, u), await body(request)
+    if j["engine"] != "external" or j["status"] != "waiting":
+        raise HTTPException(409, "Job không ở trạng thái chờ agent ngoài")
+    threading.Thread(target=worker.finalize_external, args=(jid, str(b.get("summary") or "")), daemon=True).start()
+    return {"ok": True, "status": "running"}
 
 
 # ------------------------------------------------------------------ admin
@@ -830,7 +1034,7 @@ def overview(a=Depends(need_admin)):
             "jobs_failed_month": c("SELECT COUNT(*) n FROM jobs WHERE created>=? AND status='failed'", (month,)),
             "tokens_month": db.one("SELECT COALESCE(SUM(input_tokens+output_tokens),0) n FROM usage WHERE created>=?", (month,))["n"],
             "owner_tokens_month": db.one("SELECT COALESCE(SUM(input_tokens+output_tokens),0) n FROM usage WHERE created>=? AND profile_id IS NOT NULL", (month,))["n"],
-            "days": days, "active_agent": agents.active_profile(),
+            "days": days, "active_agent": (lambda a: {k: a[k] for k in ("id", "name", "engine", "auth_mode", "model", "status")} if a else None)(agents.active_profile()),
             "new_users_7d": c("SELECT COUNT(*) n FROM users WHERE created >= ?", ((dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)).isoformat(),)),
             "funnel": funnel(), "invites_open": c("SELECT COUNT(*) n FROM invites WHERE used_by IS NULL AND revoked=0"),
             "recent_jobs": db.q("SELECT j.id,j.status,j.engine,j.billing,j.created,p.slug,p.name,u.email FROM jobs j LEFT JOIN projects p ON p.id=j.project_id "
@@ -857,7 +1061,7 @@ def funnel():
         steps["key"] += db.one("SELECT COUNT(*) n FROM api_keys WHERE user_id=?", (u["id"],))["n"] > 0
         steps["project"] += db.one("SELECT COUNT(*) n FROM projects WHERE user_id=? AND is_sample=0", (u["id"],))["n"] > 0
         steps["plan"] += db.one("SELECT COUNT(*) n FROM jobs WHERE user_id=? AND kind='plan' AND status='done'", (u["id"],))["n"] > 0
-        steps["share"] += db.one("SELECT COUNT(*) n FROM shares s JOIN projects p ON p.id=s.project_id WHERE p.user_id=?", (u["id"],))["n"] > 0
+        steps["share"] += db.one("SELECT COUNT(*) n FROM shares s JOIN projects p ON p.id=s.project_id WHERE p.user_id=? AND s.revoked=0", (u["id"],))["n"] > 0
     return steps
 
 
@@ -893,8 +1097,8 @@ async def create_invite(request: Request, a=Depends(need_admin)):
     if email and db.one("SELECT id FROM users WHERE email=?", (email,)):
         raise HTTPException(409, "Email này đã có tài khoản")
     role = b.get("role") if b.get("role") in ("user", "admin") and (a["role"] == "owner" or b.get("role") == "user") else "user"
-    days = max(1, min(int(b.get("days") or 7), 90))
-    num = lambda k: None if b.get(k) in (None, "") else int(b[k])  # noqa: E731
+    days = to_int(b.get("days") or 7, "Số ngày hết hạn", 1, 90, allow_none=False)
+    num = lambda k: to_int(b.get(k), k)  # noqa: E731
     iid = db.insert("invites", token=secrets.token_urlsafe(18), email=email, role=role, quota_projects=num("quota_projects"),
                     quota_jobs_month=num("quota_jobs_month"), note=str(b.get("note") or "")[:200], created_by=a["id"], created=db.now(),
                     expires=(dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=days)).replace(microsecond=0).isoformat())
@@ -943,7 +1147,7 @@ async def admin_edit_user(uid: int, request: Request, a=Depends(need_admin)):
         kw["session_ver"] = t["session_ver"] + 1
     for k in ("quota_projects", "quota_jobs_month"):
         if k in b:
-            kw[k] = None if b[k] in (None, "") else int(b[k])
+            kw[k] = to_int(b[k], "Hạn mức", 0, 10000)
     if b.get("password"):
         if len(b["password"]) < 8:
             raise HTTPException(400, "Mật khẩu tối thiểu 8 ký tự")
@@ -970,8 +1174,10 @@ def admin_jobs(status: str = "", a=Depends(need_admin)):
 @app.post("/api/admin/jobs/{jid}/retry")
 def admin_retry(jid: int, a=Depends(need_admin)):
     j = db.one("SELECT * FROM jobs WHERE id=?", (jid,))
-    if not j or j["status"] in ("queued", "starting", "running"):
+    if not j or j["status"] in ("queued", "starting", "running", "waiting") or j["kind"] != "plan":
         raise HTTPException(400, "Job không thể chạy lại")
+    if db.one("SELECT id FROM jobs WHERE project_id=? AND status IN ('queued','starting','running','waiting')", (j["project_id"],)):
+        raise HTTPException(409, "Dự án đang có job khác chạy.")
     prof = agents.active_profile() if j["billing"] == "owner" else None
     nid = db.insert("jobs", kind=j["kind"], project_id=j["project_id"], user_id=j["user_id"], engine=prof["engine"] if prof else j["engine"],
                     billing=j["billing"], profile_id=prof["id"] if prof else j["profile_id"], api_key_id=j["api_key_id"],
@@ -1006,7 +1212,7 @@ def profile_row(p):
 
 @app.get("/api/admin/agents")
 def list_agents(o=Depends(need_owner)):
-    return {"profiles": [profile_row(p) for p in db.q("SELECT * FROM agent_profiles ORDER BY is_active DESC, priority, id")],
+    return {"sandbox": sandbox.status(), "profiles": [profile_row(p) for p in db.q("SELECT * FROM agent_profiles ORDER BY is_active DESC, priority, id")],
             "engines": {k: {"label": v["label"], "install": v["install"], "installed": bool(agents.binary(k)) if k != "demo" else True,
                             "key_label": v.get("key_label"), "actions": list(v["terminal"])} for k, v in agents.ENGINES.items()}}
 
@@ -1028,7 +1234,7 @@ async def add_agent(request: Request, o=Depends(need_owner)):
     first = not db.one("SELECT id FROM agent_profiles")
     pid = db.insert("agent_profiles", name=b["name"].strip(), engine=b["engine"], auth_mode=mode, key_enc=enc(key) if key else None,
                     key_hint=hint(key) if key else None, model=b.get("model") or None, enabled=1, is_active=int(first),
-                    priority=int(b.get("priority") or 100), account_label=b.get("account_label"), status="new", created=db.now())
+                    priority=to_int(b.get("priority") or 100, "Ưu tiên", 0, 10000), account_label=b.get("account_label"), status="new", created=db.now())
     db.update("agent_profiles", pid, home_dir=str(agents.AGENTS_HOME / str(pid)))
     db.audit(o["id"], "agent_add", b["name"], {"engine": b["engine"], "mode": mode})
     return profile_row(get_profile(pid))
@@ -1037,7 +1243,10 @@ async def add_agent(request: Request, o=Depends(need_owner)):
 @app.patch("/api/admin/agents/{pid}")
 async def edit_agent(pid: int, request: Request, o=Depends(need_owner)):
     p, b = get_profile(pid), await body(request)
-    kw = {k: b[k] for k in ("name", "model", "account_label", "priority", "budget_tokens_month") if k in b}
+    kw = {k: str(b[k]).strip() or None for k in ("name", "model", "account_label") if k in b}
+    for k in ("priority", "budget_tokens_month"):
+        if k in b:
+            kw[k] = to_int(b[k], k, 0, 10**12)
     if "enabled" in b:
         kw["enabled"] = int(bool(b["enabled"]))
     if b.get("auth_mode") in ("account", "api_key"):
@@ -1129,6 +1338,11 @@ EDITABLE = {"site_name", "allow_signup", "plan_billing", "default_quota_projects
             "max_concurrent_jobs", "auto_failover", "allow_demo_engine", "google_client_id", "public_base_url"}
 
 
+NUMERIC = {"default_quota_projects": (0, 10000), "default_quota_jobs_month": (0, 10000), "job_timeout_min": (5, 1440), "max_concurrent_jobs": (1, 16)}
+SETTING_LABEL = {"default_quota_projects": "Số dự án tối đa", "default_quota_jobs_month": "Số lần chạy / tháng",
+                 "job_timeout_min": "Thời gian tối đa mỗi job", "max_concurrent_jobs": "Số job song song"}
+
+
 @app.get("/api/admin/settings")
 def get_settings(o=Depends(need_owner)):
     s = {r["key"]: r["value"] for r in db.q("SELECT * FROM settings") if r["key"] in EDITABLE}
@@ -1138,9 +1352,19 @@ def get_settings(o=Depends(need_owner)):
 @app.put("/api/admin/settings")
 async def put_settings(request: Request, o=Depends(need_owner)):
     b = await body(request)
+    for k, (lo, hi) in NUMERIC.items():
+        if k in b:
+            b[k] = to_int(b[k], SETTING_LABEL.get(k, k), lo, hi, allow_none=False)
+    for k in ("allow_signup", "auto_failover", "allow_demo_engine"):
+        if k in b and str(b[k]) not in ("0", "1"):
+            raise HTTPException(400, f"{k}: 0 hoặc 1")
+    if "plan_billing" in b and b["plan_billing"] not in ("owner", "user_key", "either"):
+        raise HTTPException(400, "plan_billing không hợp lệ")
+    if "site_name" in b and not str(b["site_name"]).strip():
+        raise HTTPException(400, "Tên hệ thống không được trống")
     for k, v in b.items():
         if k in EDITABLE:
-            db.set_setting(k, v)
+            db.set_setting(k, str(v).strip())
     if b.get("google_client_secret"):
         db.set_setting("google_client_secret_enc", enc(b["google_client_secret"]))
     db.audit(o["id"], "settings_update", "", {k: v for k, v in b.items() if k in EDITABLE})

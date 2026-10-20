@@ -17,7 +17,7 @@ const ago = iso => { if (!iso) return "—"; const s = (Date.now() - new Date(is
   return s < 60 ? "vừa xong" : s < 3600 ? Math.floor(s / 60) + " phút trước" : s < 86400 ? Math.floor(s / 3600) + " giờ trước" : new Date(iso).toLocaleDateString("vi-VN"); };
 const STATUS = {interview: "phỏng vấn", brainstorm: "brainstorm", ready: "sẵn sàng chạy", running: "đang chạy", done: "hoàn thành", failed: "lỗi",
   queued: "chờ", starting: "khởi động", cancelled: "đã huỷ", proposed: "đề xuất", locked: "đã chốt", rejected: "đã loại",
-  active: "hoạt động", disabled: "khoá", new: "mới", not_installed: "chưa cài", error: "lỗi", quota_exhausted: "hết quota", needs_login: "cần đăng nhập"};
+  active: "hoạt động", disabled: "khoá", new: "mới", not_installed: "chưa cài", error: "lỗi", quota_exhausted: "hết quota", needs_login: "cần đăng nhập", waiting: "chờ agent"};
 const pill = s => `<span class="pill ${esc(s)}">${esc(STATUS[s] || s || "—")}</span>`;
 async function logout() { await api("/auth/logout", {method: "POST"}); location.href = "/login"; }
 document.addEventListener("click", e => { if (e.target.closest(".burger")) $(".side").classList.toggle("open"); else if (!e.target.closest(".side")) $(".side")?.classList.remove("open"); });

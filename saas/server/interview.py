@@ -81,7 +81,15 @@ def _call(user_id, pid, system, msgs):
     provider, key, model, key_id = assistant_for(user_id)
     if provider == "demo":
         return None, provider
-    text, usage = llm.chat(provider, key, model, system, msgs)
+    try:
+        text, usage = llm.chat(provider, key, model, system, msgs)
+    except llm.LLMError as e:
+        if not (e.suggested and key_id):
+            raise
+        db.update("api_keys", key_id, model=e.suggested)              # model cũ bị nhà cung cấp ngừng: chuyển sang model họ gợi ý
+        db.audit(user_id, "api_key_model_migrated", key_id, {"from": model, "to": e.suggested})
+        model = e.suggested
+        text, usage = llm.chat(provider, key, model, system, msgs)
     db.insert("usage", user_id=user_id, project_id=pid, source="chat", provider=provider, model=model,
               input_tokens=usage["input_tokens"], output_tokens=usage["output_tokens"], created=db.now())
     return llm.parse_json(text), provider
@@ -122,13 +130,16 @@ def interview_turn(p, user_id, text):
         reply = "Đã ghi nhận." + (f"\n\n{ask_text(nxt)}" if nxt else
                                   "\n\nĐã đủ các câu. Mở tab **Brief** để xem bản tổng hợp, hoặc sang **Brainstorm** để chốt các điểm quan trọng.")
         out = {"captured": {cur: text.strip()} if cur else {}, "next_qid": nxt, "reply": reply, "done": nxt is None}
-    for k, v in (out.get("captured") or {}).items():
-        if k in QMAP and str(v).strip():
+    out = out if isinstance(out, dict) else {"reply": str(out)}    # model trả JSON lạ: không được làm hỏng lượt chat
+    cap = out.get("captured")
+    for k, v in (cap.items() if isinstance(cap, dict) else ()):
+        if k in QMAP and isinstance(v, (str, int, float)) and str(v).strip():
             answers[k] = str(v).strip()
-    nxt = out.get("next_qid") if out.get("next_qid") in QMAP else next_unanswered(answers, cur)
+    nq = out.get("next_qid")
+    nxt = nq if isinstance(nq, str) and nq in QMAP else next_unanswered(answers, cur)
     done = bool(out.get("done")) or nxt is None
     save_state(pid, answers, nxt, done)
-    reply = out.get("reply") or (ask_text(nxt) if nxt else "Đã đủ thông tin.")
+    reply = out.get("reply") if isinstance(out.get("reply"), str) and out.get("reply").strip() else (ask_text(nxt) if nxt else "Đã đủ thông tin.")
     add_msg(pid, "interview", "assistant", reply, {"qid": nxt, "provider": provider})
     db.update("projects", pid, updated=db.now())
     return {"reply": reply, "progress": progress(answers), "current_qid": nxt, "done": done}
@@ -143,7 +154,7 @@ def brainstorm_turn(p, user_id, text):
     sysmsg = (
         "Bạn là cố vấn chiến lược cấp cao, cùng founder brainstorm để CHỐT DẦN các điểm quan trọng của dự án.\n"
         "Tôn trọng ý tưởng gốc và các mại điểm founder giữ (must_keep); đề xuất mạnh lên, không thay hướng. "
-        "Nói thẳng trade-off, hỏi lại khi thiếu dữ kiện, không bịa số liệu hay nguồn — số nào chưa có nguồn thì nói rõ là giả định.\n\n"
+        "Nói thẳng trade-off, hỏi lại khi thiếu dữ kiện, không bịa số liệu hay nguồn. MỌI con số thị trường (giá thuê, giá bán, quy mô…) chưa có nguồn phải ghi ngay sau nó “(ước tính, cần kiểm chứng)”; agent sẽ nghiên cứu số thật sau.\n\n"
         f"Ý tưởng gốc:\n{p['idea']}\n\nTrả lời phỏng vấn:\n" +
         "\n".join(f"- {QMAP[k]['ask']} → {v}" for k, v in answers.items() if k in QMAP) +
         "\n\nCác điểm (status: proposed/locked):\n" +
@@ -157,15 +168,17 @@ def brainstorm_turn(p, user_id, text):
         out = {"reply": "(Chế độ demo — chưa có API key) Tôi ghi ý này thành một điểm đề xuất để anh/chị chốt hoặc loại. "
                         "Thêm API key ở Cài đặt để có cố vấn AI thật phản biện và đề xuất.",
                "proposals": [{"title": text.strip()[:80], "detail": text.strip(), "category": "other"}] if len(text.strip()) > 15 else []}
+    out = out if isinstance(out, dict) else {"reply": str(out)}
+    props = out.get("proposals")
     created = []
-    for pr in (out.get("proposals") or [])[:3]:
-        if not str(pr.get("title", "")).strip():
+    for pr in (props if isinstance(props, list) else [])[:3]:
+        if not isinstance(pr, dict) or not str(pr.get("title", "")).strip():
             continue
         cat = pr.get("category") if pr.get("category") in CATEGORIES else "other"
         did = db.insert("decisions", project_id=pid, title=str(pr["title"]).strip()[:200], detail=str(pr.get("detail", "")).strip(),
                         category=cat, status="proposed", source_msg=mid, created=db.now(), updated=db.now())
         created.append(did)
-    reply = out.get("reply") or "…"
+    reply = out.get("reply") if isinstance(out.get("reply"), str) and out.get("reply").strip() else "…"
     add_msg(pid, "brainstorm", "assistant", reply, {"proposals": created, "provider": provider})
     db.update("projects", pid, updated=db.now())
     return {"reply": reply, "proposals": created}

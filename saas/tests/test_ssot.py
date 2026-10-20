@@ -1,0 +1,90 @@
+"""Bộ sửa số liệu không bao giờ được làm hỏng SSOT: chỉ đúng một giá trị đổi, comment còn nguyên khi sửa được tại dòng."""
+import os
+import shutil
+import tempfile
+
+os.environ.setdefault("GP_DATA", tempfile.mkdtemp(prefix="gp-test-"))
+
+import pytest  # noqa: E402
+import yaml  # noqa: E402
+
+from saas.server import ssot  # noqa: E402
+from saas.server.config import ROOT, WORKSPACE  # noqa: E402
+
+TRICKY = """# đầu file
+meta: {start_year: 2027, years: 5}
+assumptions:
+  # nhóm A
+  a_note_braces: {label: "Giá {cao} nhất, có phẩy", value: 10, unit: "%", status: estimate, source: [], note: "value: 99 {x}"}
+  a_label_value: {label: "value: giả", value: [1, 2, 3], unit: x, status: estimate, source: []}
+  a_float: {label: F, value: 0.25, unit: "%", status: placeholder, source: [ev-1]}
+  a_block:
+    label: Khối nhiều dòng
+    value: 7
+    status: estimate
+  a_text: {label: T, value: abc, status: estimate, source: []}
+model:
+  a_note_braces: {value: 1}
+"""
+
+
+def proj(name, text=None):
+    d = WORKSPACE / name
+    shutil.rmtree(d, ignore_errors=True)
+    if text is None:
+        shutil.copytree(ROOT / "projects" / "ai-robot-pet", d, ignore=shutil.ignore_patterns("build", "media", "research"))
+    else:
+        d.mkdir(parents=True)
+        (d / "assumptions.yaml").write_text(text)
+    return d
+
+
+def test_every_real_assumption_roundtrips():
+    d = proj("fuzz-real")
+    before = yaml.safe_load((d / "assumptions.yaml").read_text())
+    n = 0
+    for key, a in before["assumptions"].items():
+        v = a.get("value")
+        if isinstance(v, bool) or not isinstance(v, (int, float, list)) or (isinstance(v, list) and not all(isinstance(x, (int, float)) for x in v)):
+            continue
+        new = [x * 2 + 1 for x in v] if isinstance(v, list) else v * 2 + 1
+        ssot.set_value("fuzz-real", key, new)
+        after = yaml.safe_load((d / "assumptions.yaml").read_text())
+        exp = yaml.safe_load(yaml.safe_dump(before))
+        exp["assumptions"][key]["value"] = new
+        assert after == exp, key                                    # không giả định nào khác bị đụng tới
+        before = after
+        n += 1
+    text = (d / "assumptions.yaml").read_text()
+    assert n > 50 and "# SINGLE SOURCE OF TRUTH" in text and "# ---" in text   # comment còn nguyên sau >50 lần sửa
+
+
+@pytest.mark.parametrize("key,new,ok", [
+    ("a_note_braces", 12, True), ("a_label_value", "4 5 6", True), ("a_label_value", [1, 2], False),
+    ("a_float", "0,5", True), ("a_block", 8, True), ("a_text", 3, False), ("missing", 1, False), ("a_float", "abc", False)])
+def test_tricky_lines(key, new, ok):
+    d = proj("fuzz-tricky", TRICKY)
+    if not ok:
+        with pytest.raises(ssot.SSOTError):
+            ssot.set_value("fuzz-tricky", key, new)
+        assert (d / "assumptions.yaml").read_text() == TRICKY        # lỗi thì file không đổi
+        return
+    r = ssot.set_value("fuzz-tricky", key, new)
+    after = yaml.safe_load((d / "assumptions.yaml").read_text())
+    exp = yaml.safe_load(TRICKY)
+    exp["assumptions"][key]["value"] = r["value"]
+    assert after == exp
+    assert after["model"]["a_note_braces"] == {"value": 1}             # khoá trùng tên ngoài khối assumptions không bị sửa
+    if key != "a_block":
+        assert "# nhóm A" in (d / "assumptions.yaml").read_text()
+
+
+def test_status_rules():
+    proj("fuzz-st", TRICKY)
+    with pytest.raises(ssot.SSOTError):
+        ssot.set_value("fuzz-st", "a_note_braces", 1, "verified")     # chưa có nguồn
+    ssot.set_value("fuzz-st", "a_float", 0.3, "verified")             # có nguồn → được
+    a = yaml.safe_load((WORKSPACE / "fuzz-st" / "assumptions.yaml").read_text())["assumptions"]["a_float"]
+    assert a["status"] == "verified" and a["value"] == 0.3
+    with pytest.raises(ssot.SSOTError):
+        ssot.set_value("fuzz-st", "a_float", 0.3, "bịa")

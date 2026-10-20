@@ -47,6 +47,9 @@ CREATE TABLE IF NOT EXISTS shares(
 CREATE TABLE IF NOT EXISTS invites(
   id INTEGER PRIMARY KEY, token TEXT UNIQUE NOT NULL, email TEXT, role TEXT NOT NULL DEFAULT 'user', quota_projects INTEGER,
   quota_jobs_month INTEGER, note TEXT, created_by INTEGER, created TEXT, expires TEXT, used_by INTEGER, used_at TEXT, revoked INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS api_tokens(
+  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, name TEXT, token_hash TEXT UNIQUE NOT NULL, prefix TEXT,
+  created TEXT, last_used TEXT, revoked INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS changes(
   id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, user_id INTEGER, key TEXT, label TEXT, old TEXT, new TEXT, created TEXT);
 CREATE INDEX IF NOT EXISTS ix_msg ON messages(project_id, room);
@@ -117,6 +120,13 @@ def update(table, id_, **kw):
 def setting(key, default=""):
     r = one("SELECT value FROM settings WHERE key=?", (key,))
     return r["value"] if r else default
+
+
+def setting_int(key, default):
+    try:
+        return int(setting(key, str(default)))
+    except ValueError:
+        return default
 
 
 def set_setting(key, value):

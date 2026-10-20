@@ -60,7 +60,7 @@ function jobTable(rows, actions) {
   return `<div class="scroll-x"><table class="t"><thead><tr><th>#</th><th>Trạng thái</th><th>Dự án</th><th>Người dùng</th><th>Engine</th><th>Tính phí</th><th>Tạo</th>${actions ? "<th></th>" : ""}</tr></thead><tbody>
   ${rows.map(j => `<tr><td>${j.id}</td><td>${pill(j.status)}${j.error ? `<div class="hint err">${esc(j.error)}</div>` : ""}</td><td>${j.kind === "install" ? `<i>cài ${esc(j.engine)}</i>` : esc(j.name || "—")}<div class="hint">${esc(j.slug || "")}</div></td>
   <td>${esc(j.email || "")}</td><td>${esc(j.engine)}${j.profile ? `<div class="hint">${esc(j.profile)}</div>` : ""}</td><td>${esc({owner: "hệ thống", user_key: "key user", demo: "demo"}[j.billing] || "—")}</td><td class="hint">${ago(j.created)}</td>
-  ${actions ? `<td class="row" style="flex-wrap:nowrap"><button class="sm" data-log="${j.id}" type="button">Log</button>${["queued", "starting", "running"].includes(j.status) ? `<button class="sm danger" data-cancel="${j.id}" type="button">Huỷ</button>` : j.kind === "plan" ? `<button class="sm ghost" data-retry="${j.id}" type="button">Chạy lại</button>` : ""}</td>` : ""}</tr>`).join("") || '<tr><td colspan="8" class="hint">Chưa có job.</td></tr>'}</tbody></table></div>`;
+  ${actions ? `<td class="row" style="flex-wrap:nowrap"><button class="sm" data-log="${j.id}" type="button">Log</button>${["queued", "starting", "running", "waiting"].includes(j.status) ? `<button class="sm danger" data-cancel="${j.id}" type="button">Huỷ</button>` : j.kind === "plan" ? `<button class="sm ghost" data-retry="${j.id}" type="button">Chạy lại</button>` : ""}</td>` : ""}</tr>`).join("") || '<tr><td colspan="8" class="hint">Chưa có job.</td></tr>'}</tbody></table></div>`;
 }
 
 // ---------------------------------------------------------------- users
@@ -177,16 +177,17 @@ async function jobs() {
 }
 function showLog(id) { clearInterval(A.poll); $("#logc").hidden = false; $("#lx").onclick = () => { clearInterval(A.poll); $("#logc").hidden = true; };
   const tick = async () => { const j = await api("/jobs/" + id); $("#lt").innerHTML = `Job #${id} ${pill(j.status)}`; const el = $("#lg"); el.textContent = j.log || "…"; el.scrollTop = el.scrollHeight;
-    if (!["queued", "starting", "running"].includes(j.status)) clearInterval(A.poll); };
+    if (!["queued", "starting", "running", "waiting"].includes(j.status)) clearInterval(A.poll); };
   tick(); A.poll = setInterval(tick, 2000); $("#logc").scrollIntoView({behavior: "smooth"}); }
 
 // ---------------------------------------------------------------- core agent (owner)
 async function agents() {
-  const {profiles, engines} = await api("/admin/agents");
+  const {profiles, engines, sandbox} = await api("/admin/agents"); A.sandbox = sandbox;
   const eng = Object.entries(engines).filter(([k]) => k !== "demo");
   $("#main").innerHTML = topbar("Core agent", "Agent lõi chạy Plan trên tài khoản của owner · mỗi profile = một tài khoản đăng nhập riêng (HOME riêng)") + `<div class="body">
   <div class="grid g2">${eng.map(([k, e]) => `<div class="card"><div class="row"><b class="grow">${esc(e.label)}</b>${pill(e.installed ? "ok" : "not_installed").replace(/>[^<]*</, e.installed ? ">đã cài<" : ">chưa cài<")}</div>
     <p class="hint" style="margin:6px 0">Lệnh cài: <code>${esc(e.install)}</code></p><button class="sm" data-install="${k}" type="button">${e.installed ? "Cài lại / cập nhật" : "Cài đặt CLI"}</button></div>`).join("")}</div>
+  ${A.sandbox && !A.sandbox.enabled ? `<div class="banner" style="margin-top:14px"><b>Agent chưa được cô lập.</b> ${esc(A.sandbox.hint)}</div>` : A.sandbox ? `<p class="hint" style="margin-top:14px">🔒 ${esc(A.sandbox.hint)}</p>` : ""}
   <div class="row" style="margin:20px 0 10px"><h2 class="grow" style="margin:0">Tài khoản agent</h2><span class="hint">Job chạy trên profile <b>đang dùng</b>; nếu bật tự chuyển, hết quota sẽ chuyển sang profile kế tiếp theo ưu tiên.</span></div>
   <div class="grid g2">${profiles.map(profCard).join("") || '<div class="card hint">Chưa có profile. Tạo profile đầu tiên bên dưới — mặc định là Antigravity CLI.</div>'}</div>
   <div class="card" id="termc" style="margin-top:14px" hidden><div class="row"><h2 class="grow" style="margin:0" id="tt">Terminal</h2><button class="sm danger" id="tstop" type="button">Đóng terminal</button></div>

@@ -7,11 +7,14 @@ COPY requirements.txt ./requirements.txt
 COPY saas/requirements.txt ./saas-requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt -r saas-requirements.txt
 COPY . .
-# Core agent mặc định: Antigravity CLI (cài vào /root/.local/bin). Claude Code CLI là engine dự phòng (tắt: --build-arg WITH_CLAUDE=0).
+# Core agent mặc định: Antigravity CLI (cài vào /usr/local/bin để user gpagent chạy được). Claude Code CLI là engine dự phòng (tắt: --build-arg WITH_CLAUDE=0).
 ARG WITH_CLAUDE=1
-RUN curl -fsSL https://antigravity.google/cli/install.sh | bash \
+RUN curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin \
     && if [ "$WITH_CLAUDE" = "1" ]; then npm install -g @anthropic-ai/claude-code; fi
-ENV PATH=/root/.local/bin:$PATH GP_DATA=/data PYTHONUNBUFFERED=1
+# User riêng cho core agent: agent chạy dưới user này, không đọc được app.db, khoá mã hoá hay dự án người khác
+RUN useradd -r -m -d /home/gpagent -s /usr/sbin/nologin gpagent
+ENV GP_DATA=/data PYTHONUNBUFFERED=1
 VOLUME /data
 EXPOSE 8080
-CMD ["uvicorn", "saas.server.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# --proxy-headers: lấy IP thật của người dùng khi đứng sau reverse proxy (chống dò mật khẩu theo IP)
+CMD ["uvicorn", "saas.server.main:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips=*"]

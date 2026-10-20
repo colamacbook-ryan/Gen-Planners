@@ -18,12 +18,14 @@ import threading
 import time
 from pathlib import Path
 
-from . import db
+from . import db, sandbox
 from .config import AGENTS_HOME, which
 from .security import dec
 
 ENGINES = {
-    "agy": {"label": "Antigravity CLI (agy)", "install": "curl -fsSL https://antigravity.google/cli/install.sh | bash",
+    # chạy bằng root → cài vào /usr/local/bin để user cô lập `gpagent` cũng chạy được
+    "agy": {"label": "Antigravity CLI (agy)", "install": "curl -fsSL https://antigravity.google/cli/install.sh | bash"
+            + (" -s -- --dir /usr/local/bin" if os.geteuid() == 0 else ""),
             "key_env": "GEMINI_API_KEY", "key_label": "Gemini API key",
             "terminal": {"login": (["agy"], []), "usage": (["agy"], ["/usage"]), "credits": (["agy"], ["/credits"]),
                          "logout": (["agy"], ["/logout"])}},
@@ -53,7 +55,7 @@ def binary(engine):
 
 def env_for(profile, home_dir: Path, key: str | None = None):
     """Môi trường cho CLI: HOME riêng; chế độ API key → cài settings provider + biến key."""
-    env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN")}
+    env = sandbox.clean_env(dict(os.environ))                       # không lộ khoá/bí mật của máy chủ cho agent
     env.update(HOME=str(home_dir), BROWSER="echo", NO_BROWSER="1", TERM="xterm-256color")
     env["PATH"] = f"{home_dir}/.local/bin:{Path.home()}/.local/bin:" + env.get("PATH", "")
     if key is None and profile.get("engine") == "claude" and profile.get("auth_mode") == "account" and profile.get("key_enc"):

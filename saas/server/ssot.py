@@ -3,7 +3,11 @@
 Sửa giả định = sửa đúng một dòng `value:` trong assumptions.yaml (giữ comment và định dạng), đúng luật SSOT số 4.
 """
 import concurrent.futures as cf
+import copy
 import io
+import ipaddress
+import socket
+import urllib.parse
 import json
 import re
 import zipfile
@@ -78,28 +82,39 @@ def set_value(slug, key, new, status=None):
         raise SSOTError("Trạng thái không hợp lệ")
     if status == "verified" and not cur.get("source"):
         raise SSOTError("Chỉ đánh 'verified' khi giả định có nguồn trong evidence.yaml")
-    lines = p.read_text().split("\n")
-    head = re.compile(rf"^(\s+){re.escape(key)}:\s*\{{")
-    done = False
-    for i, line in enumerate(lines):
-        if head.match(line):
-            new_line = re.sub(r"(\bvalue:\s*)(\[[^\]]*\]|[^,}]+)", lambda m: m.group(1) + _fmt(value), line, count=1)
-            if status:
-                new_line = re.sub(r"(\bstatus:\s*)([^,}]+)", lambda m: m.group(1) + status, new_line, count=1)
-            lines[i], done = new_line, True
-            break
-    if done:
-        text = "\n".join(lines)
-        check = yaml.safe_load(text)["assumptions"][key]           # chắc chắn sửa dòng xong vẫn là YAML đúng
-        if check.get("value") != value:
-            raise SSOTError("Sửa dòng thất bại — kiểm tra định dạng assumptions.yaml")
-        p.write_text(text)
-    else:                                                         # giả định viết dạng khối nhiều dòng: ghi lại cả file
-        cur["value"] = value
-        if status:
-            cur["status"] = status
-        p.write_text(yaml.safe_dump(A, allow_unicode=True, sort_keys=False))
+    text = p.read_text()
+    expected = copy.deepcopy(A)                                  # bản sao sâu: chỉ đúng một giá trị (và trạng thái) được đổi
+    expected["assumptions"][key]["value"] = value
+    if status:
+        expected["assumptions"][key]["status"] = status
+    edited = _edit_line(text, key, value, status)
+    try:
+        ok = edited is not None and yaml.safe_load(edited) == expected
+    except yaml.YAMLError:
+        ok = False
+    if ok:
+        p.write_text(edited)                                      # giữ nguyên comment và định dạng
+    else:                                                         # dòng không sửa an toàn được: ghi lại cả file (mất comment)
+        p.write_text(yaml.safe_dump(expected, allow_unicode=True, sort_keys=False))
     return {"id": key, "label": cur.get("label") or key, "old": old, "value": value}
+
+
+def _edit_line(text, key, value, status):
+    """Sửa `value:` (và `status:`) trên đúng dòng flow-mapping của giả định, chỉ trong khối `assumptions:`."""
+    lines, inside = text.split("\n"), False
+    head = re.compile(rf"^(\s+){re.escape(key)}:\s*\{{")
+    for i, line in enumerate(lines):
+        if re.match(r"^\S", line):                            # khoá cấp cao nhất
+            inside = line.startswith("assumptions:")
+            continue
+        if inside and head.match(line):
+            # chỉ khớp `value:` đứng ngay sau `{` hoặc `,` — không khớp chữ "value:" nằm trong label/note
+            new = re.sub(r"([{,]\s*value:\s*)(\[[^\]]*\]|[^,}]+)", lambda m: m.group(1) + _fmt(value), line, count=1)
+            if status:
+                new = re.sub(r"([{,]\s*status:\s*)([^,}]+)", lambda m: m.group(1) + status, new, count=1)
+            lines[i] = new
+            return "\n".join(lines)
+    return None
 
 
 def kpi(slug):
@@ -127,13 +142,36 @@ def collect_urls(slug):
     return list(found.values())
 
 
-def _probe(client, url):
+def _public(url):
+    """Chỉ cho phép http(s) tới địa chỉ công khai — không để nội dung dự án dò mạng nội bộ của máy chủ."""
+    u = urllib.parse.urlsplit(url)
+    if u.scheme not in ("http", "https") or not u.hostname:
+        return False
     try:
-        r = client.head(url)
-        if r.status_code in (403, 405, 400, 404) or r.status_code >= 500:   # nhiều site không trả lời HEAD đúng
-            r = client.get(url, headers={"Range": "bytes=0-2048"})
-        code = r.status_code
-        return {"code": code, "ok": code < 400, "blocked": code in (401, 403, 429)}
+        infos = socket.getaddrinfo(u.hostname, u.port or (443 if u.scheme == "https" else 80), proto=socket.IPPROTO_TCP)
+    except socket.gaierror:
+        return True                                     # không phân giải được: để httpx báo lỗi bình thường
+    for *_, addr in infos:
+        ip = ipaddress.ip_address(addr[0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+            return False
+    return True
+
+
+def _probe(client, url, hops=5):
+    try:
+        for _ in range(hops):
+            if not _public(url):
+                return {"code": None, "ok": False, "blocked": False, "error": "địa chỉ nội bộ — bỏ qua"}
+            r = client.head(url)
+            if r.status_code in (403, 405, 400, 404) or r.status_code >= 500:   # nhiều site không trả lời HEAD đúng
+                r = client.get(url, headers={"Range": "bytes=0-2048"})
+            if r.is_redirect and r.headers.get("location"):
+                url = urllib.parse.urljoin(url, r.headers["location"])
+                continue
+            code = r.status_code
+            return {"code": code, "ok": code < 400, "blocked": code in (401, 403, 429)}
+        return {"code": None, "ok": False, "blocked": False, "error": "chuyển hướng quá nhiều"}
     except httpx.HTTPError as e:
         return {"code": None, "ok": False, "blocked": False, "error": type(e).__name__}
 
@@ -141,7 +179,7 @@ def _probe(client, url):
 def link_check(slug, workers=12):
     items = collect_urls(slug)
     headers = {"User-Agent": "Mozilla/5.0 (GenPlanner link-check)"}
-    with httpx.Client(timeout=12, follow_redirects=True, headers=headers) as client, cf.ThreadPoolExecutor(workers) as ex:
+    with httpx.Client(timeout=12, follow_redirects=False, headers=headers) as client, cf.ThreadPoolExecutor(workers) as ex:
         for it, res in zip(items, ex.map(lambda i: _probe(client, i["url"]), items)):
             it.update(res)
     out = {"checked": len(items), "ok": sum(i["ok"] for i in items), "blocked": sum(i["blocked"] for i in items),

@@ -11,14 +11,16 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 
-from . import agents, db, interview, ssot
+from . import agents, db, interview, sandbox, ssot
 from .config import JOBS_HOME, ROOT, WORKSPACE, which
 from .security import dec
 
 GEN = [sys.executable, str(ROOT / "gen.py")]
 EXPORT = [sys.executable, str(ROOT / "tools" / "export.py")]
 PROMPT = (ROOT / "pipeline" / "core-agent-prompt.md").read_text()
+EXTERNAL_PROMPT = (ROOT / "pipeline" / "external-agent-prompt.md").read_text()
 _running: dict[int, subprocess.Popen] = {}
 STATUS_VI = {"needs_login": "chưa đăng nhập", "quota_exhausted": "có vẻ hết quota"}
 
@@ -90,14 +92,19 @@ def agent_cmd(engine, prompt, model, timeout_min, project_dir):
 
 
 def run_agent(job, engine, env, model, project_dir, p):
-    timeout_min = int(db.setting("job_timeout_min", "120"))
+    timeout_min = db.setting_int("job_timeout_min", 120)
     prompt = PROMPT.format(root=ROOT, project_dir=project_dir, slug=p["slug"], country=p.get("country") or "Việt Nam",
                            projects_root=WORKSPACE)
     env = {**env, "GP_PROJECTS": str(WORKSPACE), "PYTHONUNBUFFERED": "1"}
-    proc = subprocess.Popen(agent_cmd(engine, prompt, model, timeout_min, project_dir), env=env, cwd=str(ROOT),
+    if db.one("SELECT status FROM jobs WHERE id=?", (job["id"],))["status"] == "cancelled":   # huỷ trước khi agent kịp khởi động
+        return -1, None, "cancelled"
+    proc = subprocess.Popen(agent_cmd(engine, prompt, model, timeout_min, project_dir), env=env, cwd=str(project_dir),
                             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                            start_new_session=True)
+                            start_new_session=True, **sandbox.popen_kwargs())
     _running[job["id"]] = proc
+    deadline = threading.Timer(timeout_min * 60 + 120, lambda: (log(job["id"], "⏱ quá thời gian — dừng agent"), stop(proc)))
+    deadline.daemon = True
+    deadline.start()                                                  # dừng cả khi agent treo không in gì
     db.update("jobs", job["id"], pid=proc.pid)
     threading.Thread(target=watch_progress, args=(job["id"], p["slug"], proc), daemon=True).start()
     usage, tail, t0 = None, [], time.time()
@@ -114,10 +121,8 @@ def run_agent(job, engine, env, model, project_dir, p):
                 log(job["id"], s)
         except json.JSONDecodeError:
             log(job["id"], line[:500])
-        if time.time() - t0 > timeout_min * 60 + 120:
-            log(job["id"], "⏱ quá thời gian — dừng agent")
-            os.killpg(proc.pid, signal.SIGTERM)
     proc.wait()
+    deadline.cancel()
     _running.pop(job["id"], None)
     return proc.returncode, usage, "\n".join(tail)
 
@@ -177,16 +182,26 @@ def run_job(job):
             fake = {"engine": engine, "auth_mode": "api_key"}
             env = agents.env_for(fake, h, dec(k["key_enc"]))
             log(jid, f"Engine {engine} · API key của user ({k['provider']} {k['key_hint']}) · model {job['model'] or 'mặc định'}")
-        elif engine != "demo":
+        elif engine not in ("demo", "external"):
             profile = db.one("SELECT * FROM agent_profiles WHERE id=?", (job["profile_id"],))
             engine = profile["engine"]
             env = agents.env_for(profile, agents.home(profile))
             log(jid, f"Engine {engine} · tài khoản hệ thống \"{profile['name']}\" · model {job['model'] or profile['model'] or 'mặc định'}")
+        if engine == "external":
+            base = db.setting("public_base_url") or "http://localhost:8080"
+            db.update("jobs", jid, status="waiting")
+            log(jid, f"Đang chờ agent ngoài nhận việc — bản giao việc: GET {base.rstrip('/')}/api/jobs/{jid}/handoff (kèm API token của bạn).")
+            return                                                    # agent nộp bài bằng POST /api/jobs/{id}/complete
         if engine == "demo":
             log(jid, "Engine demo: không gọi AI — chỉ ghi idea/brief vào dự án và build từ template để thử luồng.")
             code, tail = 0, ""
         else:
-            code, usage, tail = run_agent(job, engine, env, job["model"] or (profile or {}).get("model"), d, p)
+            home_dir = Path(env["HOME"])
+            sandbox.grant(d, home_dir)
+            try:
+                code, usage, tail = run_agent(job, engine, env, job["model"] or (profile or {}).get("model"), d, p)
+            finally:
+                sandbox.revoke(d, home_dir)
             if usage:
                 db.insert("usage", user_id=job["user_id"], project_id=p["id"], source="job",
                           provider="owner:" + engine if profile else "user:" + engine, model=job["model"] or (profile or {}).get("model"),
@@ -196,6 +211,9 @@ def run_job(job):
             if db.one("SELECT status FROM jobs WHERE id=?", (jid,))["status"] == "cancelled":
                 return finish(jid, "cancelled", "Đã huỷ", p)
             if code != 0:
+                if "free_tier" in tail and "limit: 0" in tail:               # không phải hết quota tạm thời: model không có trong gói
+                    return finish(jid, "failed", "Key Gemini đang ở gói miễn phí, model này có hạn mức 0 — chọn model Flash "
+                                                 "(ví dụ gemini-3.8-flash-medium) cho tài khoản agent rồi chạy lại.", p)
                 reason = ("needs_login" if agents.AUTH_HINT.search(tail) else
                           "quota_exhausted" if agents.QUOTA_HINT.search(tail) else None)
                 if profile and reason:
@@ -220,7 +238,43 @@ def run_job(job):
             shutil.rmtree(h, ignore_errors=True)            # HOME tạm có key của user — xoá ngay
 
 
+def stop(proc, grace=10):
+    """SIGTERM cả nhóm tiến trình, sau `grace` giây vẫn còn thì SIGKILL."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        if proc.poll() is not None:
+            return
+        try:
+            os.killpg(proc.pid, sig)
+        except (ProcessLookupError, PermissionError):
+            return
+        try:
+            proc.wait(timeout=grace)
+        except subprocess.TimeoutExpired:
+            continue
+
+
+def handoff_text(jid, p, base):
+    return EXTERNAL_PROMPT.format(base=base.rstrip("/"), slug=p["slug"], job=jid, country=p.get("country") or "Việt Nam")
+
+
+def finalize_external(jid, summary=""):
+    """Agent ngoài nộp bài: build + check + export + kiểm link, như sau một lần chạy agent nội bộ."""
+    j = db.one("SELECT * FROM jobs WHERE id=?", (jid,))
+    p = db.one("SELECT * FROM projects WHERE id=?", (j["project_id"],))
+    db.update("jobs", jid, status="running")
+    if summary:
+        log(jid, "✓ Agent nộp bài: " + summary[:3000])
+    try:
+        ok, errors = post_build(jid, p)
+        finish(jid, "done" if ok else "failed", (f"check: {errors} lỗi" if errors else None) if ok else "Build lỗi", p)
+    except Exception as e:  # noqa: BLE001
+        log(jid, f"✗ {type(e).__name__}: {e}")
+        finish(jid, "failed", str(e)[:500], p)
+
+
 def finish(jid, status, error=None, p=None):
+    if status != "cancelled" and db.one("SELECT status FROM jobs WHERE id=?", (jid,))["status"] == "cancelled":
+        status, error = "cancelled", "Đã huỷ"                       # người dùng huỷ trong lúc build — không ghi đè
     db.update("jobs", jid, status=status, error=error, finished=db.now(), pid=None)
     log(jid, f"— kết thúc: {status}" + (f" ({error})" if error else ""))
     if p:
@@ -228,22 +282,30 @@ def finish(jid, status, error=None, p=None):
 
 
 def cancel(jid):
-    db.update("jobs", jid, status="cancelled")
+    db.update("jobs", jid, status="cancelled", finished=db.now())
+    j = db.one("SELECT project_id FROM jobs WHERE id=?", (jid,))
+    if j and j["project_id"]:                                         # dự án thôi "đang chạy" ngay, không đợi tiến trình dừng hẳn
+        db.x("UPDATE projects SET status='ready', updated=? WHERE id=? AND status='running'", (db.now(), j["project_id"]))
     proc = _running.get(jid)
     if proc and proc.poll() is None:
-        try:
-            os.killpg(proc.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+        threading.Thread(target=stop, args=(proc,), daemon=True).start()
+
+
+def recover():
+    """Job đang chạy khi máy chủ tắt thì không thể tiếp tục — đánh dấu lỗi để người dùng chạy lại."""
+    for j in db.q("SELECT id, project_id FROM jobs WHERE status IN ('running','starting')"):
+        db.update("jobs", j["id"], status="failed", error="Máy chủ khởi động lại khi job đang chạy — bấm chạy lại", finished=db.now())
+        if j["project_id"]:
+            db.update("projects", j["project_id"], status="failed", updated=db.now())
 
 
 def loop():
-    db.x("UPDATE jobs SET status='failed', error='Máy chủ khởi động lại khi job đang chạy' WHERE status='running'")
+    recover()
     active: dict[int, threading.Thread] = {}
     while True:
         for k in [k for k, t in active.items() if not t.is_alive()]:
             active.pop(k)
-        if len(active) < int(db.setting("max_concurrent_jobs", "1")):
+        if len(active) < max(1, db.setting_int("max_concurrent_jobs", 1)):
             j = db.one("SELECT * FROM jobs WHERE status='queued' ORDER BY id LIMIT 1")
             if j:
                 db.update("jobs", j["id"], status="starting")

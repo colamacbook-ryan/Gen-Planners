@@ -21,9 +21,15 @@ def client():
 
 def test_full_flow():
     with client() as owner, client() as user, client() as other:
-        assert owner.post("/api/auth/signup", json={"email": "owner@x.io", "password": "password1"}).json()["role"] == "owner"
+        r = owner.post("/api/auth/signup", json={"email": "owner@x.io", "password": "password1"})
+        if r.status_code == 409:                                    # file test khác đã tạo owner trong cùng DB
+            r = owner.post("/api/auth/login", json={"email": "owner@x.io", "password": "password1"})
+        assert r.json()["role"] == "owner"
+        owner.put("/api/admin/settings", json={"allow_signup": "1", "default_quota_jobs_month": "3"})
         assert user.post("/api/auth/signup", json={"email": "u@x.io", "password": "password1"}).json()["role"] == "user"
         other.post("/api/auth/signup", json={"email": "o@x.io", "password": "password1"})
+        for prof in owner.get("/api/admin/agents").json()["profiles"]:   # bắt đầu khi chưa có core agent
+            owner.delete(f"/api/admin/agents/{prof['id']}")
 
         # CSRF: thiếu header → 403
         assert TestClient(main.app).post("/api/auth/login", json={}).status_code == 403
@@ -74,6 +80,7 @@ def test_full_flow():
         owner.patch(f"/api/admin/users/{uid}", json={"status": "disabled"})
         assert user.get("/api/me").status_code == 401                    # bị khoá → phiên mất hiệu lực
         assert owner.get("/api/admin/overview").json()["projects"] >= 1
+        owner.patch(f"/api/admin/users/{uid}", json={"status": "active"})
         assert any(a["action"] == "job_create" for a in owner.get("/api/admin/audit").json())
 
 
@@ -136,14 +143,16 @@ def test_growth_features():
         assert anon.get(sh["url"]).status_code == 200
         assert anon.get(f"/api/share/{sh['token']}/projects/{slug}/export/project").status_code == 200
         assert anon.get(f"/api/projects/{slug}/export/project").status_code == 401
-        user.delete(f"/api/shares/{sh['id']}")
-        assert anon.get(sh["url"]).status_code == 404
         ob = user.get("/api/me").json()["onboarding"]
         assert {s["id"] for s in ob["steps"] if s["done"]} >= {"sample", "project", "plan", "share"}
+        user.delete(f"/api/shares/{sh['id']}")
+        assert anon.get(sh["url"]).status_code == 404
+        assert not next(s for s in user.get("/api/me").json()["onboarding"]["steps"] if s["id"] == "share")["done"]   # link thu hồi không tính
 
         # owner xem chi tiết user + phễu
         uid = user.get("/api/me").json()["id"]
         det = owner.get(f"/api/admin/users/{uid}").json()
         assert det["projects"][0]["slug"] == slug and det["invited_by"]
         assert owner.get("/api/admin/overview").json()["funnel"]["plan"] >= 1
+        assert "key_enc" not in owner.get("/api/admin/overview").text
         owner.put("/api/admin/settings", json={"allow_signup": "1"})

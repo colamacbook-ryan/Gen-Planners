@@ -60,7 +60,7 @@ function needAdmin() { const u = need(); if (!["owner", "admin"].includes(u.role
 function needOwner() { const u = need(); if (u.role !== "owner") fail(403, "Chỉ owner hệ thống"); return u; }
 const pub = u => ({id: u.id, email: u.email, name: u.name, role: u.role, status: u.status, created: u.created, last_login: u.last_login});
 function quota(u) {
-  const used = D.jobs.filter(j => j.user_id === u.id && j.billing === "owner" && j.engine !== "demo" && j.created >= month() && j.status !== "cancelled").length;
+  const used = D.jobs.filter(j => j.user_id === u.id && j.billing === "owner" && j.engine !== "demo" && j.created >= month() && ["queued", "starting", "running", "done"].includes(j.status)).length;
   const projects = D.projects.filter(p => p.user_id === u.id).length;
   const lp = u.quota_projects ?? +S("default_quota_projects"), lj = u.quota_jobs_month ?? +S("default_quota_jobs_month");
   const unl = ["owner", "admin"].includes(u.role);
@@ -162,7 +162,7 @@ async function brainstormTurn(p, u, text) {
   const decs = D.decisions.filter(d => d.project_id === p.id && d.status !== "rejected"), a = istate(p.id).answers;
   const hist = history(p.id, "brainstorm", 16).map(m => (m.role === "user" ? "Founder: " : "Cố vấn: ") + m.content).join("\n\n");
   const prompt = "Bạn là cố vấn chiến lược cấp cao, cùng founder brainstorm để CHỐT DẦN các điểm quan trọng của dự án.\n" +
-    "Tôn trọng ý tưởng gốc và các mại điểm founder giữ (must_keep); đề xuất làm nó mạnh lên, không thay hướng. Nói thẳng trade-off, hỏi lại khi thiếu dữ kiện, không bịa số liệu hay nguồn — số nào chưa có nguồn thì nói rõ là giả định.\n\n" +
+    "Tôn trọng ý tưởng gốc và các mại điểm founder giữ (must_keep); đề xuất làm nó mạnh lên, không thay hướng. Nói thẳng trade-off, hỏi lại khi thiếu dữ kiện, không bịa số liệu hay nguồn. MỌI con số thị trường chưa có nguồn phải ghi ngay sau nó “(ước tính, cần kiểm chứng)”.\n\n" +
     `Ý tưởng gốc:\n${p.idea}\n\nTrả lời phỏng vấn:\n` + (Object.entries(a).map(([k, v]) => `- ${QMAP[k]?.ask} → ${v}`).join("\n") || "- chưa có") +
     "\n\nCác điểm (status):\n" + (decs.map(d => `- #${d.id} [${d.status}] (${d.category}) ${d.title}: ${d.detail || ""}`).join("\n") || "- chưa có") +
     `\n\nHội thoại:\n${hist}\n\n` +
@@ -279,6 +279,9 @@ R("GET", "/me", () => { const u = need(); return {...pub(u), has_keys: D.keys.so
 R("POST", "/me/onboarding", (b) => { const u = need(); u.onboarding ??= {}; for (const k of ["viewed_sample", "dismissed"]) if (k in b) u.onboarding[k] = !!b[k]; return {ok: true}; });
 R("POST", "/me/password", (b) => { const u = need(); if (u.pw !== hashish(b.old || "")) fail(400, "Mật khẩu cũ không đúng"); if (String(b.new || "").length < 8) fail(400, "Mật khẩu mới tối thiểu 8 ký tự"); u.pw = hashish(b.new); audit(u.id, "password_change", u.email); return {ok: true}; });
 
+R("GET", "/tokens", () => (need(), []));
+R("POST", "/tokens", () => fail(400, "API token cho agent ngoài chỉ có trên bản máy chủ."));
+R("GET", "/keys/(\\d+)/models", () => fail(400, "Bản demo không gọi được nhà cung cấp AI để lấy danh sách model."));
 R("GET", "/providers", () => (need(), PROVIDERS));
 const keyRow = k => ({...k, plan_engine: PROVIDERS[k.provider].plan_engine});
 R("GET", "/keys", () => { const u = need(); return D.keys.filter(k => k.user_id === u.id).sort((a, b) => b.is_default - a.is_default).map(keyRow); });
@@ -357,6 +360,7 @@ R("POST", "/projects/([\\w-]+)/run", (b, [slug]) => {
   if (miss.length && !b.force) fail(400, "Còn câu phỏng vấn bắt buộc chưa trả lời: " + miss.join(", "));
   buildBrief(p);
   const mode = S("plan_billing"), j = {id: nid(), kind: "plan", project_id: p.id, user_id: u.id, status: "queued", log: "", attempt: 1, model: b.model || null, created: now(), usage: null, error: null};
+  if (b.billing === "external") fail(400, "Agent ngoài cần máy chủ thật — agent của bạn gọi API của máy chủ bằng token.");
   if (b.billing === "demo") { if (S("allow_demo_engine") !== "1") fail(403, "Owner đã tắt engine demo"); Object.assign(j, {engine: "demo", billing: "demo"}); }
   else if (b.billing === "user_key") {
     if (mode === "owner") fail(403, "Hệ thống chỉ cho chạy Plan bằng tài khoản của owner.");
