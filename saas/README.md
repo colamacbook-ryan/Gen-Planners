@@ -72,3 +72,10 @@ saas/server/  config.py (đường dẫn, khoá) · db.py (SQLite) · security.p
 saas/static/  login.html · app.html · admin.html · gp.css · gp.js
 pipeline/     interview.yaml (bộ câu hỏi chuẩn) · core-agent-prompt.md · playbook.yaml · stages.yaml
 ```
+
+## Bản demo trên claude.ai
+
+`python saas/demo/build.py <thư-mục>` ghép login/app/admin thành một trang chạy hoàn toàn trong trình duyệt:
+`saas/demo/mock.js` giả lập cùng API (dữ liệu trong localStorage), trợ lý phỏng vấn/brainstorm gọi Claude của người xem
+(capability `sample`), core agent chỉ **mô phỏng** (CLI thật cần máy chủ). Dự án mẫu AI Robot Pet có hồ sơ và file tải về thật.
+Publish thư mục đó làm artifact với `capabilities: {sample: {}, downloads: true}`.

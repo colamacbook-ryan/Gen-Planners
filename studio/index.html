@@ -365,7 +365,7 @@ const S={db:null,user:null,dl:null,projects:[],cur:null,dossier:null,docs:null,v
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const md=s=>window.marked&&window.DOMPurify?DOMPurify.sanitize(marked.parse(s||"")):"<pre>"+esc(s)+"</pre>";
-const vn=(x,d=0)=>Number(x).toLocaleString("vi-VN",{minimumFractionDigits:d,maximumFractionDigits:d});
+const vn=(x,d=0)=>x==null||isNaN(x)?"—":Number(x).toLocaleString("vi-VN",{minimumFractionDigits:d,maximumFractionDigits:d});
 const ty=x=>vn(x/1000,1)+" tỷ";
 function toast(t){const e=$("#toast");e.textContent=t;e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,2600)}
 function slugify(s){return (s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/đ/g,"d").replace(/Đ/g,"D").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,40)||"du-an"}
@@ -432,7 +432,7 @@ function stagePains(st,c){
     <div class="tf"><div><span class="k">Hôm nay</span><span>${esc(p.today)}</span></div><div><span class="k x">Vì sao hỏng</span><span>${esc(p.fails)}</span></div></div></div></article>`).join("")}</div>`;
 }
 function stageGap(st,c,d){
-  const e=st.console.econ,share=e.share||{},max=Math.max(...c.pools.map(p=>p.hi));
+  const e=st.console.econ||{},share=e.share||{},max=Math.max(...c.pools.map(p=>p.hi));
   return `<div class="k">Bước 3 · Khoảng trống</div><h2>${esc(c.headline)}</h2>
   <div class="box" style="overflow-x:auto"><table class="cmp"><thead><tr><th>Chỉ báo</th><th>Trung Quốc / khu vực</th><th>Việt Nam hôm nay</th></tr></thead><tbody>${c.compare.map(r=>`<tr><td>${esc(r.l)}</td><td class="cn">${esc(r.cn)}</td><td class="vn">${esc(r.vn)}</td></tr>`).join("")}</tbody></table></div>
   <div class="two" style="margin-top:12px"><div class="box"><div class="k" style="margin-bottom:10px">Túi nhu cầu mỗi năm (tỷ đ) · phần xanh = doanh thu ta nhắm năm ${e.year}</div><div class="pool">${c.pools.map(p=>{const ours=share[p.seg]||0;return `<div class="r"${tipA(`${p.l}: ${vn(p.lo)}${p.hi>p.lo?"–"+vn(p.hi):""} tỷ đ/năm; ta nhắm ${vn(ours,1)} tỷ đ`)}><span>${esc(p.l)}</span><span class="tr"><i style="width:${p.hi/max*100}%"></i><u style="width:${Math.max(ours/max*100,ours?0.6:0)}%"></u></span><span class="v">${vn(p.lo)}${p.hi>p.lo?"–"+vn(p.hi):""}${ours?` · ta ${vn(ours/p.lo*100,1)}%`:""}</span></div>`}).join("")}</div>
@@ -446,7 +446,7 @@ function stageSolution(st,c){
   <div class="chain">${c.chain.map(r=>`<div class="ch"><div class="p">${esc(r.pain)}</div><div class="f">→ ${esc(r.fix)}</div><div class="e">${esc(r.edge)}</div><div class="r">${esc(r.proof)}</div></div>`).join("")}</div>`;
 }
 function stageBenefits(st,c,d){
-  const e=st.console.econ,mx=Math.max(e.ltv,e.cac);
+  const e=st.console.econ||{},mx=Math.max(e.ltv||0,e.cac||0)||1;
   return `<div class="k">Bước 5 · Lợi ích & lợi nhuận</div><h2>${esc(c.headline)}</h2>
   <div class="big4"><div class="box"><span class="k">Mỗi pet bán ra</span><b>${vn(e.ratio,1)}×</b><span>lãi gộp trong ${e.life_years} năm so với chi phí có khách (ước tính)</span></div>
   <div class="box"><span class="k">Doanh thu hệ sinh thái</span><b>${e.nonpet}%</b><span>doanh thu năm ${e.year} không đến từ bán máy</span></div>
@@ -471,7 +471,7 @@ function mstrip(st,ev){const it=ev.filter(x=>IMG(st,x.img)).slice(0,4);if(!it.le
   return `<div class="k" style="margin:22px 0 8px">Hình ảnh & clip minh hoạ</div><div class="mst">${it.map(x=>`<a href="${esc(x.url)}" target="_blank" rel="noopener" class="mi${x.video?" vid":""}"><span class="im"><img src="${esc(IMG(st,x.img))}" alt="" loading="lazy">${x.video?'<span class="play" aria-hidden="true">▶</span>':""}</span><b>${esc(x.title)}</b><small>${x.video?"Clip · ":""}${esc(x.pub)}</small></a>`).join("")}</div>`}
 function consoleView(p,d){
   const st=d?.story;if(!st?.console)return `<div class="wrap" style="padding-block:50px"><div class="empty">Console sẽ xuất hiện khi agent hoàn thành câu chuyện của dự án <b>${esc(p.name)}</b>.</div></div>`;
-  const c=st.console,k=p.kpi||{},bs=k.by_status||{},tot=(bs.verified||0)+(bs.estimate||0)+(bs.placeholder||0)||1,vl=st.verdict||{},e=c.econ;
+  const c=st.console,k=p.kpi||{},bs=k.by_status||{},tot=(bs.verified||0)+(bs.estimate||0)+(bs.placeholder||0)||1,vl=st.verdict||{},e=c.econ||{};
   const step=S.step||"context";let body="";
   switch(step){case"context":body=stageContext(st,c.context,d);break;case"pains":body=stagePains(st,c.pains);break;case"gap":body=stageGap(st,c.gap,d);break;case"solution":body=stageSolution(st,c.solution);break;case"benefits":body=stageBenefits(st,c.benefits,d);break;default:body=stageRoadmap(st)}
   const idx=STEPS.findIndex(s=>s[0]===step);
@@ -480,7 +480,7 @@ function consoleView(p,d){
   return `<div class="con">
   <section class="colL"><div class="k">${esc(st.kicker||"")}</div><h1>${esc(st.title||p.name)}</h1><p class="thesis">${esc(st.thesis)}</p>
     <div class="vd"><div class="l"><i class="${vl.level==="go"?"on go":""}"></i><i class="${vl.level==="caution"?"on caution":""}"></i><i class="${vl.level==="stop"?"on stop":""}"></i></div><b>${esc(vl.field)}</b><span>${esc(vl.invest)}</span></div>
-    <div class="kp"><div><small>Doanh thu ${e.year}</small><b>${vn(e.rev_last,1)} tỷ</b></div><div><small>EBITDA ${e.year}</small><b>${vn(e.ebitda_last,1)} tỷ</b></div><div class="hot"><small>Lãi mỗi pet / chi phí có khách</small><b>${vn(e.ratio,1)}×</b></div><div><small>Vốn bước đầu</small><b>${k.phase0!=null?vn(k.phase0)+" tr":"—"}</b></div></div>
+    <div class="kp"><div><small>Doanh thu ${e.year||""}</small><b>${vn(e.rev_last,1)} tỷ</b></div><div><small>EBITDA ${e.year||""}</small><b>${vn(e.ebitda_last,1)} tỷ</b></div><div class="hot"><small>Lãi mỗi pet / chi phí có khách</small><b>${vn(e.ratio,1)}×</b></div><div><small>Vốn bước đầu</small><b>${k.phase0!=null?vn(k.phase0)+" tr":"—"}</b></div></div>
     <div class="meter">Bằng chứng: ${k.sources} nguồn · ${k.assumptions} giả định<div class="bar"><i style="width:${(bs.verified||0)/tot*100}%;background:#4cc483"></i><i style="width:${(bs.estimate||0)/tot*100}%;background:#e3a646"></i><i style="width:${(bs.placeholder||0)/tot*100}%;background:#e5735f"></i></div>${bs.verified||0} kiểm chứng · ${bs.estimate||0} ước tính · ${bs.placeholder||0} chưa có</div>
     <ol class="steps">${STEPS.map(([id,t,s],i)=>`<li><button type="button" data-step="${id}" aria-current="${id===step?"step":"false"}"><span class="n">${i+1}</span><span><b>${t}</b><small>${s}</small></span></button></li>`).join("")}</ol></section>
   <section class="stage">${body}${mstrip(st,ev)}<div class="nav">${idx>0?`<button type="button" data-step="${STEPS[idx-1][0]}">← ${STEPS[idx-1][1]}</button>`:"<span></span>"}${idx<STEPS.length-1?`<button type="button" class="primary" data-step="${STEPS[idx+1][0]}">${STEPS[idx+1][1]} →</button>`:`<button type="button" class="primary" id="goFiles">Tải trọn bộ hồ sơ</button>`}</div></section>

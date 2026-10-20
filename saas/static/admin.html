@@ -76,8 +76,8 @@ async function users() {
   $$("tr[data-u]").forEach(tr => { const id = tr.dataset.u, u = us.find(x => x.id == id);
     tr.querySelectorAll("[data-f]").forEach(i => i.onchange = async () => { try { await api("/admin/users/" + id, {method: "PATCH", body: {[i.dataset.f]: i.value}}); toast("Đã lưu"); users(); } catch (x) { toast(x.message); users(); } });
     tr.querySelectorAll("[data-a]").forEach(b => b.onclick = async () => {
-      if (b.dataset.a === "status") { if (!confirm(`${u.status === "active" ? "Khoá" : "Mở khoá"} ${u.email}?`)) return; await api("/admin/users/" + id, {method: "PATCH", body: {status: u.status === "active" ? "disabled" : "active"}}); }
-      else { const pw = prompt(`Mật khẩu mới cho ${u.email} (≥ 8 ký tự)`); if (!pw) return; await api("/admin/users/" + id, {method: "PATCH", body: {password: pw}}).catch(x => toast(x.message)); }
+      if (b.dataset.a === "status") { if (!await ask(`${u.status === "active" ? "Khoá" : "Mở khoá"} ${u.email}?`, u.status === "active" ? "Khoá" : "Mở khoá")) return; await api("/admin/users/" + id, {method: "PATCH", body: {status: u.status === "active" ? "disabled" : "active"}}); }
+      else { const pw = await askText(`Mật khẩu mới cho ${u.email} (≥ 8 ký tự)`, "", "password"); if (!pw) return; await api("/admin/users/" + id, {method: "PATCH", body: {password: pw}}).catch(x => toast(x.message)); }
       toast("Đã cập nhật"); users(); }); });
   $("#uf").onsubmit = async e => { e.preventDefault(); try { await api("/admin/users", {body: {email: $("#ue").value, name: $("#un").value, password: $("#up").value, role: $("#ur").value}}); toast("Đã tạo"); users(); } catch (x) { $("#umsg").textContent = x.message; } };
 }
@@ -102,7 +102,7 @@ async function jobs() {
   `<div class="body"><div class="card">${jobTable(js, true)}</div><div class="card" style="margin-top:14px" id="logc" hidden><div class="row"><h2 class="grow" id="lt" style="margin:0"></h2><button class="sm ghost" id="lx" type="button">Đóng</button></div><pre class="log" id="lg" style="margin-top:10px"></pre></div></div>`;
   $("#jf").onchange = e => { A.filter = e.target.value; jobs(); };
   $$("[data-log]").forEach(b => b.onclick = () => showLog(+b.dataset.log));
-  $$("[data-cancel]").forEach(b => b.onclick = async () => { if (confirm("Huỷ job?")) { await api(`/jobs/${b.dataset.cancel}/cancel`, {method: "POST"}); jobs(); } });
+  $$("[data-cancel]").forEach(b => b.onclick = async () => { if (await ask("Huỷ job này?", "Huỷ job")) { await api(`/jobs/${b.dataset.cancel}/cancel`, {method: "POST"}); jobs(); } });
   $$("[data-retry]").forEach(b => b.onclick = async () => { const r = await api(`/admin/jobs/${b.dataset.retry}/retry`, {method: "POST"}); toast("Đã xếp hàng job #" + r.job_id); jobs(); });
 }
 function showLog(id) { clearInterval(A.poll); $("#logc").hidden = false; $("#lx").onclick = () => { clearInterval(A.poll); $("#logc").hidden = true; };
@@ -137,7 +137,7 @@ async function agents() {
   $("#am").onchange = $("#ae").onchange = syncMode; syncMode();
   $("#af").onsubmit = async e => { e.preventDefault(); try { await api("/admin/agents", {body: {name: $("#an").value, engine: $("#ae").value, auth_mode: $("#am").value,
     key: $("#ak").value, model: $("#amo").value, account_label: $("#al").value, priority: $("#ap").value}}); toast("Đã tạo profile"); agents(); } catch (x) { $("#amsg").textContent = x.message; } };
-  $$("[data-install]").forEach(b => b.onclick = async () => { if (!confirm(`Chạy lệnh cài ${b.dataset.install} trên máy chủ?`)) return; const r = await api("/admin/agents/install", {body: {engine: b.dataset.install}}); toast("Đang cài — xem log ở Jobs #" + r.job_id); location.hash = "jobs"; });
+  $$("[data-install]").forEach(b => b.onclick = async () => { if (!await ask(`Chạy lệnh cài ${b.dataset.install} trên máy chủ?`, "Cài đặt", false)) return; const r = await api("/admin/agents/install", {body: {engine: b.dataset.install}}); toast("Đang cài — xem log ở Jobs #" + r.job_id); location.hash = "jobs"; });
   $$(".prof").forEach(card => { const id = +card.dataset.p, p = profiles.find(x => x.id === id);
     card.querySelectorAll("[data-a]").forEach(b => b.onclick = () => profAction(p, b.dataset.a, b));
     const ms = card.querySelector(".msel"); if (ms) ms.onchange = async () => { await api("/admin/agents/" + id, {method: "PATCH", body: {model: ms.value}}); toast("Model: " + (ms.value || "mặc định")); };
@@ -167,12 +167,12 @@ async function profAction(p, a, btn) {
     if (a === "activate") { await api(P + "/activate", {method: "POST"}); toast(`Đã chuyển sang ${p.name}`); }
     if (a === "check") { btn.textContent = "…"; const r = await api(P + "/check", {method: "POST"}); toast(r.ok ? "OK · " + r.output.split("\n")[0] : r.output); }
     if (a === "models") { btn.textContent = "…"; const r = await api(P + "/models", {method: "POST"}); toast(r.models.length ? `${r.models.length} model` : (r.output || "Không đọc được danh sách").slice(0, 160)); }
-    if (["login", "usage", "logout"].includes(a)) { if (a === "logout" && !confirm("Đăng xuất tài khoản này khỏi agent?")) return;
+    if (["login", "usage", "logout"].includes(a)) { if (a === "logout" && !await ask("Đăng xuất tài khoản này khỏi agent?", "Đăng xuất")) return;
       await api(P + "/terminal", {body: {action: a}}); return openTerm(p, a); }
-    if (a === "key") { const k = prompt(p.auth_mode === "account" ? "Dán token mà `claude setup-token` in ra sau khi đăng nhập" : "API key mới"); if (!k) return; await api(P, {method: "PATCH", body: {key: k}}); }
+    if (a === "key") { const k = await askText(p.auth_mode === "account" ? "Dán token mà `claude setup-token` in ra sau khi đăng nhập" : "API key mới", "", "password"); if (!k) return; await api(P, {method: "PATCH", body: {key: k}}); }
     if (a === "reset") await api(P, {method: "PATCH", body: {reset_status: true}});
     if (a === "toggle") await api(P, {method: "PATCH", body: {enabled: !p.enabled}});
-    if (a === "del") { if (!confirm(`Xoá profile ${p.name}? Phiên đăng nhập lưu trong profile cũng bị xoá.`)) return; await api(P, {method: "DELETE"}); }
+    if (a === "del") { if (!await ask(`Xoá profile ${p.name}? Phiên đăng nhập lưu trong profile cũng bị xoá.`, "Xoá")) return; await api(P, {method: "DELETE"}); }
   } catch (x) { toast(x.message); }
   agents();
 }

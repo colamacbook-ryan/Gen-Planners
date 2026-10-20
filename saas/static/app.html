@@ -46,6 +46,7 @@ function sideList() {
   $("#navSettings").className = location.hash === "#settings" ? "on" : "";
 }
 function keyBanner() {
+  if (S.me.ai_live) return `<div class="banner"><b>Bản demo:</b> trợ lý đang chạy bằng Claude trong tài khoản claude.ai của bạn — không cần API key. Trên bản máy chủ, mỗi người dùng thêm API key riêng ở Cài đặt.</div>`;
   if (S.me.has_keys) return "";
   return `<div class="banner"><b>Chưa có API key.</b> Trợ lý AI chạy bằng key của chính bạn (Anthropic, OpenAI, Gemini hoặc OpenRouter).
     ${S.me.demo_allowed ? "Hiện đang ở <b>chế độ demo</b> — câu hỏi theo kịch bản, không có AI phản biện." : ""} <a href="#settings">Thêm key →</a></div>`;
@@ -155,9 +156,9 @@ function decisionsPanel() {
 function tabBrainstorm() {
   chatBox("brainstorm", $("#tab"), decisionsPanel(), renderProject).then(() => {
     $$("#sidep .dec button").forEach(b => b.onclick = async () => { const id = b.closest(".dec").dataset.id, a = b.dataset.a;
-      if (a === "del") { if (!confirm("Xoá điểm này?")) return; await api("/decisions/" + id, {method: "DELETE"}); }
-      else if (a === "edit") { const x = S.cur.decisions.find(d => d.id == id); const t = prompt("Điểm cần chốt", x.title); if (t == null) return;
-        const dt = prompt("Chi tiết", x.detail || ""); await api("/decisions/" + id, {method: "PATCH", body: {title: t, detail: dt ?? x.detail}}); }
+      if (a === "del") { if (!await ask("Xoá điểm này?", "Xoá")) return; await api("/decisions/" + id, {method: "DELETE"}); }
+      else if (a === "edit") { const x = S.cur.decisions.find(d => d.id == id); const v = await dialog({title: "Sửa điểm", fields: [{label: "Điểm cần chốt", value: x.title}, {label: "Chi tiết", value: x.detail || "", multiline: true}], ok: "Lưu"}); if (!v || !v[0].trim()) return;
+        await api("/decisions/" + id, {method: "PATCH", body: {title: v[0].trim(), detail: v[1]}}); }
       else await api("/decisions/" + id, {method: "PATCH", body: {status: a}});
       await refresh(); renderProject(); });
     const f = $("#df"); if (f) f.onsubmit = async e => { e.preventDefault();
@@ -213,7 +214,7 @@ function watch(id, once) {
     el.textContent = `Job #${j.id} · ${j.engine} · ${j.billing}${j.model ? " · " + j.model : ""}\n` + (j.log || "…");
     if (atEnd) el.scrollTop = el.scrollHeight;
     $("#jst").innerHTML = pill(j.status); const live = ["queued", "starting", "running"].includes(j.status);
-    $("#cancel").hidden = !live || !S.cur.mine; $("#cancel").onclick = async () => { if (confirm("Huỷ job đang chạy?")) await api(`/jobs/${id}/cancel`, {method: "POST"}); };
+    $("#cancel").hidden = !live || !S.cur.mine; $("#cancel").onclick = async () => { if (await ask("Huỷ job đang chạy?", "Huỷ job")) await api(`/jobs/${id}/cancel`, {method: "POST"}); };
     if (!live) { clearInterval(S.poll); if (!once && j.status === "done") { await refresh(); toast("Plan đã xong — mở tab Hồ sơ"); renderProject(); } } };
   tick(); if (!once) S.poll = setInterval(tick, 2000);
 }
@@ -254,7 +255,7 @@ async function viewSettings() {
     tr.querySelectorAll("button").forEach(b => b.onclick = async () => { const a = b.dataset.a;
       if (a === "test") { b.disabled = true; b.textContent = "…"; const r = await api(`/keys/${id}/test`, {method: "POST"}); toast(r.ok ? "Key hoạt động: " + r.message : r.message); }
       if (a === "def") await api("/keys/" + id, {method: "PATCH", body: {is_default: true}});
-      if (a === "del") { if (!confirm("Xoá key này?")) return; await api("/keys/" + id, {method: "DELETE"}); }
+      if (a === "del") { if (!await ask("Xoá key này?", "Xoá")) return; await api("/keys/" + id, {method: "DELETE"}); }
       S.me = await api("/me"); viewSettings(); }); });
   $("#pf").onsubmit = async e => { e.preventDefault(); try { await api("/me/password", {body: {old: $("#po").value, new: $("#pn").value}}); toast("Đã đổi mật khẩu"); e.target.reset(); } catch (x) { $("#pmsg").textContent = x.message; } };
 }

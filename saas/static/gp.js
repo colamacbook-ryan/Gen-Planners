@@ -21,3 +21,22 @@ const STATUS = {interview: "phỏng vấn", brainstorm: "brainstorm", ready: "s�
 const pill = s => `<span class="pill ${esc(s)}">${esc(STATUS[s] || s || "—")}</span>`;
 async function logout() { await api("/auth/logout", {method: "POST"}); location.href = "/login"; }
 document.addEventListener("click", e => { if (e.target.closest(".burger")) $(".side").classList.toggle("open"); else if (!e.target.closest(".side")) $(".side")?.classList.remove("open"); });
+// Hộp thoại trong trang (thay confirm/prompt — nhiều trình nhúng như claude.ai chặn hộp thoại của trình duyệt).
+function dialog({title, body = "", fields = [], ok = "Đồng ý", danger = false}) {
+  return new Promise(res => {
+    const w = document.createElement("div"); w.className = "modal";
+    w.innerHTML = `<form class="card" role="dialog" aria-modal="true" aria-label="${esc(title)}"><h2>${esc(title)}</h2>${body ? `<p class="hint">${esc(body)}</p>` : ""}
+      ${fields.map((f, i) => `<label for="dlg${i}">${esc(f.label || "")}</label>${f.multiline ? `<textarea id="dlg${i}" rows="3">${esc(f.value || "")}</textarea>`
+        : `<input id="dlg${i}" type="${f.type || "text"}" value="${esc(f.value || "")}" ${f.type === "password" ? 'autocomplete="new-password"' : ""}>`}`).join("")}
+      <div class="row" style="margin-top:14px;justify-content:flex-end"><button type="button" class="ghost" data-x>Huỷ</button><button class="${danger ? "danger" : "pri"}">${esc(ok)}</button></div></form>`;
+    const done = v => { w.remove(); document.removeEventListener("keydown", key); res(v); };
+    const key = e => { if (e.key === "Escape") done(null); };
+    w.querySelector("[data-x]").onclick = () => done(null);
+    w.onclick = e => { if (e.target === w) done(null); };
+    w.querySelector("form").onsubmit = e => { e.preventDefault(); done(fields.map((f, i) => w.querySelector("#dlg" + i).value)); };
+    document.addEventListener("keydown", key); document.body.append(w);
+    (w.querySelector("input,textarea") || w.querySelector("button.pri,button.danger")).focus();
+  });
+}
+const ask = (title, ok = "Đồng ý", danger = true) => dialog({title, ok, danger}).then(v => v !== null);
+const askText = (title, value = "", type = "text") => dialog({title, fields: [{value, type}], ok: "Lưu"}).then(v => v && v[0].trim() ? v[0].trim() : null);
