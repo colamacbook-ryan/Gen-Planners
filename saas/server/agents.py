@@ -12,6 +12,7 @@ import struct
 import termios
 import re
 import select
+import shutil
 import signal
 import subprocess
 import threading
@@ -51,6 +52,22 @@ def home(profile) -> Path:
 
 def binary(engine):
     return which(engine) if engine in ("agy", "claude") else None
+
+
+def agent_binary(engine):
+    """Bản CLI mà job dùng: khi cô lập, chọn bản user agent chạy được (thường /usr/local/bin), không phải bản trong /root."""
+    found = [p for p in dict.fromkeys([shutil.which(engine), f"/usr/local/bin/{engine}", str(Path.home() / ".local/bin" / engine)])
+             if p and Path(p).exists()]
+    return next((p for p in found if sandbox.can_exec(p)), None), found
+
+
+def cli_problem(engine):
+    """Lời giải thích khi CLI có nhưng user cô lập không chạy được; None nếu ổn hoặc chưa cài."""
+    ok, found = agent_binary(engine)
+    if ok or not found:
+        return None
+    return (f"{ENGINES[engine]['label']} đang ở {found[0]} — user cô lập `{sandbox.AGENT_USER}` không chạy được "
+            f"(thư mục cha không cho đi qua). Bấm “Cài đặt CLI” để cài vào /usr/local/bin.")
 
 
 def env_for(profile, home_dir: Path, key: str | None = None):

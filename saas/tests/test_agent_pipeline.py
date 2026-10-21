@@ -26,7 +26,7 @@ def wait(c, jid, until=("done", "failed", "cancelled"), t=60):
 
 
 def test_agent_pipeline(monkeypatch):
-    monkeypatch.setattr(worker, "which", lambda name: FAKE)          # mọi engine đều gọi CLI giả lập
+    monkeypatch.setattr(agents, "agent_binary", lambda e: (FAKE, [FAKE]))   # mọi engine đều gọi CLI giả lập
     monkeypatch.setattr(agents, "which", lambda name: FAKE)
     with TestClient(main.app, headers=H) as o, TestClient(main.app, headers=H) as u:
         o.post("/api/auth/login", json={"email": "owner@x.io", "password": "password1"}).status_code == 200 or \

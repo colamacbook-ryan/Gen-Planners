@@ -1331,7 +1331,11 @@ def profile_row(p):
 
 @app.get("/api/admin/agents")
 def list_agents(o=Depends(need_owner)):
-    return {"sandbox": sandbox.status(), "profiles": [profile_row(p) for p in db.q("SELECT * FROM agent_profiles ORDER BY is_active DESC, priority, id")],
+    st = sandbox.status()
+    issues = [x for x in (agents.cli_problem(e) for e in ("agy", "claude")) if x]
+    if issues:
+        st = {**st, "enabled": False, "hint": " ".join(issues)}
+    return {"sandbox": st, "profiles": [profile_row(p) for p in db.q("SELECT * FROM agent_profiles ORDER BY is_active DESC, priority, id")],
             "engines": {k: {"label": v["label"], "install": v["install"], "installed": bool(agents.binary(k)) if k != "demo" else True,
                             "key_label": v.get("key_label"), "actions": list(v["terminal"])} for k, v in agents.ENGINES.items()}}
 

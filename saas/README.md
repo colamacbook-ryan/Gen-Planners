@@ -49,6 +49,10 @@ uvicorn saas.server.main:app --port 8080                      # từ thư mục 
 
 Mở `http://localhost:8080` → tài khoản đầu tiên đăng ký là **owner**. Docker: `docker compose -f saas/docker-compose.yml up -d`.
 
+Khi chạy bằng root để cô lập agent (khuyến nghị — Dockerfile làm sẵn): `GP_DATA` phải nằm ở chỗ user `gpagent` đi qua được
+(vd `/data`, `/var/lib/genplanner`; **không** đặt dưới `/root` hay thư mục 700), và CLI agent phải cài ngoài `/root`
+(`/usr/local/bin` — nút *Cài đặt CLI* làm đúng như vậy). Trang Core agent báo ngay nếu một trong hai sai.
+
 Biến môi trường: `GP_DATA` (mặc định `saas/data/`, đã gitignore), `GP_COOKIE_SECURE=1` khi chạy sau HTTPS,
 `GP_SESSION_SECRET` / `GP_FERNET_KEY` nếu muốn quản lý khoá ngoài file. **Sao lưu `GP_DATA/fernet.key`** — mất file này là
 mất mọi API key đã lưu.

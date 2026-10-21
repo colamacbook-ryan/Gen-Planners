@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 from . import agents, db, history, interview, sandbox, ssot
-from .config import HISTORY, JOBS_HOME, ROOT, WORKSPACE, which
+from .config import HISTORY, JOBS_HOME, ROOT, WORKSPACE
 from .security import dec
 
 GEN = [sys.executable, str(ROOT / "gen.py")]
@@ -54,6 +54,7 @@ def ensure_project(job_id, p):
     d = WORKSPACE / p["slug"]
     if not d.exists():
         sh(job_id, [*GEN, "new", p["slug"], "--name", p["name"]])
+        sandbox.private(d)                       # 700 ngay từ đầu: agent của job khác không đọc được dù đoán ra slug
         history.ensure(p["slug"])
     (d / "idea.md").write_text("# Ý tưởng gốc\n\n" + (p["idea"] or "") + "\n")
     (d / "brief.md").write_text(p.get("brief_md") or interview.build_brief(p))
@@ -88,9 +89,9 @@ def norm_usage(ev):
 
 
 def agent_cmd(engine, prompt, model, timeout_min, project_dir):
-    b = which(engine)
+    b, found = agents.agent_binary(engine)
     if not b:
-        raise RuntimeError(f"Chưa cài {engine} trên máy chủ (admin → Core agent → Cài đặt CLI).")
+        raise RuntimeError(agents.cli_problem(engine) if found else f"Chưa cài {engine} trên máy chủ (admin → Core agent → Cài đặt CLI).")
     if engine == "agy":
         cmd = [b, "-p", prompt, "--output-format", "stream-json", "--dangerously-skip-permissions",
                "--print-timeout", f"{timeout_min}m", "--add-dir", str(project_dir)]
@@ -237,6 +238,8 @@ def run_job(job):
             code, tail = 0, ""
         else:
             home_dir = Path(env["HOME"])
+            if sandbox.agent_ids() and sandbox.problem():
+                return finish(jid, "failed", sandbox.problem(), p)
             sandbox.grant(d, home_dir)
             try:
                 code, usage, tail = run_agent(job, engine, env, job["model"] or (profile or {}).get("model"), d, p)

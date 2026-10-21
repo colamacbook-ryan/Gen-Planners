@@ -167,3 +167,13 @@ def test_concurrent_edits_do_not_lose_updates(env):
     assert codes == [200] * len(keys)
     vals = {r["id"]: r["value"] for r in ssot.read_assumptions(slug)["assumptions"]}
     assert all(vals[k] == 7 for k in keys)
+
+
+def test_project_dir_private_from_creation(env):
+    """Dự án chỉ chạy demo (không trao quyền cho agent) vẫn phải 700 — agent job khác đoán slug cũng không đọc được."""
+    if os.geteuid() != 0:
+        pytest.skip("chỉ có nghĩa khi máy chủ chạy bằng root")
+    _, bob, _ = env
+    slug = bob.post("/api/projects", json={"name": "Bí mật", "idea": "Ý tưởng chưa muốn ai đọc trộm, chạy demo thôi."}).json()["slug"]
+    assert wait(bob, bob.post(f"/api/projects/{slug}/run", json={"billing": "demo", "force": True}).json()["job_id"])["status"] == "done"
+    assert (WORKSPACE / slug).stat().st_mode & 0o777 == 0o700

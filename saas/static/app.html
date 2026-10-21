@@ -166,7 +166,7 @@ async function chatBox(room, el, sideHtml, after) {
   if (!alive(v)) return;
   el.innerHTML = `${keyBanner()}<div class="chatwrap"><div class="chat"><div class="msgs" id="msgs">${msgs.map(bubble).join("") ||
     `<div class="empty">${room === "brainstorm" ? "Đặt câu hỏi hay ném một ý tưởng — ví dụ: <i>“Mảng nào nên làm trước để có dòng tiền?”</i>" : ""}</div>`}</div>
-    <form class="composer" id="cf"><textarea id="ct" placeholder="${room === "interview" ? "Trả lời câu hỏi… (Enter để gửi, Shift+Enter xuống dòng)" : "Brainstorm với AI… (Enter để gửi)"}" ${S.cur.mine ? "" : "disabled"}></textarea>
+    <form class="composer" id="cf"><textarea id="ct" aria-label="Tin nhắn" placeholder="${room === "interview" ? "Trả lời câu hỏi… (Enter để gửi, Shift+Enter xuống dòng)" : "Brainstorm với AI… (Enter để gửi)"}" ${S.cur.mine ? "" : "disabled"}></textarea>
     <button class="pri" ${S.cur.mine ? "" : "disabled"}>Gửi</button></form></div><div class="panel" id="sidep">${sideHtml}</div></div>`;
   const box = $("#msgs"); box.scrollTop = box.scrollHeight;
   const send = async () => { const t = $("#ct").value.trim(); if (!t || $("#cf button").disabled) return; $("#ct").value = "";
@@ -459,7 +459,7 @@ async function viewSettings() {
       <label for="kk">API key</label><input id="kk" type="password" required autocomplete="off" placeholder="dán key vào đây">
       <p class="err" id="kmsg"></p><button class="pri">Lưu key</button></form></div>
     <div class="card"><h2>API token cho agent ngoài</h2><p class="hint">Cho Claude Code, Antigravity hoặc agent của bạn làm core agent: agent đọc/ghi bộ số liệu của dự án qua API bằng token này. Token có quyền như tài khoản của bạn — thu hồi khi không dùng.</p>
-      <table class="t"><tbody id="tokRows"></tbody></table><form class="row" id="tokF" style="margin-top:10px"><input id="tokN" class="grow" placeholder="Tên token, ví dụ: Claude Code trên MacBook"><button class="pri">Tạo token</button></form><div id="tokOut"></div></div>
+      <table class="t"><tbody id="tokRows"></tbody></table><form class="row" id="tokF" style="margin-top:10px"><input id="tokN" aria-label="Tên token" class="grow" placeholder="Tên token, ví dụ: Claude Code trên MacBook"><button class="pri">Tạo token</button></form><div id="tokOut"></div></div>
     <div class="card"><h2>Tài khoản</h2><p>${esc(S.me.email)} ${pill(S.me.role === "user" ? "active" : S.me.role)}</p>
       <p class="hint">Hạn mức: ${S.me.quota.projects_limit == null ? "không giới hạn dự án" : `${S.me.quota.projects}/${S.me.quota.projects_limit} dự án`} ·
       ${S.me.quota.owner_jobs_limit == null ? "không giới hạn lần chạy" : `${S.me.quota.owner_jobs_month}/${S.me.quota.owner_jobs_limit} lần chạy Plan bằng tài khoản hệ thống tháng này`}.</p>

@@ -91,7 +91,7 @@ def test_ssrf_blocked():
 
 
 def test_delete_project_stops_its_agent(monkeypatch):
-    monkeypatch.setattr(worker, "which", lambda n: FAKE)
+    monkeypatch.setattr(agents, "agent_binary", lambda e: (FAKE, [FAKE]))
     monkeypatch.setattr(agents, "which", lambda n: FAKE)
     o, u = owner_client(), user_client("del@x.io")
     with o, u:
@@ -120,7 +120,7 @@ def test_delete_project_stops_its_agent(monkeypatch):
 def test_agent_sandbox_cannot_read_server_secrets(monkeypatch):
     if not sandbox.agent_ids():
         subprocess.run(["useradd", "-r", "-M", "-s", "/usr/sbin/nologin", sandbox.AGENT_USER], check=True)
-    monkeypatch.setattr(worker, "which", lambda n: FAKE)
+    monkeypatch.setattr(agents, "agent_binary", lambda e: (FAKE, [FAKE]))
     monkeypatch.setattr(agents, "which", lambda n: FAKE)
     monkeypatch.setenv("GP_SESSION_SECRET", "bi-mat-may-chu")
     sandbox.lock_down()
@@ -154,3 +154,32 @@ def test_job_claimed_once():
     worker.start(); worker.start()
     import threading
     assert sum(1 for t in threading.enumerate() if t.name == "gp-worker") == 1
+
+
+def test_sandbox_preflight_explains_unreachable_cli_and_data(tmp_path, monkeypatch):
+    """Lỗi thật khi chạy agy dưới gpagent: CLI cài trong /root/.local/bin, hoặc GP_DATA dưới thư mục 700 → báo rõ, không chết giữa chừng."""
+    from saas.server import agents, sandbox
+    if not sandbox.agent_ids():
+        pytest.skip("không chạy bằng root hoặc không có user agent")
+    base = Path(tempfile.mkdtemp())                               # tmp_path nằm dưới /tmp/pytest-of-root (700) — cần cha đi qua được
+    base.chmod(0o755)
+    locked = base / "locked"
+    (locked / "bin").mkdir(parents=True)
+    cli = locked / "bin" / "agy"
+    cli.write_text("#!/bin/sh\necho 1\n")
+    cli.chmod(0o755)
+    locked.chmod(0o700)
+    assert not sandbox.can_exec(cli) and sandbox.can_exec("/bin/sh")
+    monkeypatch.setattr(agents.shutil, "which", lambda name: str(cli))
+    monkeypatch.setattr(agents.Path, "home", lambda: base / "nohome")
+    ok, found = agents.agent_binary("agy")
+    if not ok:                                                    # máy có sẵn /usr/local/bin/agy thì chọn bản đó — cũng đúng
+        assert "không chạy được" in agents.cli_problem("agy")
+    else:
+        assert ok != str(cli)
+    data = locked / "data"
+    data.mkdir()
+    monkeypatch.setattr(sandbox, "DATA", data)
+    assert sandbox.blocked_parent(data) == str(locked)
+    st = sandbox.status()
+    assert st["enabled"] is False and "không đi qua được" in st["hint"]

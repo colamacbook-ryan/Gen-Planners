@@ -72,9 +72,9 @@ async function users() {
   $("#main").innerHTML = topbar("Người dùng", `${us.length} tài khoản · ${us.filter(u => u.status === "active").length} đang hoạt động · ${pending.length} lời mời đang chờ`,
     `<button class="pri" id="invBtn" type="button">＋ Mời người dùng</button>`) + `<div class="body">
     <section class="card" id="invPanel" hidden></section>
-    <div class="toolbar"><input id="uq" placeholder="Tìm theo tên hoặc email…" value="${esc(A.uf.q)}" style="min-width:240px">
-      <select id="ur2"><option value="">Mọi vai trò</option>${Object.entries(ROLE).map(([k, v]) => `<option value="${k}" ${A.uf.role === k ? "selected" : ""}>${v}</option>`).join("")}</select>
-      <select id="us2"><option value="">Mọi trạng thái</option><option value="active" ${A.uf.status === "active" ? "selected" : ""}>Hoạt động</option><option value="disabled" ${A.uf.status === "disabled" ? "selected" : ""}>Đã khoá</option></select>
+    <div class="toolbar"><input id="uq" aria-label="Tìm người dùng" placeholder="Tìm theo tên hoặc email…" value="${esc(A.uf.q)}" style="min-width:240px">
+      <select id="ur2" aria-label="Lọc theo vai trò"><option value="">Mọi vai trò</option>${Object.entries(ROLE).map(([k, v]) => `<option value="${k}" ${A.uf.role === k ? "selected" : ""}>${v}</option>`).join("")}</select>
+      <select id="us2" aria-label="Lọc theo trạng thái"><option value="">Mọi trạng thái</option><option value="active" ${A.uf.status === "active" ? "selected" : ""}>Hoạt động</option><option value="disabled" ${A.uf.status === "disabled" ? "selected" : ""}>Đã khoá</option></select>
       <span class="grow"></span><span class="hint">Bấm vào một dòng để xem chi tiết · hạn mức để trống = mặc định hệ thống</span></div>
     <div class="card scroll-x"><table class="t"><thead><tr><th>Tài khoản</th><th>Vai trò</th><th>Trạng thái</th><th>Bắt đầu</th><th class="num">Dự án</th><th class="num">Job hệ thống / tháng</th><th class="num">Token tháng</th><th>Hoạt động</th></tr></thead><tbody id="urows"></tbody></table></div>
     ${pending.length || inv.length ? `<div class="card" style="margin-top:14px"><h2>Lời mời</h2><table class="t"><thead><tr><th>Gửi cho</th><th>Vai trò</th><th>Trạng thái</th><th>Hết hạn</th><th></th></tr></thead><tbody>
@@ -220,9 +220,9 @@ function profCard(p) {
   const models = [...new Set([p.model, ...p.models].filter(Boolean))];
   return `<div class="prof ${p.is_active ? "act" : ""}" data-p="${p.id}"><div class="row"><h3 class="grow">${esc(p.name)}</h3>${p.is_active ? '<span class="pill core">đang dùng</span>' : ""}${pill(p.enabled ? p.status || "new" : "disabled")}</div>
   <div class="kv"><span>Engine</span><span>${esc(p.engine)} ${p.installed ? "" : '<span class="err">· chưa cài CLI</span>'}</span><span>Xác thực</span><span>${p.auth_mode === "api_key" ? `API key ${esc(p.key_hint || "(chưa có)")}` : "đăng nhập tài khoản"}${p.account_label ? " · " + esc(p.account_label) : ""}</span>
-  <span>Phiên bản</span><span>${esc(p.version || "—")}</span><span>Model</span><span><select class="msel" style="padding:4px 8px"><option value="">mặc định</option>${models.map(m => `<option ${m === p.model ? "selected" : ""}>${esc(m)}</option>`).join("")}</select></span>
+  <span>Phiên bản</span><span>${esc(p.version || "—")}</span><span>Model</span><span><select class="msel" aria-label="Model của tài khoản agent" style="padding:4px 8px"><option value="">mặc định</option>${models.map(m => `<option ${m === p.model ? "selected" : ""}>${esc(m)}</option>`).join("")}</select></span>
   <span>Tháng này</span><span>${tok(p.tokens_month)} token · ${p.jobs_month} lượt</span>
-  <span>Ngân sách</span><span><input class="budget" type="number" value="${p.budget_tokens_month ?? ""}" placeholder="token/tháng (tuỳ chọn)" style="padding:4px 8px"></span></div>
+  <span>Ngân sách</span><span><input class="budget" type="number" aria-label="Ngân sách token mỗi tháng" value="${p.budget_tokens_month ?? ""}" placeholder="token/tháng (tuỳ chọn)" style="padding:4px 8px"></span></div>
   ${pct != null ? `<div class="meter" title="${Math.round(pct)}% ngân sách"><i style="width:${pct}%;background:${pct > 85 ? "var(--bad)" : "var(--core)"}"></i></div>` : ""}
   ${p.quota_text ? `<details style="margin-top:8px"><summary class="hint">Quota đọc lúc ${ago(p.quota_checked)}</summary><pre class="log" style="max-height:200px">${esc(p.quota_text.slice(-2500))}</pre></details>` : ""}
   <div class="row" style="margin-top:10px">${p.is_active ? "" : '<button class="sm pri" data-a="activate" type="button">Dùng tài khoản này</button>'}
