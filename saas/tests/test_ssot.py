@@ -49,7 +49,8 @@ def test_every_real_assumption_roundtrips():
         v = a.get("value")
         if isinstance(v, bool) or not isinstance(v, (int, float, list)) or (isinstance(v, list) and not all(isinstance(x, (int, float)) for x in v)):
             continue
-        new = [x * 2 + 1 for x in v] if isinstance(v, list) else v * 2 + 1
+        f = (lambda x: x / 2) if all(0 <= x <= 1 for x in (v if isinstance(v, list) else [v])) else (lambda x: x * 2 + 1)  # tỷ lệ giữ trong 0–1
+        new = [f(x) for x in v] if isinstance(v, list) else f(v)
         ssot.set_value("fuzz-real", key, new)
         after = yaml.safe_load((d / "assumptions.yaml").read_text())
         exp = yaml.safe_load(yaml.safe_dump(before))
@@ -177,3 +178,13 @@ def test_one_off_revenue_split_and_exit_basis(capsys):
     assert gen.cmd_check("rule-oneoff", as_json=True) == 1
     r = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert any("kind 'once' không hợp lệ" in e for e in r["errors"])
+
+
+def test_edit_cannot_break_model():
+    proj("rule-edit")
+    with pytest.raises(ssot.SSOTError, match="tỷ lệ giá vốn"):
+        ssot.set_value("rule-edit", "pet_cogs", 1.5)
+    for bad in ("nan", "inf", "-inf", "1e999"):
+        with pytest.raises(ssot.SSOTError):
+            ssot.set_value("rule-edit", "pet_price", bad)
+    assert ssot.set_value("rule-edit", "pet_cogs", "0,6")["value"] == 0.6

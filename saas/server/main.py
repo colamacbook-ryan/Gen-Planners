@@ -12,6 +12,7 @@ from collections import defaultdict
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 import datetime as dt
@@ -54,6 +55,8 @@ def token_hash(t):
 def current_user(request: Request):
     auth = request.headers.get("authorization", "")
     if auth.startswith("Bearer gp_"):                              # API token cho agent ngoài (không dùng cookie → không có CSRF)
+        if not any(r.fullmatch(request.url.path) for r in TOKEN_ROUTES) or request.method not in ("GET", "PUT", "POST"):
+            raise HTTPException(403, "API token chỉ dùng cho các lệnh của agent ngoài (xem bản giao việc) — không dùng cho cài đặt, quản trị hay tài khoản.")
         t = db.one("SELECT * FROM api_tokens WHERE token_hash=? AND revoked=0", (token_hash(auth[7:].strip()),))
         u = db.one("SELECT * FROM users WHERE id=?", (t["user_id"],)) if t else None
         if not u or u["status"] != "active":
@@ -68,6 +71,12 @@ def current_user(request: Request):
     if not u or u["status"] != "active" or u["session_ver"] != s.get("v"):
         return None
     return u
+
+
+# API token (đưa cho agent ngoài — có thể bị prompt-injection) chỉ mở đúng các lệnh trong pipeline/external-agent-prompt.md
+TOKEN_ROUTES = [re.compile(x) for x in (
+    r"/api/jobs/\d+(/(handoff|progress|complete))?", r"/api/standard/.+", r"/api/samples",
+    r"/api/projects/[\w-]+(/(ssot(/.+)?|check|rebuild|lint|export/[\w.-]+|files/[\w.-]+|media/[\w.-]+))?")]
 
 
 def need_user(request: Request):
@@ -150,9 +159,22 @@ def create_user(email, name, pw=None, google_sub=None, invite=None):
     return db.one("SELECT * FROM users WHERE id=?", (uid,))
 
 
+async def read_limited(request: Request, limit, msg="Dữ liệu gửi lên quá lớn"):
+    """Đọc body nhưng dừng ngay khi vượt `limit` — không nạp cả request lớn vào RAM rồi mới kiểm."""
+    if int(request.headers.get("content-length") or 0) > limit:
+        raise HTTPException(413, msg)
+    buf = bytearray()
+    async for chunk in request.stream():
+        buf += chunk
+        if len(buf) > limit:
+            raise HTTPException(413, msg)
+    return bytes(buf)
+
+
 async def body(request: Request) -> dict:
+    raw = await read_limited(request, 1024 * 1024)
     try:
-        b = await request.json()
+        b = json.loads(raw or b"{}")
     except (json.JSONDecodeError, ValueError):
         return {}
     return b if isinstance(b, dict) else {}
@@ -526,6 +548,7 @@ def delete_project(slug: str, u=Depends(need_user)):
         db.x(f"DELETE FROM {t} WHERE project_id=?", (p["id"],))
     db.x("DELETE FROM projects WHERE id=?", (p["id"],))
     shutil.rmtree(WORKSPACE / p["slug"], ignore_errors=True)
+    history.remove(p["slug"])
     db.audit(u["id"], "project_delete", slug)
     return {"ok": True}
 
@@ -668,9 +691,10 @@ async def run_plan(slug: str, request: Request, u=Depends(need_user)):
     return {"job_id": jid}
 
 
-def get_job(jid, u):
+def get_job(jid, u, write=False):
+    """Admin xem và huỷ được job của mọi người; giao việc / báo tiến độ / nộp bài chỉ chủ job."""
     j = db.one("SELECT * FROM jobs WHERE id=?", (jid,))
-    if not j or (j["user_id"] != u["id"] and u["role"] not in ("owner", "admin")):
+    if not j or (j["user_id"] != u["id"] and (write or u["role"] not in ("owner", "admin"))):
         raise HTTPException(404)
     return j
 
@@ -709,11 +733,27 @@ def export_part(slug: str, part: str, u=Depends(need_user)):
 @app.get("/api/projects/{slug}/media/{name}")
 def media(slug: str, name: str, u=Depends(need_user)):
     get_project(slug, u)
-    f = WORKSPACE / slug / "media" / name
-    if not re.fullmatch(r"\w[\w.-]*", name) or not f.is_file():
-        raise HTTPException(404)
-    return FileResponse(f)
+    return media_file(slug, name)
 
+
+MEDIA_TYPES = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp", "gif": "image/gif"}
+
+
+def media_file(slug, name):
+    """Chỉ phục vụ ảnh raster: html/svg trong media/ (agent ghi được) sẽ thành XSS cùng origin với /admin."""
+    ext = name.rsplit(".", 1)[-1].lower()
+    if not re.fullmatch(r"\w[\w.-]*", name) or ext not in MEDIA_TYPES:
+        raise HTTPException(404)
+    try:
+        f = ssot.safe_path(slug, "media/" + name)
+    except ssot.SSOTError:
+        raise HTTPException(404) from None
+    if not f.is_file():
+        raise HTTPException(404)
+    return FileResponse(f, media_type=MEDIA_TYPES[ext], headers=SAFE_FILE_HEADERS)
+
+
+SAFE_FILE_HEADERS = {"X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox; default-src 'none'"}
 
 FILES = {"business-plan.docx", "deck.pptx", "financials.xlsx", "business-plan.md", "deck.md"}
 
@@ -770,6 +810,18 @@ def assumptions(slug: str, u=Depends(need_user)):
 @app.patch("/api/projects/{slug}/assumptions/{key}")
 async def set_assumption(slug: str, key: str, request: Request, u=Depends(need_user)):
     p, b = get_project(slug, u, True), await body(request)
+    return await run_in_threadpool(_set_assumption, slug, key, p, b, u)
+
+
+_edit_locks = defaultdict(threading.Lock)        # sửa số liệu tuần tự theo dự án (đọc-sửa-ghi assumptions.yaml)
+
+
+def _set_assumption(slug, key, p, b, u):
+    with _edit_locks[slug]:
+        return _set_assumption_locked(slug, key, p, b, u)
+
+
+def _set_assumption_locked(slug, key, p, b, u):
     need_workspace(slug)
     if db.one("SELECT id FROM jobs WHERE project_id=? AND status IN ('queued','starting','running','waiting')", (p["id"],)):
         raise HTTPException(409, "Dự án đang có job chạy — đợi xong rồi sửa số liệu.")
@@ -795,7 +847,7 @@ def rebuild(slug: str, u=Depends(need_user)):
 @app.post("/api/projects/{slug}/linkcheck")
 def linkcheck(slug: str, u=Depends(need_user)):
     p = get_project(slug, u)
-    if p["user_id"] != u["id"] and u["role"] not in ("owner", "admin"):
+    if p["user_id"] != u["id"] and u["role"] != "owner":
         raise HTTPException(403, "Không phải dự án của bạn")
     need_workspace(slug)
     return {"job_id": queue_job(p, u, "linkcheck")}
@@ -904,10 +956,9 @@ def share_export(token: str, slug: str, part: str):
 @app.get("/api/share/{token}/projects/{slug}/media/{name}")
 def share_media(token: str, slug: str, name: str):
     p = share_project(token)
-    f = WORKSPACE / p["slug"] / "media" / name
-    if slug != p["slug"] or not re.fullmatch(r"\w[\w.-]*", name) or not f.is_file():
+    if slug != p["slug"]:
         raise HTTPException(404)
-    return FileResponse(f)
+    return media_file(slug, name)
 
 
 @app.get("/api/share/{token}/projects/{slug}/files/{name}")
@@ -980,7 +1031,7 @@ def external_job(p, jid=None):
 
 @app.get("/api/jobs/{jid}/handoff")
 def handoff(jid: int, request: Request, u=Depends(need_user)):
-    j = get_job(jid, u)
+    j = get_job(jid, u, True)
     if j["engine"] != "external":
         raise HTTPException(400, "Job này không phải agent ngoài")
     p = db.one("SELECT * FROM projects WHERE id=?", (j["project_id"],))
@@ -996,16 +1047,23 @@ def ssot_list(slug: str, u=Depends(need_user)):
     if not d.exists():
         raise HTTPException(404, "Dự án chưa có workspace — bấm Chạy Plan trước.")
     return [{"path": str(f.relative_to(d)), "size": f.stat().st_size} for f in sorted(d.rglob("*"))
-            if f.is_file() and SSOT_PATH.match(str(f.relative_to(d)))]
+            if not f.is_symlink() and f.is_file() and SSOT_PATH.match(str(f.relative_to(d)))]
 
 
 @app.get("/api/projects/{slug}/ssot/{path:path}")
 def ssot_read(slug: str, path: str, u=Depends(need_user)):
     get_project(slug, u)
-    f = WORKSPACE / slug / path
-    if not SSOT_PATH.match(path) or not f.is_file():
+    if not SSOT_PATH.match(path):
         raise HTTPException(404, "Không có file")
-    return FileResponse(f) if path.startswith("media/") else Response(f.read_text(), media_type="text/plain; charset=utf-8")
+    if path.startswith("media/"):
+        return media_file(slug, path[6:])
+    try:
+        f = ssot.safe_path(slug, path)
+    except ssot.SSOTError:
+        raise HTTPException(404, "Không có file") from None
+    if not f.is_file():
+        raise HTTPException(404, "Không có file")
+    return Response(f.read_text(errors="replace"), media_type="text/plain; charset=utf-8", headers=SAFE_FILE_HEADERS)
 
 
 @app.put("/api/projects/{slug}/ssot/{path:path}")
@@ -1014,9 +1072,7 @@ async def ssot_write(slug: str, path: str, request: Request, u=Depends(need_user
     can_edit_ssot(p)
     if not SSOT_PATH.match(path) or path in READ_ONLY:
         raise HTTPException(400, "Đường dẫn không được phép ghi")
-    data = await request.body()
-    if len(data) > 2 * 1024 * 1024:
-        raise HTTPException(413, "File tối đa 2 MB")
+    data = await read_limited(request, 2 * 1024 * 1024, "File tối đa 2 MB")
     if not path.startswith("media/"):
         try:
             text = data.decode("utf-8")
@@ -1028,9 +1084,12 @@ async def ssot_write(slug: str, path: str, request: Request, u=Depends(need_user
                 yaml.safe_load(text)
             except yaml.YAMLError as e:
                 raise HTTPException(400, f"YAML lỗi: {e}") from None
-    f = WORKSPACE / slug / path
-    f.parent.mkdir(parents=True, exist_ok=True)
-    f.write_bytes(data)
+    try:
+        f = ssot.safe_path(slug, path)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        ssot.write_nofollow(f, data)
+    except ssot.SSOTError as e:
+        raise HTTPException(400, str(e)) from None
     db.update("projects", p["id"], updated=db.now())
     j = db.one("SELECT id FROM jobs WHERE project_id=? AND engine='external' AND status='waiting'", (p["id"],))
     if j and path == "project.yaml" and (pr := ssot.stage_progress(slug)):
@@ -1053,7 +1112,7 @@ def ssot_check(slug: str, u=Depends(need_user)):
 
 @app.post("/api/jobs/{jid}/progress")
 async def job_progress(jid: int, request: Request, u=Depends(need_user)):
-    j, b = get_job(jid, u), await body(request)
+    j, b = get_job(jid, u, True), await body(request)
     if j["engine"] != "external" or j["status"] != "waiting":
         raise HTTPException(409, "Job không ở trạng thái chờ agent ngoài")
     worker.log(jid, "› " + str(b.get("message", ""))[:1000])
@@ -1062,7 +1121,7 @@ async def job_progress(jid: int, request: Request, u=Depends(need_user)):
 
 @app.post("/api/jobs/{jid}/complete")
 async def job_complete(jid: int, request: Request, u=Depends(need_user)):
-    j, b = get_job(jid, u), await body(request)
+    j, b = get_job(jid, u, True), await body(request)
     if j["engine"] != "external" or j["status"] != "waiting":
         raise HTTPException(409, "Job không ở trạng thái chờ agent ngoài")
     threading.Thread(target=worker.finalize_external, args=(jid, str(b.get("summary") or "")), daemon=True).start()

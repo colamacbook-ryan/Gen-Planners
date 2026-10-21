@@ -9,6 +9,8 @@ import ipaddress
 import socket
 import urllib.parse
 import json
+import math
+import os
 import re
 import zipfile
 from pathlib import Path
@@ -16,15 +18,45 @@ from pathlib import Path
 import httpx
 import yaml
 
-from .config import WORKSPACE
+from .config import ROOT, WORKSPACE
 
 
 class SSOTError(Exception):
     pass
 
 
+def _validate_model(A):
+    """gen.validate_model (cùng luật với `gen.py check`) — nạp lười để server không phụ thuộc gen.py khi khởi động."""
+    import sys
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    import gen
+    return gen.validate_model(A)[0]
+
+
 def project_dir(slug: str) -> Path:
     return WORKSPACE / slug
+
+
+def safe_path(slug, rel) -> Path:
+    """Đường dẫn trong dự án, không đi qua symlink nào và không thoát ra ngoài thư mục dự án."""
+    root = project_dir(slug)
+    f = root
+    for part in Path(rel).parts:
+        if part in ("..", "/") or part.startswith("/"):
+            raise SSOTError("Đường dẫn không hợp lệ")
+        f = f / part
+        if f.is_symlink():
+            raise SSOTError("Đường dẫn là symlink — không được phép")
+    if not f.resolve().is_relative_to(root.resolve()):
+        raise SSOTError("Đường dẫn ra ngoài dự án")
+    return f
+
+
+def write_nofollow(f: Path, data: bytes):
+    fd = os.open(f, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o644)
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(data)
 
 
 def load(p: Path):
@@ -59,6 +91,8 @@ def _coerce(new, old):
             f = float(str(x).replace(",", ".").strip())
         except ValueError:
             raise SSOTError(f"Không đọc được số: {x}") from None
+        if not math.isfinite(f):
+            raise SSOTError(f"Không đọc được số: {x}")
         return int(f) if f.is_integer() else f
     if isinstance(old, list):
         items = new if isinstance(new, list) else [s for s in re.split(r"[;\s]+", str(new).strip()) if s]
@@ -82,11 +116,14 @@ def set_value(slug, key, new, status=None):
         raise SSOTError("Trạng thái không hợp lệ")
     if status == "verified" and not cur.get("source"):
         raise SSOTError("Chỉ đánh 'verified' khi giả định có nguồn trong evidence.yaml")
-    text = p.read_text()
     expected = copy.deepcopy(A)                                  # bản sao sâu: chỉ đúng một giá trị (và trạng thái) được đổi
     expected["assumptions"][key]["value"] = value
     if status:
         expected["assumptions"][key]["status"] = status
+    new_errs = set(_validate_model(expected)) - set(_validate_model(A))   # chỉ chặn lỗi do chính lần sửa này gây ra
+    if new_errs:
+        raise SSOTError("Giá trị này làm model sai: " + "; ".join(sorted(new_errs)))
+    text = p.read_text()
     edited = _edit_line(text, key, value, status)
     try:
         ok = edited is not None and yaml.safe_load(edited) == expected
@@ -206,19 +243,25 @@ BUNDLE_DIRS = ["sections", "research", "media"]
 BUILD_FILES = ["business-plan.docx", "deck.pptx", "financials.xlsx", "business-plan.md"]
 
 
+def _plain(root: Path, f: Path):
+    """Không thành phần nào từ root tới f là symlink — zip không được kéo file ngoài dự án vào."""
+    rel = f.relative_to(root)
+    return not any((root / Path(*rel.parts[:i + 1])).is_symlink() for i in range(len(rel.parts)))
+
+
 def bundle(slug) -> bytes:
     d = project_dir(slug)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for f in BUILD_FILES:
-            if (d / "build" / f).exists():
+            if (d / "build" / f).is_file() and _plain(d, d / "build" / f):
                 z.write(d / "build" / f, f"{slug}/{f}")
         for f in BUNDLE_FILES:
-            if (d / f).exists():
+            if (d / f).is_file() and _plain(d, d / f):
                 z.write(d / f, f"{slug}/ssot/{f}")
         for sub in BUNDLE_DIRS:
-            for f in sorted((d / sub).rglob("*")) if (d / sub).exists() else []:
-                if f.is_file():
+            for f in sorted((d / sub).rglob("*")) if _plain(d, d / sub) else []:
+                if f.is_file() and _plain(d, f):
                     z.write(f, f"{slug}/ssot/{f.relative_to(d)}")
         z.writestr(f"{slug}/README.txt", "Thư mục gốc: tài liệu đã build (Word, PowerPoint, Excel, Markdown).\n"
                    "ssot/: nguồn số liệu duy nhất — sửa assumptions.yaml rồi chạy `python gen.py build <slug>` "

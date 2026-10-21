@@ -10,8 +10,9 @@ DATA = Path(os.environ.get("GP_DATA") or SAAS / "data")
 WORKSPACE = DATA / "workspace" / "projects"         # dự án của user (GP_PROJECTS cho gen.py)
 AGENTS_HOME = DATA / "agents"                       # mỗi agent profile một HOME riêng → một tài khoản
 JOBS_HOME = DATA / "jobs"                           # HOME tạm cho job chạy bằng key của user
+HISTORY = DATA / "history"                          # git của từng dự án — NGOÀI thư mục agent được ghi
 DB_PATH = DATA / "app.db"
-for d in (DATA, WORKSPACE, AGENTS_HOME, JOBS_HOME):
+for d in (DATA, WORKSPACE, AGENTS_HOME, JOBS_HOME, HISTORY):
     d.mkdir(parents=True, exist_ok=True)
 
 

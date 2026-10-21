@@ -25,7 +25,8 @@ import sys
 from pathlib import Path
 
 import yaml
-from jinja2 import Environment, FileSystemLoader, StrictUndefined
+from jinja2 import FileSystemLoader, StrictUndefined
+from jinja2.sandbox import ImmutableSandboxedEnvironment
 
 ROOT = Path(__file__).resolve().parent
 PROJECTS = Path(os.environ.get("GP_PROJECTS") or ROOT / "projects")  # SaaS trỏ workspace riêng
@@ -137,7 +138,7 @@ def compute(assumptions: dict, scenario: dict) -> dict:
         y["cum_fcf"] = cum_fcf
 
     pre = A[M["pre_money"]]["value"]
-    stake = raise_amt / (pre + raise_amt)
+    stake = raise_amt / (pre + raise_amt) if pre + raise_amt > 0 else 0
     basis = M.get("exit_basis", "ebitda")        # recurring_ebitda: chỉ định giá phần lặp lại (thận trọng, chuẩn khi có doanh thu một lần)
     exit_ebitda = years[-1]["ebitda_recurring" if basis == "recurring_ebitda" else "ebitda"]
     exit_value = max(exit_ebitda, 0) * A[M["exit_multiple"]]["value"]
@@ -209,7 +210,8 @@ def make_env(d: Path, assumptions: dict, evidence: dict, issues: list):
             out.append(f"{who}, {year}" if year.isdigit() else who)
         return "(" + "; ".join(out) + ")"
 
-    env = Environment(loader=FileSystemLoader(str(d)), undefined=StrictUndefined,
+    # sandbox: văn bản do agent/người dùng viết (có thể bị prompt-injection) — không được chạm tới Python/hệ điều hành
+    env = ImmutableSandboxedEnvironment(loader=FileSystemLoader(str(d)), undefined=StrictUndefined,
                       trim_blocks=True, lstrip_blocks=True)
     env.filters.update(money=money, num=num, pct=pct, ty=ty)
     env.globals.update(cite=cite)
@@ -231,22 +233,35 @@ def context(d: Path):
         unverified=unverified,
         draft=bool(unverified),
         today=dt.date.today().isoformat(),
-        version=f'{project.get("version", "0.1")}+{git_rev(d if (d / ".git").exists() else ROOT)}',
+        version=f'{project.get("version", "0.1")}+{project_rev(d)}',
     )
     return ctx, assumptions, evidence
 
 
-def git_rev(where=ROOT):
-    """Mã phiên bản: commit của repo dự án (SaaS) hoặc của repo chuẩn."""
+def git_rev(where=ROOT, git_dir=None):
+    """Mã phiên bản: commit của repo dự án (SaaS: git dir riêng ngoài thư mục dự án) hoặc của repo chuẩn."""
+    cmd = ["git", *(["--git-dir", str(git_dir)] if git_dir else []), "-c", "core.fsmonitor=", "rev-parse", "--short", "HEAD"]
     try:
-        return subprocess.check_output(["git", "-c", "safe.directory=*", "rev-parse", "--short", "HEAD"], cwd=where,
-                                       stderr=subprocess.DEVNULL, text=True).strip()
+        return subprocess.check_output(cmd, cwd=where, stderr=subprocess.DEVNULL, text=True).strip()
     except Exception:
         return "nogit"
 
 
+def project_rev(d):
+    hist = os.environ.get("GP_HISTORY")
+    if hist:                                      # SaaS: lịch sử nằm ở GP_HISTORY/<slug>.git; không tin .git trong thư mục dự án
+        g = Path(hist) / f"{d.name}.git"
+        return git_rev(ROOT, g) if g.exists() else "nogit"
+    return git_rev(d if (d / ".git").exists() else ROOT)
+
+
 def cmd_build(slug):
     d = project_dir(slug)
+    errs, _ = validate_model(load(d / "assumptions.yaml"))
+    if errs:
+        for e in errs:
+            print("ERROR", e)
+        sys.exit(f"✗ build {slug}: model sai cấu trúc — sửa assumptions.yaml rồi build lại")
     ctx, assumptions, evidence = context(d)
     issues = []
     env = make_env(d, assumptions, evidence, issues)
@@ -370,6 +385,111 @@ INTERNAL_EVIDENCE = {"internal", "founder", "interview", "estimate"}
 
 
 STREAM_KINDS = ("recurring", "one_off")
+SCENARIO_KEYS = {"volume_x", "price_x", "opex_x", "stream_x"}
+
+
+def validate_model(A):
+    """Kiểm cấu trúc model trước khi tính — lỗi gõ (tên dòng, tên giả định, hệ số) không được âm thầm cho ra số sai."""
+    errs, warns = [], []
+    meta, AS, M = A.get("meta") or {}, A.get("assumptions") or {}, A.get("model") or {}
+    n = meta.get("years")
+    if not isinstance(n, int) or n < 1:
+        return [f"meta.years phải là số nguyên ≥ 1 (đang là {n!r})"], warns
+    if not isinstance(meta.get("start_year"), int):
+        errs.append("meta.start_year phải là năm, ví dụ 2027")
+
+    def ref(r, where, ratio=False):
+        if isinstance(r, list) and r and all(isinstance(x, str) for x in r):
+            for x in r:
+                ref(x, where)
+            return
+        if isinstance(r, str):
+            key = r[4:] if r.startswith("cum:") else r
+            a = AS.get(key)
+            if not isinstance(a, dict):
+                errs.append(f"model {where}: '{key}' không có trong assumptions")
+                return
+            v = a.get("value")
+            vals = v if isinstance(v, list) else [v]
+            if not vals or any(isinstance(x, bool) or not isinstance(x, (int, float)) for x in vals):
+                errs.append(f"assumption {key}: value phải là số hoặc list số (đang là {v!r}) — dùng ở model {where}")
+                return
+            if isinstance(v, list) and len(v) not in (1, n):
+                warns.append(f"assumption {key}: có {len(v)} giá trị cho {n} năm — các năm thiếu lấy bằng giá trị cuối")
+            if ratio and any(x < 0 or x > 1 for x in vals):
+                errs.append(f"assumption {key}: tỷ lệ giá vốn phải trong 0–1 (đang là {v!r}) — dùng ở model {where}")
+            return
+        vals = r if isinstance(r, list) else [r]
+        if not vals or any(isinstance(x, bool) or not isinstance(x, (int, float)) for x in vals):
+            errs.append(f"model {where}: '{r!r}' không phải id giả định hay số")
+
+    streams = M.get("revenue_streams") or []
+    if not streams:
+        errs.append("model: chưa có revenue_streams")
+    ids, segs = [], M.get("segments") or {}
+    for i, st in enumerate(streams):
+        sid = st.get("id") if isinstance(st, dict) else None
+        if not sid:
+            errs.append(f"model revenue_streams[{i}]: thiếu id")
+            continue
+        if sid in ids:
+            errs.append(f"model revenue_streams: id '{sid}' bị trùng — doanh thu sẽ bị ghi đè")
+        ids.append(sid)
+        for f in ("price", "volume", "cogs_pct"):
+            if f not in st:
+                errs.append(f"model revenue_streams {sid}: thiếu {f}")
+            else:
+                ref(st[f], f"revenue_streams {sid}.{f}", ratio=f == "cogs_pct")
+        if segs and st.get("segment") and st["segment"] not in segs:
+            errs.append(f"model revenue_streams {sid}: segment '{st['segment']}' không có trong model.segments")
+    for i, o in enumerate(M.get("opex") or []):
+        if "amount" not in o:
+            errs.append(f"model opex[{i}]: thiếu amount")
+        else:
+            ref(o["amount"], f"opex '{o.get('name', i)}'")
+        if segs and o.get("segment") and o["segment"] not in segs:
+            errs.append(f"model opex '{o.get('name', i)}': segment '{o['segment']}' không có trong model.segments")
+    for f in ("capex", "tax_rate"):
+        if f in M:
+            ref(M[f], f)
+        else:
+            errs.append(f"model: thiếu {f}")
+    # giá trị hợp lệ cho từng tham số định giá (dưới ngưỡng → chia cho 0 hoặc số vô nghĩa)
+    bounds = {"funding": (0, "≥ 0"), "pre_money": (1e-9, "> 0"), "discount_rate": (-0.99, "> -1"), "exit_multiple": (0, "≥ 0"),
+              "founder_capital": (0, "≥ 0")}
+    for f, (lo, say) in bounds.items():
+        if f not in M:
+            if f != "founder_capital":
+                errs.append(f"model: thiếu {f}")
+            continue
+        if not isinstance(M[f], str):
+            errs.append(f"model {f}: phải là id giả định")
+            continue
+        n_err = len(errs)
+        ref(M[f], f)
+        v = (AS.get(M[f]) or {}).get("value")
+        if len(errs) == n_err and not (isinstance(v, (int, float)) and v >= lo):
+            errs.append(f"assumption {M[f]}: {f} phải {say} (đang là {v!r})")
+    scen = M.get("scenarios", {"base": {}})
+    if "base" not in (scen or {}):
+        errs.append("model.scenarios: phải có kịch bản 'base'")
+    for name, sc in (scen or {}).items():
+        sc = sc or {}
+        if not isinstance(sc, dict):
+            errs.append(f"model.scenarios.{name}: phải là mapping, ví dụ {{volume_x: 0.7}}")
+            continue
+        for k, v in sc.items():
+            if k not in SCENARIO_KEYS:
+                errs.append(f"model.scenarios.{name}: '{k}' không hợp lệ — dùng {', '.join(sorted(SCENARIO_KEYS))}")
+            elif k == "stream_x":
+                for sid, x in (v or {}).items():
+                    if sid not in ids:
+                        errs.append(f"model.scenarios.{name}.stream_x: không có dòng doanh thu '{sid}' (có: {', '.join(ids)})")
+                    elif isinstance(x, bool) or not isinstance(x, (int, float)):
+                        errs.append(f"model.scenarios.{name}.stream_x.{sid}: hệ số phải là số")
+            elif isinstance(v, bool) or not isinstance(v, (int, float)):
+                errs.append(f"model.scenarios.{name}.{k}: hệ số phải là số")
+    return errs, warns
 
 
 def sanity(fin):
@@ -449,7 +569,12 @@ def cmd_check(slug, as_json=False):
             if "TODO" in line:
                 warns.append(f"{f.relative_to(d)}:{n}: TODO")
 
+    model_errs, model_warns = validate_model(assumptions)
+    errors += model_errs
+    warns += model_warns
     try:
+        if model_errs:
+            raise SystemExit                                     # model sai cấu trúc: không tính tiếp (sẽ chỉ ra lỗi kỹ thuật khó hiểu)
         ctx, _, _ = context(d)
         issues = []
         env = make_env(d, assumptions, evidence, issues)
@@ -465,7 +590,7 @@ def cmd_check(slug, as_json=False):
             errors.append(f"model: exit_basis '{M.get('exit_basis')}' không hợp lệ — dùng ebitda | recurring_ebitda")
         base = ctx["fin"].get("base")
         if base and base["metrics"]["funding_gap"] > 0:
-            errors.append(f"model: kịch bản base âm tiền {base['metrics']['funding_gap']:,.0f} — số vốn gọi không đủ")
+            errors.append(f"model: kịch bản base âm tiền {base['metrics']['funding_gap']:,.0f} — số vốn gọi không đủ".replace(",", "."))
         warns += sanity(ctx["fin"])
         # story/datasets/products: chuỗi có {{ … }} được render theo model khi xuất — lỗi phải lộ ra ở đây
         hand = []
@@ -484,6 +609,8 @@ def cmd_check(slug, as_json=False):
         if hand:
             warns.append(f"{len(hand)} chỗ trong story/datasets gõ tay số tiền/% (ví dụ {', '.join(hand[:3])}) — nếu là kết quả model, "
                          "dùng {{ fin.base.last.revenue|ty }}… để tự cập nhật; nếu là dữ kiện có nguồn thì giữ nguyên")
+    except SystemExit:
+        pass
     except Exception as e:  # noqa: BLE001
         errors.append(f"render/model lỗi: {type(e).__name__}: {e}")
 

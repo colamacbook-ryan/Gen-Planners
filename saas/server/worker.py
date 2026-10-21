@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 from . import agents, db, history, interview, sandbox, ssot
-from .config import JOBS_HOME, ROOT, WORKSPACE, which
+from .config import HISTORY, JOBS_HOME, ROOT, WORKSPACE, which
 from .security import dec
 
 GEN = [sys.executable, str(ROOT / "gen.py")]
@@ -30,7 +30,8 @@ def log(job_id, text):
 
 
 def base_env():
-    return {**os.environ, "GP_PROJECTS": str(WORKSPACE), "PYTHONUNBUFFERED": "1"}
+    """Môi trường cho gen.py/export.py: không mang bí mật của máy chủ (nội dung dự án do người dùng/agent viết)."""
+    return {**sandbox.clean_env(dict(os.environ)), "GP_PROJECTS": str(WORKSPACE), "GP_HISTORY": str(HISTORY), "PYTHONUNBUFFERED": "1"}
 
 
 def sh(job_id, cmd, env=None, cwd=None, timeout=600):
@@ -162,6 +163,7 @@ def save_version(jid, p):
 
 def post_build(jid, p, link_check=True):
     """build + check + export (+ kiểm link nguồn). Trả (ok, số lỗi check)."""
+    sandbox.strip_links(WORKSPACE / p["slug"])
     save_version(jid, p)
     bcode, _ = sh(jid, [*GEN, "build", p["slug"]])
     ccode, cout = sh(jid, [*GEN, "check", p["slug"]])
@@ -182,6 +184,7 @@ def post_build(jid, p, link_check=True):
 def export_check(slug):
     """build + check + export như lúc nộp bài — để agent ngoài thấy mọi lỗi TRƯỚC khi nộp."""
     out, errors = [], 0
+    sandbox.strip_links(WORKSPACE / slug)
     for cmd in ([*GEN, "build", slug], [*GEN, "check", slug], [*EXPORT, slug, "--media-base", f"/api/projects/{slug}/media"]):
         r = subprocess.run(cmd, env=base_env(), cwd=ROOT, capture_output=True, text=True, timeout=300)
         text = scrub((r.stdout + r.stderr).strip())
@@ -239,6 +242,9 @@ def run_job(job):
                 code, usage, tail = run_agent(job, engine, env, job["model"] or (profile or {}).get("model"), d, p)
             finally:
                 sandbox.revoke(d, home_dir)
+                gone = sandbox.strip_links(d)
+                if gone:
+                    log(jid, f"Đã xoá {len(gone)} symlink/file đặc biệt agent tạo: {', '.join(gone[:5])}")
             if usage:
                 db.insert("usage", user_id=job["user_id"], project_id=p["id"], source="job",
                           provider="owner:" + engine if profile else "user:" + engine, model=job["model"] or (profile or {}).get("model"),

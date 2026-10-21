@@ -9,9 +9,10 @@ cùng quyền máy chủ và admin thấy cảnh báo.
 import os
 import pwd
 import re
+import stat
 from pathlib import Path
 
-from .config import AGENTS_HOME, DATA, JOBS_HOME, WORKSPACE
+from .config import AGENTS_HOME, DATA, HISTORY, JOBS_HOME, WORKSPACE
 
 AGENT_USER = os.environ.get("GP_AGENT_USER", "gpagent")
 SECRET_ENV = re.compile(r"^GP_|SECRET|PASSWORD|_KEY$|_TOKEN$|^AWS_|^GOOGLE_APPLICATION", re.I)
@@ -42,13 +43,13 @@ def lock_down():
     """Quyền mặc định: dữ liệu máy chủ chỉ root đọc được; thư mục cha chỉ cho đi qua (không liệt kê)."""
     if os.geteuid() != 0:
         return
-    for d in (DATA, WORKSPACE.parent, WORKSPACE, AGENTS_HOME, JOBS_HOME):
+    for d in (DATA, WORKSPACE.parent, WORKSPACE, AGENTS_HOME, JOBS_HOME, HISTORY):
         d.mkdir(parents=True, exist_ok=True)
         os.chmod(d, 0o711)
     for f in DATA.iterdir():
         if f.is_file():
             os.chmod(f, 0o600)
-    for d in list(WORKSPACE.iterdir()) + list(AGENTS_HOME.iterdir()):
+    for d in list(WORKSPACE.iterdir()) + list(AGENTS_HOME.iterdir()) + list(HISTORY.iterdir()):
         if d.is_dir():
             os.chmod(d, 0o700)
 
@@ -81,6 +82,20 @@ def revoke(*paths):
         if Path(p).exists():
             _chown_tree(Path(p), 0, 0)
             os.chmod(p, 0o700)
+
+
+def strip_links(path):
+    """Xoá symlink và file đặc biệt (FIFO, socket, device) agent để lại — máy chủ đọc/ghi/nén dự án không bị dẫn ra ngoài."""
+    removed = []
+    for root, dirs, files in os.walk(path):                      # os.walk không đi theo symlink thư mục
+        for n in dirs + files:
+            f = os.path.join(root, n)
+            st = os.lstat(f)
+            if stat.S_ISLNK(st.st_mode) or not (stat.S_ISREG(st.st_mode) or stat.S_ISDIR(st.st_mode)):
+                os.unlink(f)
+                removed.append(os.path.relpath(f, path))
+        dirs[:] = [n for n in dirs if os.path.isdir(os.path.join(root, n)) and not os.path.islink(os.path.join(root, n))]
+    return removed
 
 
 def clean_env(env: dict) -> dict:
