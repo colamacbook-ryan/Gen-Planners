@@ -12,11 +12,12 @@
       <a href="#home" id="navHome">⌂ Bắt đầu <span class="badge" id="obProg"></span></a>
       <button id="newBtn" type="button">＋ Dự án mới</button>
       <div class="sec">Dự án của tôi</div>
+      <input id="pq" class="side-search" type="search" placeholder="Tìm dự án…" aria-label="Tìm dự án" hidden>
       <div id="plist"></div>
       <div class="sec" id="ssec" hidden>Dự án mẫu</div>
       <div id="slist"></div>
       <div class="sec">Tài khoản</div>
-      <a href="#settings" id="navSettings">⚙ Cài đặt · API key</a>
+      <a href="#settings" id="navSettings">⚙ Cài đặt</a>
       <a href="/admin" id="navAdmin" hidden>◆ Trang quản trị</a>
     </nav>
     <div class="foot"><div id="who"></div><a href="#" onclick="logout();return false">Đăng xuất</a></div>
@@ -33,7 +34,7 @@ const CAT = {product: "Sản phẩm", customer: "Khách hàng", channel: "Kênh"
 function route() {
   clearInterval(S.poll);
   const h = new URLSearchParams(location.hash.slice(1));
-  if (location.hash === "#settings") return viewSettings();
+  if (location.hash.startsWith("#settings")) return viewSettings();
   if (location.hash === "#new") return viewNew();
   if (location.hash === "#home" || (!h.get("p") && !S.projects.length)) return viewHome();
   const slug = h.get("p") || S.projects[0].slug, t = h.get("t");
@@ -43,16 +44,20 @@ function route() {
 function go(slug, tab) { location.hash = `p=${slug}&t=${tab || S.tab}`; }
 window.onhashchange = route;
 $("#newBtn").onclick = () => location.hash = "new";
+$("#pq").oninput = () => sideList();
 
 function sideList() {
-  const cur = S.cur?.slug;
-  $("#plist").innerHTML = S.projects.map(p => `<a href="#p=${esc(p.slug)}&t=${esc(S.tab)}" class="${p.slug === cur ? "on" : ""}">
-    <span class="grow">${esc(p.name)}<span class="sub">${STATUS[p.status] || p.status} · ${p.progress.answered}/${p.progress.total} câu · ${p.locked} điểm chốt</span></span></a>`).join("")
-    || '<p class="hint" style="padding:0 10px;color:var(--hero-muted)">Chưa có dự án.</p>';
+  const cur = S.cur?.slug, q = ($("#pq").value || "").trim().toLowerCase();
+  $("#pq").hidden = S.projects.length < 7;                                           // nhiều dự án mới cần ô tìm
+  const row = p => `<a href="#p=${esc(p.slug)}&t=${esc(S.tab)}" class="${p.slug === cur ? "on" : ""}">
+    <span class="grow">${esc(p.name)}<span class="sub">${STATUS[p.status] || p.status} · ${p.progress.answered}/${p.progress.total} câu · ${p.locked} điểm chốt</span></span></a>`;
+  const hit = S.projects.filter(p => !q || p.name.toLowerCase().includes(q)), live = hit.filter(p => !p.archived), arch = hit.filter(p => p.archived);
+  $("#plist").innerHTML = (live.map(row).join("") || `<p class="hint" style="padding:0 10px;color:var(--hero-muted)">${q ? "Không có dự án khớp." : "Chưa có dự án."}</p>`)
+    + (arch.length ? `<details class="arch" ${q || arch.some(p => p.slug === cur) ? "open" : ""}><summary>Đã lưu trữ (${arch.length})</summary>${arch.map(row).join("")}</details>` : "");
   $("#slist").innerHTML = S.samples.map(p => `<a href="#p=${esc(p.slug)}&t=dossier" class="${p.slug === cur ? "on" : ""}"><span class="grow">${esc(p.name)}<span class="sub">chỉ đọc · hồ sơ hoàn chỉnh</span></span></a>`).join("");
   $("#ssec").hidden = !S.samples.length;
-  $("#navSettings").className = location.hash === "#settings" ? "on" : "";
-  $("#navHome").className = location.hash === "#home" || (!cur && !location.hash.startsWith("#new") && location.hash !== "#settings") ? "on" : "";
+  $("#navSettings").className = location.hash.startsWith("#settings") ? "on" : "";
+  $("#navHome").className = location.hash === "#home" || (!cur && !location.hash.startsWith("#new") && !location.hash.startsWith("#settings")) ? "on" : "";
   const ob = S.me.onboarding; $("#obProg").textContent = ob && ob.done < ob.total ? `${ob.done}/${ob.total}` : "";
 }
 
@@ -94,7 +99,7 @@ function keyBanner() {
     ${S.me.demo_allowed ? "Hiện đang ở <b>chế độ demo</b> — câu hỏi theo kịch bản, không có AI phản biện." : ""} <a href="#settings">Thêm key →</a></div>`;
 }
 function topbar(title, extra = "") {
-  return `<div class="top"><div class="row"><button class="burger ghost sm" type="button">☰</button><div class="grow"><h1 style="margin:0">${title}</h1></div>${extra}</div>`;
+  return `<div class="top">${globalBanner(S.me)}<div class="row"><button class="burger ghost sm" type="button">☰</button><div class="grow"><h1 style="margin:0">${title}</h1></div>${extra}</div>`;
 }
 
 // ---------------------------------------------------------------- new project
@@ -151,12 +156,28 @@ const alive = v => v === S.view && $("#tab");
 function renderProject() {
   S.view = (S.view || 0) + 1;
   const p = S.cur, pr = p.progress, pct = Math.round(pr.answered / pr.total * 100);
-  $("#main").innerHTML = topbar(esc(p.name), `${pill(p.status)}<div class="hide-sm" style="width:180px"><div class="hint">Phỏng vấn ${pr.answered}/${pr.total} · ${p.locked} điểm chốt</div><div class="meter"><i style="width:${pct}%"></i></div></div>`) +
+  $("#main").innerHTML = topbar(esc(p.name) + (p.archived ? ' <span class="pill">đã lưu trữ</span>' : ""), `${pill(p.status)}<div class="hide-sm" style="width:180px"><div class="hint">Phỏng vấn ${pr.answered}/${pr.total} · ${p.locked} điểm chốt</div><div class="meter"><i style="width:${pct}%"></i></div></div>
+    <button type="button" class="sm ghost" id="pact" aria-haspopup="menu">⋯ Thao tác</button>`) +
     `<div class="tabs" role="tablist">${TABS.map(([k, l], i) => `<button type="button" role="tab" data-t="${k}" class="${S.tab === k ? "on" : ""}"><span class="n">${i + 1}</span>${l}</button>`).join("")}</div></div>
     <div class="body">${(n => n ? `<div class="next"><span class="grow">${n[0]}</span>${n[1] && n[1] !== S.tab ? `<button type="button" class="sm pri" data-next="${n[1]}">${n[2]} →</button>` : ""}</div>` : "")(nextStep(p))}<div id="tab"></div></div>`;
   $$(".tabs button").forEach(b => b.onclick = () => go(p.slug, b.dataset.t));
+  $("#pact").onclick = e => menu(e.currentTarget, projectActions(p));
   $("[data-next]") && ($("[data-next]").onclick = e => go(p.slug, e.target.dataset.next));
   ({interview: tabInterview, brainstorm: tabBrainstorm, brief: tabBrief, run: tabRun, dossier: tabDossier, numbers: tabNumbers}[S.tab] || tabInterview)();
+}
+function projectActions(p) {
+  const dup = async () => { try { const n = await api(`/projects/${p.slug}/duplicate`, {method: "POST"}); await loadProjects(); toast("Đã nhân bản — đang dựng lại hồ sơ cho bản sao"); go(n.slug, p.is_sample ? "numbers" : S.tab); } catch (x) { toast(x.message); } };
+  if (!p.mine) return p.is_sample ? [["Nhân bản để chỉnh thử", dup]] : [["Dự án của người khác — chỉ xem", () => {}]];
+  return [
+    ["Đổi tên", async () => { const n = await askText("Tên dự án", p.name); if (!n) return; await api("/projects/" + p.slug, {method: "PATCH", body: {name: n}}); await refresh(); renderProject(); toast("Đã đổi tên"); }],
+    ["Sửa ý tưởng & thị trường", async () => { const v = await dialog({title: "Ý tưởng & thị trường", body: "Đổi ý tưởng gốc sẽ áp dụng cho lần Chạy Plan tiếp theo (brief tự tổng hợp lại).",
+        fields: [{label: "Ý tưởng", value: p.idea, multiline: true}, {label: "Thị trường", value: p.country}], ok: "Lưu"}); if (!v) return;
+      try { await api("/projects/" + p.slug, {method: "PATCH", body: {idea: v[0], country: v[1]}}); await refresh(); renderProject(); toast("Đã lưu"); } catch (x) { toast(x.message); } }],
+    ["Nhân bản dự án", dup],
+    [p.archived ? "Bỏ lưu trữ" : "Lưu trữ (ẩn khỏi danh sách chính)", async () => { await api("/projects/" + p.slug, {method: "PATCH", body: {archived: !p.archived}}); await refresh(); renderProject(); toast(p.archived ? "Đã bỏ lưu trữ" : "Đã lưu trữ"); }],
+    null,
+    ["Xoá dự án…", async () => { if (!await ask(`Xoá vĩnh viễn "${p.name}"? Mất cả hồ sơ, lịch sử phiên bản và link chia sẻ.`, "Xoá vĩnh viễn")) return;
+      await api("/projects/" + p.slug, {method: "DELETE"}); await loadProjects(); toast("Đã xoá dự án"); location.hash = "home"; }, true]];
 }
 async function refresh() { S.cur = await api("/projects/" + S.cur.slug); await loadProjects(); S.me = await api("/me"); sideList(); }
 
@@ -444,58 +465,124 @@ async function showVersion(p, rev) {
 }
 
 // ---------------------------------------------------------------- settings
+const SETTINGS_SECTIONS = [["profile", "Hồ sơ & bảo mật"], ["prefs", "Giao diện & mặc định"], ["keys", "AI & API key"], ["tokens", "API token"],
+  ["usage", "Mức dùng"], ["data", "Dữ liệu của tôi"]];
+const MARKETS = ["Việt Nam", "Singapore", "Thái Lan", "Indonesia", "Malaysia", "Philippines", "Nhật Bản", "Hàn Quốc", "Trung Quốc", "Hoa Kỳ", "Úc", "Châu Âu"];
 async function viewSettings() {
   S.cur = null; sideList();
+  const sec = (location.hash.split("/")[1] || "profile"), v = S.view = (S.view || 0) + 1;
+  $("#main").innerHTML = topbar("Cài đặt") + `</div><div class="body"><div class="settings">
+    <nav class="subnav" aria-label="Mục cài đặt">${SETTINGS_SECTIONS.map(([k, l]) => `<a href="#settings/${k}" class="${k === sec ? "on" : ""}">${l}</a>`).join("")}</nav>
+    <div id="sbody" class="grid" style="gap:14px;align-content:start"><div class="card"><span class="spinner"></span></div></div></div></div>`;
+  await ({profile: setProfile, prefs: setPrefs, keys: setKeys, tokens: setTokens, usage: setUsage, data: setData}[sec] || setProfile)(v);
+}
+const sbody = (v, html) => { if (v !== S.view || !$("#sbody")) return false; $("#sbody").innerHTML = html; return true; };
+
+function setProfile(v) {
+  const m = S.me;
+  if (!sbody(v, `<section class="card"><h2>Hồ sơ</h2>
+      <form id="nf2" class="grid g2" style="gap:0 14px;align-items:end"><div><label for="pnm">Tên hiển thị</label><input id="pnm" maxlength="80" value="${esc(m.name || "")}" placeholder="Ví dụ: Ryan Nguyễn"></div>
+        <div><label>Email đăng nhập</label><input value="${esc(m.email)}" readonly></div><div><button class="pri">Lưu</button></div></form>
+      <p class="hint" style="margin:10px 0 0">Vai trò: ${pill(m.role === "user" ? "active" : m.role)} · tham gia ${ago(m.created)}${m.google ? " · có đăng nhập Google" : ""}</p></section>
+    <section class="card"><h2>${m.has_password ? "Đổi mật khẩu" : "Đặt mật khẩu"}</h2>${m.has_password ? "" : '<p class="hint">Bạn đang đăng nhập bằng Google — đặt mật khẩu để đăng nhập bằng email khi cần.</p>'}
+      <form id="pf" class="grid g2" style="gap:0 14px;align-items:end">${m.has_password ? '<div><label for="po">Mật khẩu hiện tại</label><input id="po" type="password" autocomplete="current-password" required></div>' : ""}
+        <div><label for="pn">Mật khẩu mới (≥ 8 ký tự)</label><input id="pn" type="password" minlength="8" required autocomplete="new-password"></div>
+        <div><button class="pri">${m.has_password ? "Đổi mật khẩu" : "Đặt mật khẩu"}</button></div></form><p class="err" id="pmsg"></p>
+      <p class="hint" style="margin:0">Đổi mật khẩu sẽ đăng xuất mọi thiết bị khác.</p></section>
+    <section class="card"><h2>Phiên đăng nhập</h2><p class="hint">Quên đăng xuất trên máy khác, hoặc nghi ngờ ai đó đang dùng tài khoản? Đăng xuất mọi phiên trừ phiên này.</p>
+      <button type="button" id="lo2">Đăng xuất mọi thiết bị khác</button></section>`)) return;
+  $("#nf2").onsubmit = async e => { e.preventDefault(); try { S.me = await api("/me", {method: "PATCH", body: {name: $("#pnm").value}}); toast("Đã lưu hồ sơ"); sideList(); } catch (x) { toast(x.message); } };
+  $("#pf").onsubmit = async e => { e.preventDefault(); $("#pmsg").textContent = "";
+    try { await api("/me/password", {body: {old: $("#po")?.value || "", new: $("#pn").value}}); S.me = await api("/me"); toast("Đã cập nhật mật khẩu"); viewSettings(); } catch (x) { $("#pmsg").textContent = x.message; } };
+  $("#lo2").onclick = async () => { if (!await ask("Đăng xuất mọi thiết bị khác? Phiên này vẫn giữ.", "Đăng xuất", false)) return; await api("/me/logout-others", {method: "POST"}); toast("Đã đăng xuất mọi thiết bị khác"); };
+}
+
+function setPrefs(v) {
+  const p = S.me.prefs;
+  if (!sbody(v, `<section class="card"><h2>Giao diện</h2><div class="seg" role="radiogroup" aria-label="Giao diện">
+      ${[["system", "Theo hệ thống"], ["light", "Sáng"], ["dark", "Tối"]].map(([k, l]) => `<label class="${p.theme === k ? "on" : ""}"><input type="radio" name="th" value="${k}" ${p.theme === k ? "checked" : ""}>${l}</label>`).join("")}</div>
+      <p class="hint" style="margin:10px 0 0">Áp dụng cho ứng dụng, trang quản trị và trình xem hồ sơ trên thiết bị này và các thiết bị khác của bạn.</p></section>
+    <section class="card"><h2>Mặc định cho dự án mới</h2><form id="mf" class="grid g2" style="gap:0 14px;align-items:end">
+      <div><label for="pc">Thị trường mặc định</label><input id="pc" list="mkts" value="${esc(p.country)}"><datalist id="mkts">${MARKETS.map(x => `<option value="${x}">`).join("")}</datalist></div>
+      <div><button class="pri">Lưu</button></div></form><p class="hint" style="margin:10px 0 0">Agent nghiên cứu số liệu, luật và đối thủ theo thị trường này. Đổi được riêng cho từng dự án khi tạo.</p></section>`)) return;
+  $$("input[name=th]").forEach(r => r.onchange = async () => { S.me = await api("/me", {method: "PATCH", body: {prefs: {theme: r.value}}}); applyTheme(r.value); setPrefs(S.view); toast("Đã đổi giao diện"); });
+  $("#mf").onsubmit = async e => { e.preventDefault(); S.me = await api("/me", {method: "PATCH", body: {prefs: {country: $("#pc").value}}}); toast("Đã lưu thị trường mặc định"); };
+}
+
+async function setKeys(v) {
   [S.keys, S.providers] = await Promise.all([api("/keys"), api("/providers")]);
-  $("#main").innerHTML = topbar("Cài đặt") + `</div><div class="body"><div class="grid g2" style="align-items:start">
-    <div class="card" style="grid-column:1/-1"><h2>API key của tôi</h2><p class="hint">Trợ lý AI (phỏng vấn, brainstorm) chạy bằng key mặc định của bạn. Key Anthropic hoặc Gemini còn dùng được để <b>Chạy Plan</b> bằng tài khoản của bạn. Key được mã hoá, không bao giờ hiển thị lại.</p>
-    <div class="scroll-x"><table class="t"><thead><tr><th>Provider</th><th>Key</th><th>Model</th><th>Kiểm tra</th><th></th></tr></thead><tbody>${S.keys.map(k => `<tr data-k="${k.id}">
+  if (!sbody(v, `<section class="card"><h2>API key của tôi</h2><p class="hint">Trợ lý AI (phỏng vấn, brainstorm) chạy bằng key mặc định của bạn. Key Anthropic hoặc Gemini còn dùng được để <b>Chạy Plan</b> bằng tài khoản của bạn. Key được mã hoá, không bao giờ hiển thị lại.</p>
+    <div class="scroll-x"><table class="t"><thead><tr><th>Nhà cung cấp</th><th>Key</th><th>Model</th><th>Kiểm tra</th><th></th></tr></thead><tbody>${S.keys.map(k => `<tr data-k="${k.id}">
       <td>${esc(k.label)}${k.is_default ? ' <span class="pill core">mặc định</span>' : ""}<div class="hint">${k.plan_engine ? "chat + chạy Plan" : "chỉ chat"}</div></td><td class="mono">${esc(k.key_hint)}</td>
-      <td><input class="km" value="${esc(k.model)}" list="kml${k.id}" style="min-width:170px" title="Bấm để chọn trong danh sách model key này dùng được"><datalist id="kml${k.id}"></datalist></td><td>${k.last_test ? (k.last_test_ok ? '<span class="ok">✓ ok</span>' : '<span class="err">✗ lỗi</span>') : '<span class="hint">—</span>'}</td>
-      <td class="row" style="flex-wrap:nowrap"><button class="sm" data-a="test" type="button">Thử</button>${k.is_default ? "" : '<button class="sm ghost" data-a="def" type="button">Mặc định</button>'}<button class="sm ghost danger" data-a="del" type="button">Xoá</button></td></tr>`).join("") || '<tr><td colspan="5" class="hint">Chưa có key.</td></tr>'}</tbody></table></div>
-    <form id="kf" style="margin-top:14px"><div class="k">Thêm key</div><div class="grid g2" style="gap:0 12px">
-      <div><label for="kp">Provider</label><select id="kp">${Object.entries(S.providers).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join("")}</select></div>
+      <td><input class="km" aria-label="Model của key" value="${esc(k.model)}" list="kml${k.id}" style="min-width:170px" title="Bấm để chọn trong danh sách model key này dùng được"><datalist id="kml${k.id}"></datalist></td><td>${k.last_test ? (k.last_test_ok ? pill("ok") : pill("error")) : '<span class="hint">—</span>'}</td>
+      <td><div class="row" style="flex-wrap:nowrap"><button class="sm" data-a="test" type="button">Thử</button>${k.is_default ? "" : '<button class="sm ghost" data-a="def" type="button">Đặt mặc định</button>'}<button class="sm ghost danger" data-a="del" type="button">Xoá</button></div></td></tr>`).join("") || '<tr><td colspan="5"><div class="empty">Chưa có key — thêm key bên dưới để có trợ lý AI thật.</div></td></tr>'}</tbody></table></div></section>
+    <section class="card"><h2>Thêm key</h2><form id="kf"><div class="grid g2" style="gap:0 12px">
+      <div><label for="kp">Nhà cung cấp</label><select id="kp">${Object.entries(S.providers).map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`).join("")}</select></div>
       <div><label for="kmo">Model</label><input id="kmo" list="kml" required><datalist id="kml"></datalist></div></div>
       <label for="kk">API key</label><input id="kk" type="password" required autocomplete="off" placeholder="dán key vào đây">
-      <p class="err" id="kmsg"></p><button class="pri">Lưu key</button></form></div>
-    <div class="card"><h2>API token cho agent ngoài</h2><p class="hint">Cho Claude Code, Antigravity hoặc agent của bạn làm core agent: agent đọc/ghi bộ số liệu của dự án qua API bằng token này. Token có quyền như tài khoản của bạn — thu hồi khi không dùng.</p>
-      <table class="t"><tbody id="tokRows"></tbody></table><form class="row" id="tokF" style="margin-top:10px"><input id="tokN" aria-label="Tên token" class="grow" placeholder="Tên token, ví dụ: Claude Code trên MacBook"><button class="pri">Tạo token</button></form><div id="tokOut"></div></div>
-    <div class="card"><h2>Tài khoản</h2><p>${esc(S.me.email)} ${pill(S.me.role === "user" ? "active" : S.me.role)}</p>
-      <p class="hint">Hạn mức: ${S.me.quota.projects_limit == null ? "không giới hạn dự án" : `${S.me.quota.projects}/${S.me.quota.projects_limit} dự án`} ·
-      ${S.me.quota.owner_jobs_limit == null ? "không giới hạn lần chạy" : `${S.me.quota.owner_jobs_month}/${S.me.quota.owner_jobs_limit} lần chạy Plan bằng tài khoản hệ thống tháng này`}.</p>
-      <form id="pf"><label for="po">Mật khẩu hiện tại</label><input id="po" type="password" autocomplete="current-password">
-      <label for="pn">Mật khẩu mới</label><input id="pn" type="password" minlength="8" required autocomplete="new-password"><p class="err" id="pmsg"></p><button>Đổi mật khẩu</button></form></div></div></div>`;
+      <p class="err" id="kmsg"></p><button class="pri">Lưu key</button></form></section>`)) return;
   const fill = () => { const m = S.providers[$("#kp").value].models; $("#kml").innerHTML = m.map(x => `<option value="${x}">`).join(""); $("#kmo").value = m[0] || ""; $("#kmo").placeholder = m.length ? "" : "nhập tên model, ví dụ gpt-…"; };
   $("#kp").onchange = fill; fill();
   $("#kf").onsubmit = async e => { e.preventDefault(); const btn = e.submitter; btn.disabled = true; btn.textContent = "Đang kiểm tra key…";
     try { const k = await api("/keys", {body: {provider: $("#kp").value, model: $("#kmo").value, key: $("#kk").value}});
       const t = await api(`/keys/${k.id}/test`, {method: "POST"}); S.me = await api("/me");
-      toast(t.ok ? "✓ Đã lưu key và gọi thử thành công" + (t.message.includes("chuyển sang") ? t.message.slice(t.message.indexOf(" · ")) : "") : "Đã lưu key nhưng gọi thử lỗi: " + t.message); viewSettings(); }
+      toast(t.ok ? "Đã lưu key và gọi thử thành công" + (t.message.includes("chuyển sang") ? t.message.slice(t.message.indexOf(" · ")) : "") : "Đã lưu key nhưng gọi thử lỗi: " + t.message); viewSettings(); }
     catch (x) { $("#kmsg").textContent = x.message; btn.disabled = false; btn.textContent = "Lưu key"; } };
-  $$("tr[data-k]").forEach(tr => { const id = tr.dataset.k;
-    const km = tr.querySelector(".km");
+  $$("tr[data-k]").forEach(tr => { const id = tr.dataset.k, km = tr.querySelector(".km");
     km.onchange = async e => { await api("/keys/" + id, {method: "PATCH", body: {model: e.target.value}}); toast("Đã đổi model"); };
     km.onfocus = async () => { if (km.dataset.loaded) return; km.dataset.loaded = 1;
       try { const r = await api(`/keys/${id}/models`); $("#kml" + id).innerHTML = r.models.map(m => `<option value="${esc(m)}">`).join(""); toast(`${r.models.length} model dùng được với key này`); }
       catch (x) { toast(x.message); } };
     tr.querySelectorAll("button").forEach(b => b.onclick = async () => { const a = b.dataset.a;
-      if (a === "test") { b.disabled = true; b.textContent = "…"; const r = await api(`/keys/${id}/test`, {method: "POST"}); toast(r.ok ? "✓ Key hoạt động — " + r.message : r.message); }
+      if (a === "test") { b.disabled = true; b.textContent = "…"; const r = await api(`/keys/${id}/test`, {method: "POST"}); toast(r.ok ? "Key hoạt động — " + r.message : r.message); }
       if (a === "def") await api("/keys/" + id, {method: "PATCH", body: {is_default: true}});
       if (a === "del") { if (!await ask("Xoá key này?", "Xoá")) return; await api("/keys/" + id, {method: "DELETE"}); }
       S.me = await api("/me"); viewSettings(); }); });
-  const drawTok = async () => { const ts = await api("/tokens");
-    $("#tokRows").innerHTML = ts.map(t => `<tr><td><b>${esc(t.name)}</b><div class="hint mono">${esc(t.prefix)}</div></td><td class="hint">dùng ${t.last_used ? ago(t.last_used) : "chưa dùng"}</td><td><button type="button" class="sm ghost danger" data-tok="${t.id}">Thu hồi</button></td></tr>`).join("") || '<tr><td class="hint">Chưa có token.</td></tr>';
-    $$("[data-tok]").forEach(b => b.onclick = async () => { if (!await ask("Thu hồi token này? Agent đang dùng nó sẽ mất quyền ngay.", "Thu hồi")) return; await api("/tokens/" + b.dataset.tok, {method: "DELETE"}); drawTok(); }); };
+}
+
+function setTokens(v) {
+  if (!sbody(v, `<section class="card"><h2>API token cho agent ngoài</h2><p class="hint">Cho Claude Code, Antigravity hoặc agent của bạn làm core agent: agent đọc/ghi bộ số liệu của dự án qua API bằng token này.
+      Token chỉ dùng được các lệnh của agent (không vào được cài đặt, key hay quản trị) — vẫn nên thu hồi khi không dùng.</p>
+    <div class="scroll-x"><table class="t"><thead><tr><th>Tên</th><th>Lần dùng gần nhất</th><th></th></tr></thead><tbody id="tokRows"><tr><td colspan="3"><span class="spinner"></span></td></tr></tbody></table></div>
+    <form class="row" id="tokF" style="margin-top:12px"><input id="tokN" aria-label="Tên token" class="grow" placeholder="Tên token, ví dụ: Claude Code trên MacBook"><button class="pri">Tạo token</button></form><div id="tokOut"></div></section>`)) return;
+  const drawTok = async () => { const ts = await api("/tokens"); if (!$("#tokRows")) return;
+    $("#tokRows").innerHTML = ts.map(t => `<tr><td><b>${esc(t.name)}</b><div class="hint mono">${esc(t.prefix)}…</div></td><td class="hint">${t.last_used ? ago(t.last_used) : "chưa dùng"}</td><td class="actions"><button type="button" class="sm ghost danger" data-tok="${t.id}">Thu hồi</button></td></tr>`).join("") || '<tr><td colspan="3"><div class="empty">Chưa có token.</div></td></tr>';
+    $$("[data-tok]").forEach(b => b.onclick = async () => { if (!await ask("Thu hồi token này? Agent đang dùng nó sẽ mất quyền ngay.", "Thu hồi")) return; await api("/tokens/" + b.dataset.tok, {method: "DELETE"}); toast("Đã thu hồi token"); drawTok(); }); };
   drawTok();
   $("#tokF").onsubmit = async e => { e.preventDefault(); const t = await api("/tokens", {body: {name: $("#tokN").value}}); e.target.reset();
     $("#tokOut").innerHTML = `<div class="next" style="margin-top:10px"><span class="grow">Token mới (chỉ hiện một lần): <code>${esc(t.token)}</code></span><button type="button" class="sm" id="tokC">Sao chép</button></div>`;
     $("#tokC").onclick = () => copy(t.token); drawTok(); };
-  $("#pf").onsubmit = async e => { e.preventDefault(); try { await api("/me/password", {body: {old: $("#po").value, new: $("#pn").value}}); toast("Đã đổi mật khẩu"); e.target.reset(); } catch (x) { $("#pmsg").textContent = x.message; } };
+}
+
+async function setUsage(v) {
+  const u = await api("/me/usage"), q = u.quota, BILLN = {owner: "tài khoản hệ thống", user_key: "key của bạn", external: "agent ngoài", demo: "demo"};
+  const lim = (n, l, unit) => l == null ? `<b>${n}</b> <span class="hint">${unit} · không giới hạn</span>` : `<b>${n}</b><small> / ${l}</small> <span class="hint">${unit}</span><div class="meter" style="margin-top:6px"><i style="width:${Math.min(100, n / l * 100)}%"></i></div>`;
+  sbody(v, `<div class="grid g2"><section class="card kpi"><div class="k">Dự án</div>${lim(q.projects, q.projects_limit, "dự án")}</section>
+      <section class="card kpi"><div class="k">Chạy Plan bằng tài khoản hệ thống · tháng này</div>${lim(q.owner_jobs_month, q.owner_jobs_limit, "lần")}</section></div>
+    <section class="card"><h2>Theo tháng</h2><p class="hint">Token là của trợ lý AI và các lần chạy bằng key của bạn (bạn trả cho nhà cung cấp). Lần chạy lỗi do phía hệ thống không tính.</p>
+    <div class="scroll-x"><table class="t"><thead><tr><th>Tháng</th><th class="num">Token vào</th><th class="num">Token ra</th><th class="num">Chi phí ước tính</th><th>Lần chạy Plan</th></tr></thead><tbody>
+    ${u.months.map(m => `<tr><td>${m.month.slice(5)}/${m.month.slice(0, 4)}</td><td class="num">${fmtInt(m.input_tokens)}</td><td class="num">${fmtInt(m.output_tokens)}</td>
+      <td class="num">${m.cost_usd ? "$" + m.cost_usd.toLocaleString("vi-VN", {maximumFractionDigits: 2}) : "—"}</td>
+      <td>${Object.entries(m.runs).map(([b, n]) => `${n} · ${BILLN[b] || b}`).join("<br>") || '<span class="hint">—</span>'}</td></tr>`).join("") || '<tr><td colspan="5"><div class="empty">Chưa có hoạt động nào.</div></td></tr>'}</tbody></table></div></section>`);
+}
+
+function setData(v) {
+  const owner = S.me.role === "owner";
+  if (!sbody(v, `<section class="card"><h2>Tải toàn bộ dữ liệu</h2><p class="hint">Một file .zip: thông tin tài khoản, mọi dự án (câu trả lời phỏng vấn, điểm chốt, hội thoại, bộ số liệu SSOT, hồ sơ Word/PowerPoint/Excel đã dựng). Không chứa API key.</p>
+      <a href="/api/me/export"><button type="button">⬇ Tải dữ liệu (.zip)</button></a></section>
+    <section class="card danger-zone"><h2>Xoá tài khoản</h2><p class="hint">Xoá vĩnh viễn tài khoản, mọi dự án, key, token và link chia sẻ. Không khôi phục được — nên tải dữ liệu trước.</p>
+      ${owner ? '<div class="banner">Bạn là owner hệ thống — trao quyền owner cho người khác ở Quản trị → Người dùng trước khi xoá tài khoản.</div>' : `<form id="df">
+      <div class="grid g2" style="gap:0 14px"><div><label for="dce">Gõ email của bạn để xác nhận</label><input id="dce" autocomplete="off" placeholder="${esc(S.me.email)}"></div>
+      ${S.me.has_password ? '<div><label for="dcp">Mật khẩu</label><input id="dcp" type="password" autocomplete="current-password"></div>' : ""}</div>
+      <p class="err" id="dmsg"></p><button class="danger">Xoá vĩnh viễn tài khoản</button></form>`}</section>`)) return;
+  $("#df") && ($("#df").onsubmit = async e => { e.preventDefault(); $("#dmsg").textContent = "";
+    if (!await ask("Xoá vĩnh viễn tài khoản và mọi dự án? Không thể hoàn tác.", "Xoá vĩnh viễn")) return;
+    try { await api("/me/delete", {body: {confirm: $("#dce").value, password: $("#dcp")?.value || ""}}); location.href = "/login"; } catch (x) { $("#dmsg").textContent = x.message; } });
 }
 
 async function loadProjects() { [S.projects, S.samples] = await Promise.all([api("/projects"), api("/samples")]); sideList(); }
 (async () => {
-  S.me = await api("/me"); $("#site").textContent = S.me.site_name; document.title = S.me.site_name;
+  S.me = await api("/me"); applyTheme(S.me.prefs?.theme); $("#site").textContent = S.me.site_name; document.title = S.me.site_name;
   $("#who").textContent = S.me.email; $("#navAdmin").hidden = !["owner", "admin"].includes(S.me.role);
   await loadProjects(); route();
 })();

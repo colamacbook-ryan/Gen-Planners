@@ -8,6 +8,8 @@
 .prof h3{margin:0;font-size:15px} .kv{display:grid;grid-template-columns:110px 1fr;gap:4px 10px;font-size:12.5px;margin:10px 0} .kv span:nth-child(odd){color:var(--muted)}
 .bars{display:flex;align-items:flex-end;gap:3px;height:130px;padding-top:8px;border-bottom:1px solid var(--line)}
 .bars i{flex:1;background:var(--c1);border-radius:3px 3px 0 0;min-height:2px;position:relative} .bars i:hover{filter:brightness(1.2)}
+.bars .stack{flex:1;display:flex;flex-direction:column-reverse;height:100%;gap:1px} .bars .stack i{flex:none;min-height:0;border-radius:2px}
+.legend{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px} .legend i{display:inline-block;width:10px;height:10px;border-radius:2px}
 .axis{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:4px}
 .urls a{display:block;word-break:break-all;margin:4px 0;font-family:var(--f-mono);font-size:12px}
 </style></head><body>
@@ -27,28 +29,61 @@ const PAGES = [["overview", "◷ Tổng quan"], ["users", "👤 Người dùng"]
 const page = () => location.hash.slice(1) || "overview";
 window.onhashchange = render;
 function nav() { $("#nav").innerHTML = PAGES.filter(p => !p[2] || A.me.role === "owner").map(([k, l]) => `<a href="#${k}" class="${page() === k ? "on" : ""}">${l}</a>`).join(""); }
-function topbar(t, sub = "", extra = "") { return `<div class="top"><div class="row"><button class="burger ghost sm" type="button">☰</button><div class="grow"><h1 style="margin:0">${t}</h1>${sub ? `<div class="hint">${sub}</div>` : ""}</div>${extra}</div></div>`; }
+function topbar(t, sub = "", extra = "") { return `<div class="top">${globalBanner(A.me)}<div class="row"><button class="burger ghost sm" type="button">☰</button><div class="grow"><h1 style="margin:0">${t}</h1>${sub ? `<div class="hint">${sub}</div>` : ""}</div>${extra}</div></div>`; }
 async function render() { clearInterval(A.poll); nav(); const f = {overview, users, projects, jobs, agents, usage, settings, audit}[page()] || overview;
   try { await f(); } catch (x) { $("#main").innerHTML = topbar("Lỗi") + `<div class="body"><p class="err">${esc(x.message)}</p></div>`; } }
 const tok = n => n >= 1e6 ? (n / 1e6).toFixed(2).replace(".", ",") + " tr" : n >= 1e3 ? Math.round(n / 1e3) + " k" : fmt(n);
 
 // ---------------------------------------------------------------- overview
+const dur = s => s == null ? "—" : s < 90 ? Math.round(s) + " giây" : s < 5400 ? Math.round(s / 60) + " phút" : (s / 3600).toLocaleString("vi-VN", {maximumFractionDigits: 1}) + " giờ";
+const bytes = n => n >= 1e9 ? (n / 1e9).toLocaleString("vi-VN", {maximumFractionDigits: 1}) + " GB" : n >= 1e6 ? Math.round(n / 1e6) + " MB" : Math.round(n / 1e3) + " KB";
+const pct = (x, d = 0) => x == null ? "—" : (x * 100).toLocaleString("vi-VN", {maximumFractionDigits: d}) + "%";
 async function overview() {
-  const o = await api("/admin/overview"), ag = o.active_agent;
-  const max = Math.max(1, ...o.days.map(d => d.i + d.o));
-  $("#main").innerHTML = topbar("Tổng quan", "Sức khoẻ hệ thống tháng này") + `<div class="body">
-  ${!ag && A.me.role === "owner" ? `<div class="banner"><b>Chưa có core agent.</b> Người dùng chưa chạy được Plan bằng tài khoản hệ thống. <a href="#agents">Cấu hình agent →</a></div>` : ""}
-  <div class="grid g4">${[["Người dùng", o.users, `+${o.new_users_7d} trong 7 ngày · ${o.users_active_30d} hoạt động 30 ngày`], ["Dự án", o.projects, `${o.projects_done} đã có hồ sơ`],
-    ["Job tháng này", o.jobs_month, `${o.jobs_failed_month} lỗi · ${o.jobs_running} đang chạy · ${o.jobs_queued} chờ`],
-    ["Token tháng này", tok(o.tokens_month), `${tok(o.owner_tokens_month)} trên tài khoản hệ thống`]].map(([l, v, s]) => `<div class="card kpi"><div class="k">${l}</div><b>${v}</b><span>${s}</span></div>`).join("")}</div>
+  A.days = A.days || 30;
+  const [o, m] = await Promise.all([api("/admin/overview"), api("/admin/metrics?days=" + A.days)]), ag = o.active_agent, J = m.jobs, H = m.health, st = m.storage, owner = A.me.role === "owner";
+  const alerts = [
+    !ag && owner && ["bad", 'Chưa có core agent — người dùng chưa chạy được Plan bằng tài khoản hệ thống. <a href="#agents">Cấu hình agent →</a>'],
+    !H.sandbox && ["warn", `Agent chưa được cô lập: ${esc(H.sandbox_hint)}`],
+    H.maintenance && ["warn", 'Đang bật chế độ bảo trì — người dùng chỉ xem được. <a href="#settings">Tắt ở Cài đặt →</a>'],
+    st.disk_free / st.disk_total < .1 && ["bad", `Ổ đĩa sắp đầy: còn ${bytes(st.disk_free)} (${pct(st.disk_free / st.disk_total)}).`],
+    H.oldest_queued_s > 600 && ["warn", `Có job chờ ${dur(H.oldest_queued_s)} — tăng "Số job song song" hoặc kiểm tra core agent.`],
+    J.success_rate != null && J.success_rate < .7 && J.done + J.failed >= 5 && ["warn", `Tỉ lệ job thành công thấp (${pct(J.success_rate)}) — xem "Lý do lỗi hay gặp".`]].filter(Boolean);
+  const ser = m.series, maxJ = Math.max(1, ...ser.map(d => (d.done || 0) + (d.failed || 0))), maxT = Math.max(1, ...ser.map(d => d.tokens || 0));
+  const kpi = (l, v, s) => `<div class="card kpi"><div class="k">${l}</div><b>${v}</b><span>${s}</span></div>`;
+  $("#main").innerHTML = topbar("Tổng quan", `Chỉ số ${A.days} ngày gần nhất`, `<div class="seg" role="radiogroup" aria-label="Khoảng thời gian">${[7, 30, 90].map(d => `<label class="${A.days === d ? "on" : ""}"><input type="radio" name="rng" value="${d}" ${A.days === d ? "checked" : ""}>${d} ngày</label>`).join("")}</div>
+    <button type="button" class="sm" id="csv">⬇ Xuất CSV</button>`) + `<div class="body">
+  ${alerts.map(([lv, t]) => `<div class="banner ${lv}">${t}</div>`).join("")}
+  <div class="grid g4">
+    ${kpi("Người dùng", fmtInt(m.users.total), `+${m.users.new} mới · WAU ${m.users.wau} / MAU ${m.users.mau}${m.users.stickiness != null ? ` · độ dính ${pct(m.users.stickiness)}` : ""}`)}
+    ${kpi("Dự án", fmtInt(m.projects.total), `+${m.projects.new} mới · ${m.projects.with_dossier} có hồ sơ · ${m.projects.shares} link chia sẻ, ${fmtInt(m.projects.share_views)} lượt xem`)}
+    ${kpi("Job thành công", pct(J.success_rate), `${J.done} xong · ${J.failed} lỗi (${J.system_failed} do hệ thống) · ${J.cancelled} huỷ`)}
+    ${kpi("Thời gian chạy Plan", dur(J.duration_p50), `p90 ${dur(J.duration_p90)} · chờ hàng đợi ${dur(J.wait_p50)}`)}
+    ${kpi("Token tài khoản hệ thống", tok(m.tokens.owner), `${m.tokens.owner_cost_usd ? "≈ $" + m.tokens.owner_cost_usd.toLocaleString("vi-VN") + " · " : ""}người dùng tự trả ${tok(m.tokens.users)} token`)}
+    ${kpi("Hàng đợi", `${H.running} <small>đang chạy</small> · ${H.queue} <small>chờ</small>`, H.oldest_queued_s ? `job chờ lâu nhất ${dur(H.oldest_queued_s)}` : "không có job chờ")}
+    ${kpi("Lời mời đang mở", fmtInt(o.invites_open), `<a href="#users">Quản lý người dùng & lời mời →</a>`)}
+    ${kpi("Ổ đĩa còn trống", bytes(st.disk_free), `${pct(st.disk_free / st.disk_total)} của ${bytes(st.disk_total)}`)}</div>
   <div class="grid g2" style="margin-top:14px">
-    <div class="card"><div class="k">Token theo ngày · 30 ngày</div>${o.days.length ? `<div class="bars">${o.days.map(d => `<i style="height:${(d.i + d.o) / max * 100}%" title="${d.d}: ${fmt(d.i + d.o)} token · ${d.n} lượt"></i>`).join("")}</div>
-      <div class="axis"><span>${o.days[0].d}</span><span>${o.days.at(-1).d}</span></div>` : '<p class="hint">Chưa có lượt dùng.</p>'}</div>
-    <div class="card"><div class="k">Core agent đang dùng</div>${ag ? `<h2 style="margin:6px 0">${esc(ag.name)}</h2><p>${esc(ag.engine)} · ${esc(ag.auth_mode === "api_key" ? "API key" : "tài khoản đăng nhập")} · model ${esc(ag.model || "mặc định")} ${pill(ag.status)}</p>` : '<p class="hint">Chưa cấu hình.</p>'}
-      ${A.me.role === "owner" ? '<a href="#agents">Quản lý agent →</a>' : ""}</div></div>
+    <section class="card"><div class="row"><div class="k grow">Job Plan theo ngày</div><span class="legend"><i style="background:var(--ok)"></i>xong <i style="background:var(--bad)"></i>lỗi</span></div>
+      ${ser.some(d => d.done || d.failed) ? `<div class="bars">${ser.map(d => `<span class="stack" title="${d.d}: ${d.done || 0} xong · ${d.failed || 0} lỗi"><i style="height:${(d.failed || 0) / maxJ * 100}%;background:var(--bad)"></i><i style="height:${(d.done || 0) / maxJ * 100}%;background:var(--ok)"></i></span>`).join("")}</div>
+      <div class="axis"><span>${ser[0].d}</span><span>${ser.at(-1).d}</span></div>` : '<div class="empty">Chưa có job trong khoảng này.</div>'}</section>
+    <section class="card"><div class="k">Token theo ngày</div>${ser.some(d => d.tokens) ? `<div class="bars">${ser.map(d => `<i style="height:${(d.tokens || 0) / maxT * 100}%" title="${d.d}: ${fmtInt(d.tokens || 0)} token${d.signups ? ` · ${d.signups} đăng ký` : ""}"></i>`).join("")}</div>
+      <div class="axis"><span>${ser[0].d}</span><span>${ser.at(-1).d}</span></div>` : '<div class="empty">Chưa có lượt dùng AI trong khoảng này.</div>'}</section></div>
   <div class="grid g2" style="margin-top:14px">
-    <div class="card"><div class="row"><div class="k grow">Phễu kích hoạt người dùng</div>${o.invites_open ? `<a href="#users" class="hint">${o.invites_open} lời mời đang chờ</a>` : ""}</div>${funnelView(o.funnel)}</div>
-    <div class="card"><div class="k">Job gần đây</div>${jobTable(o.recent_jobs)}</div></div></div>`;
+    <section class="card"><div class="k">Phễu kích hoạt người dùng</div>${funnelView(o.funnel)}</section>
+    <section class="card"><div class="k">Lý do lỗi hay gặp</div>${J.reasons.length ? `<table class="t" style="margin-top:8px"><tbody>${J.reasons.map(([r, n]) => `<tr><td>${esc(r)}</td><td class="num">${n}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">Không có job lỗi trong khoảng này.</div>'}</section></div>
+  <div class="grid g2" style="margin-top:14px">
+    <section class="card"><div class="k">Sức khoẻ hệ thống</div><div class="kv">
+      <span>Phiên bản</span><span class="mono">${esc(H.version)} · Python ${esc(H.python)}</span><span>Đã chạy</span><span>${dur(H.uptime_s)}</span>
+      <span>Core agent</span><span>${ag ? `${esc(ag.name)} · ${esc(ag.engine)} · ${pill(ag.status || "ready")}` : '<span class="err">chưa có</span>'}</span>
+      <span>Cô lập agent</span><span>${H.sandbox ? pill("ok") : '<span class="err">chưa bật</span>'}</span><span>Xuất Word/PPT</span><span>${H.pandoc ? pill("ok") : '<span class="err">thiếu pandoc</span>'}</span>
+      <span>Bảo trì</span><span>${H.maintenance ? '<span class="pill warn">đang bật</span>' : "tắt"}</span></div>${owner ? '<a href="#agents">Quản lý core agent →</a>' : ""}</section>
+    <section class="card"><div class="k">Dung lượng dữ liệu</div><div class="funnel" style="margin-top:10px">${[["Dự án (workspace)", st.workspace], ["Lịch sử phiên bản", st.history], ["Cơ sở dữ liệu", st.db], ["Tài khoản agent", st.agents], ["Tạm của job", st.jobs_tmp]].map(([l, n]) => {
+        const tot = st.workspace + st.history + st.db + st.agents + st.jobs_tmp || 1; return `<div class="fr"><span>${l}</span><span class="fb" style="width:${n / tot * 100}%"></span><span class="hint">${bytes(n)}</span></div>`; }).join("")}</div>
+      <p class="hint" style="margin:8px 0 0">Ổ đĩa: còn ${bytes(st.disk_free)} / ${bytes(st.disk_total)}.${owner ? ' <a href="#settings">Sao lưu dữ liệu →</a>' : ""}</p></section></div>
+  <section class="card" style="margin-top:14px"><div class="row"><div class="k grow">Job gần đây</div><a href="#jobs" class="hint">Tất cả job →</a></div>${jobTable(o.recent_jobs)}</section></div>`;
+  $$("input[name=rng]").forEach(r => r.onchange = () => { A.days = +r.value; overview(); });
+  $("#csv").onclick = e => menu(e.currentTarget, [["Người dùng (.csv)", () => location.href = "/api/admin/export/users.csv"], ["Job (.csv)", () => location.href = "/api/admin/export/jobs.csv"],
+    ["Mức dùng token (.csv)", () => location.href = "/api/admin/export/usage.csv"], ["Nhật ký thao tác (.csv)", () => location.href = "/api/admin/export/audit.csv"]]);
 }
 function funnelView(f) {
   const steps = [["signup", "Đăng ký"], ["key", "Thêm API key"], ["project", "Tạo dự án"], ["plan", "Chạy Plan xong"], ["share", "Chia sẻ hồ sơ"]], max = Math.max(1, f.signup);
@@ -277,25 +312,37 @@ async function usage() {
 // ---------------------------------------------------------------- settings (owner)
 async function settings() {
   const s = await api("/admin/settings");
-  const f = (k, l, t = "text", h = "") => `<div><label for="s_${k}">${l}</label><input id="s_${k}" data-k="${k}" type="${t}" value="${esc(s[k])}">${h ? `<div class="hint">${h}</div>` : ""}</div>`;
+  const f = (k, l, t = "text", h = "", ph = "") => `<div><label for="s_${k}">${l}</label><input id="s_${k}" data-k="${k}" type="${t}" value="${esc(s[k])}" placeholder="${esc(ph)}">${h ? `<div class="hint">${h}</div>` : ""}</div>`;
   const sel = (k, l, opts, h = "") => `<div><label for="s_${k}">${l}</label><select id="s_${k}" data-k="${k}">${opts.map(([v, t]) => `<option value="${v}" ${s[k] === v ? "selected" : ""}>${t}</option>`).join("")}</select>${h ? `<div class="hint">${h}</div>` : ""}</div>`;
   const yn = [["1", "Bật"], ["0", "Tắt"]];
-  $("#main").innerHTML = topbar("Cài đặt hệ thống") + `<div class="body"><form id="sf" class="grid" style="max-width:900px">
-  <div class="card"><h2>Chung</h2><div class="grid g2" style="gap:0 14px">${f("site_name", "Tên hệ thống")}${sel("allow_signup", "Cho phép tự đăng ký", yn)}
-    ${f("public_base_url", "URL công khai", "url", "Dùng cho Google OAuth redirect, ví dụ https://plan.afi.io")}</div></div>
-  <div class="card"><h2>Chạy Plan & hạn mức</h2><div class="grid g2" style="gap:0 14px">
-    ${sel("plan_billing", "Ai trả chi phí chạy Plan", [["either", "Người dùng chọn: tài khoản hệ thống hoặc key riêng"], ["owner", "Chỉ tài khoản hệ thống (core agent)"], ["user_key", "Chỉ API key của người dùng"]])}
-    ${f("default_quota_jobs_month", "Số lần chạy bằng tài khoản hệ thống / user / tháng", "number")}${f("default_quota_projects", "Số dự án tối đa / user", "number")}
-    ${f("job_timeout_min", "Thời gian tối đa mỗi job (phút)", "number")}${f("max_concurrent_jobs", "Số job chạy song song", "number")}
-    ${sel("auto_failover", "Tự chuyển tài khoản agent khi hết quota", yn)}${sel("allow_demo_engine", "Cho phép chế độ demo (không key)", yn)}</div></div>
-  <div class="card"><h2>Đăng nhập Google (tuỳ chọn)</h2><p class="hint">Tạo OAuth Client (Web) ở Google Cloud Console, redirect URI: <code>${esc((s.public_base_url || location.origin) + "/api/auth/google/callback")}</code></p>
+  $("#main").innerHTML = topbar("Cài đặt hệ thống", "Thay đổi có hiệu lực ngay cho mọi người dùng") + `<div class="body"><form id="sf" class="grid" style="max-width:960px">
+  <section class="card"><h2>Chung</h2><div class="grid g2" style="gap:0 14px">${f("site_name", "Tên hệ thống")}${f("support_email", "Email hỗ trợ", "email", "Hiện cho người dùng khi gặp lỗi hoặc cần trợ giúp", "hotro@congty.vn")}
+    ${f("public_base_url", "URL công khai", "url", "Dùng cho Google OAuth và link chia sẻ, ví dụ https://plan.afi.io")}${f("default_country", "Thị trường mặc định", "text", "Cho dự án mới khi người dùng chưa chọn")}</div></section>
+  <section class="card"><h2>Đăng ký & truy cập</h2><div class="grid g2" style="gap:0 14px">${sel("allow_signup", "Tự đăng ký", [["1", "Mở — ai có link cũng đăng ký được"], ["0", "Chỉ qua lời mời"]])}
+    ${f("signup_domains", "Chỉ cho tên miền email", "text", "Bỏ trống = mọi email. Ví dụ: afi.io, congty.vn — người ngoài vẫn vào được bằng lời mời", "afi.io, congty.vn")}</div>
+    <h3 style="margin:16px 0 4px">Đăng nhập Google (tuỳ chọn)</h3><p class="hint">Tạo OAuth Client (Web) ở Google Cloud Console, redirect URI: <code>${esc((s.public_base_url || location.origin) + "/api/auth/google/callback")}</code></p>
     <div class="grid g2" style="gap:0 14px">${f("google_client_id", "Client ID")}<div><label for="gcs">Client secret</label><input id="gcs" type="password" placeholder="${s.google_client_secret_set ? "đã lưu — nhập để thay" : ""}" autocomplete="off">
-      ${s.google_client_secret_set ? '<label class="row hint" style="margin-top:6px"><input type="checkbox" id="gcsClear" style="width:auto"> Xoá secret đã lưu (tắt đăng nhập Google)</label>' : ""}</div></div></div>
-  <div><button class="pri">Lưu cài đặt</button> <span class="hint" id="smsg"></span></div></form></div>`;
+      ${s.google_client_secret_set ? '<label class="row hint" style="margin-top:6px"><input type="checkbox" id="gcsClear" style="width:auto"> Xoá secret đã lưu (tắt đăng nhập Google)</label>' : ""}</div></div></section>
+  <section class="card"><h2>Chạy Plan & hạn mức</h2><div class="grid g2" style="gap:0 14px">
+    ${sel("plan_billing", "Ai trả chi phí chạy Plan", [["either", "Người dùng chọn: tài khoản hệ thống hoặc key riêng"], ["owner", "Chỉ tài khoản hệ thống (core agent)"], ["user_key", "Chỉ API key của người dùng"]])}
+    ${f("default_quota_jobs_month", "Lần chạy bằng tài khoản hệ thống / người dùng / tháng", "number")}${f("default_quota_projects", "Số dự án tối đa / người dùng", "number")}
+    ${f("job_timeout_min", "Thời gian tối đa mỗi job (phút)", "number")}${f("max_concurrent_jobs", "Số job chạy song song", "number", "1–16; mỗi job là một core agent đang chạy")}
+    ${sel("auto_failover", "Tự chuyển tài khoản agent khi hết quota", yn)}${sel("allow_demo_engine", "Chế độ demo (không cần key)", yn, "Cho người mới thử luồng; hồ sơ demo có cảnh báo khi chia sẻ")}</div></section>
+  <section class="card"><h2>Vận hành</h2><div class="grid g2" style="gap:0 14px">
+    ${sel("maintenance", "Chế độ bảo trì", [["0", "Tắt"], ["1", "Bật — người dùng chỉ xem, không tạo/chạy/sửa"]], "Admin vẫn thao tác bình thường; job đang chạy không bị dừng")}
+    ${f("log_retention_days", "Giữ log job (ngày)", "number", "0 = giữ mãi. Log cũ bị xoá nội dung, thống kê vẫn giữ")}
+    <div style="grid-column:1/-1"><label for="s_announcement">Thông báo cho mọi người dùng</label><textarea id="s_announcement" data-k="announcement" rows="2" maxlength="500" placeholder="Ví dụ: Tối 25/10 bảo trì 22:00–23:00. Bỏ trống = không hiện.">${esc(s.announcement)}</textarea></div>
+    ${sel("announcement_level", "Mức thông báo", [["info", "Thông tin"], ["warn", "Cảnh báo"]])}</div></section>
+  <div class="savebar-static"><button class="pri">Lưu cài đặt</button> <span class="hint" id="smsg"></span></div></form>
+  <section class="card" style="max-width:960px;margin-top:14px"><h2>Sao lưu dữ liệu</h2><p class="hint">Một file .zip gồm cơ sở dữ liệu, khoá mã hoá API key, mọi dự án và lịch sử phiên bản — đủ để dựng lại hệ thống trên máy khác (xem RESTORE.txt trong file).
+    <b>File chứa khoá giải mã API key của người dùng — cất như mật khẩu.</b> Tài khoản core agent cần đăng nhập lại sau khi khôi phục.</p>
+    <button type="button" id="bk">⬇ Tải bản sao lưu</button></section></div>`;
   $("#sf").onsubmit = async e => { e.preventDefault(); const b = {}; $$("[data-k]").forEach(i => b[i.dataset.k] = i.value); if ($("#gcs").value) b.google_client_secret = $("#gcs").value;
     if ($("#gcsClear")?.checked) b.clear_google_client_secret = true;
     try { await api("/admin/settings", {method: "PUT", body: b}); toast("Đã lưu cài đặt"); settings(); }
     catch (x) { $("#smsg").textContent = "✗ " + x.message; $("#smsg").className = "err"; toast("Chưa lưu: " + x.message); } };
+  $("#bk").onclick = async () => { if (!await ask("Tải bản sao lưu toàn hệ thống? File chứa khoá giải mã API key — chỉ lưu ở nơi an toàn.", "Tải sao lưu", false)) return;
+    location.href = "/api/admin/backup"; toast("Đang đóng gói bản sao lưu…"); };
 }
 
 // ---------------------------------------------------------------- audit
@@ -305,5 +352,5 @@ async function audit() {
   ${rows.map(r => `<tr><td class="hint" title="${esc(r.created)}">${ago(r.created)}</td><td>${esc(r.email || "—")}</td><td><code>${esc(r.action)}</code></td><td>${esc(r.target)}</td><td class="hint mono">${esc(r.detail || "")}</td></tr>`).join("")}</tbody></table></div></div>`;
 }
 
-(async () => { A.me = await api("/me"); $("#site").textContent = A.me.site_name; $("#who").textContent = A.me.email; render(); })();
+(async () => { A.me = await api("/me"); applyTheme(A.me.prefs?.theme); $("#site").textContent = A.me.site_name; $("#who").textContent = A.me.email; render(); })();
 </script></body></html>

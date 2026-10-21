@@ -1,5 +1,6 @@
 """Gen Planner SaaS — API + trang tĩnh.  Chạy:  uvicorn saas.server.main:app --port 8080  (từ thư mục gốc repo)."""
 import json
+import os
 import re
 import secrets
 import shutil
@@ -9,6 +10,7 @@ import time
 import unicodedata
 import urllib.parse
 from collections import defaultdict
+from pathlib import Path
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
@@ -20,10 +22,13 @@ import hashlib
 import threading
 
 from . import agents, db, history, interview, llm, sandbox, ssot, worker
-from .config import COOKIE_SECURE, ROOT, SAAS, WORKSPACE
+from .config import AGENTS_HOME, COOKIE_SECURE, DATA, HISTORY, JOBS_HOME, ROOT, SAAS, WORKSPACE
 from .security import check_pw, dec, enc, hash_pw, hint, sign, unsign
 
 app = FastAPI(title="Gen Planner", docs_url=None, redoc_url=None)
+STARTED = time.time()
+GIT_REV = (subprocess.run(["git", "-c", "safe.directory=*", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+           or "unknown")
 STATIC = SAAS / "static"
 COOKIE = "gp_session"
 _attempts: dict[str, list[float]] = defaultdict(list)
@@ -41,10 +46,27 @@ async def csrf(request: Request, call_next):
     if request.method in ("POST", "PUT", "PATCH", "DELETE") and request.url.path.startswith("/api/") \
             and request.headers.get("x-gp") != "1" and not request.headers.get("authorization", "").startswith("Bearer gp_"):
         return JSONResponse({"detail": "Thiếu header X-GP"}, status_code=403)
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") and db.setting("maintenance") == "1" and maintenance_blocks(request):
+        return JSONResponse({"detail": "Hệ thống đang bảo trì — tạm thời chỉ xem được, chưa tạo/chạy/sửa. "
+                                       + (db.setting("announcement") or "Vui lòng quay lại sau.")}, status_code=503)
     resp = await call_next(request)
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("Referrer-Policy", "same-origin")
     return resp
+
+
+MAINT_OPEN = re.compile(r"/api/(auth/|admin/|me(/|$)|jobs/\d+/cancel$)")
+
+
+def maintenance_blocks(request):
+    """Bảo trì: chặn lệnh ghi của người dùng thường; đăng nhập, tài khoản, huỷ job và mọi thao tác admin vẫn chạy."""
+    if not request.url.path.startswith("/api/") or MAINT_OPEN.match(request.url.path):
+        return False
+    try:
+        u = current_user(request)
+    except HTTPException:
+        return True
+    return not u or u["role"] not in ("owner", "admin")
 
 
 # ------------------------------------------------------------------ auth helpers
@@ -106,8 +128,18 @@ def login_response(u, resp=None):
     return resp
 
 
+PREF_DEFAULTS = {"theme": "system", "country": None}       # country None → theo mặc định hệ thống
+
+
+def prefs(u):
+    p = {**PREF_DEFAULTS, **json.loads(u.get("prefs") or "{}")}
+    p["country"] = p["country"] or db.setting("default_country") or "Việt Nam"
+    return p
+
+
 def public_user(u):
-    return {k: u[k] for k in ("id", "email", "name", "role", "status", "created", "last_login")}
+    return {**{k: u[k] for k in ("id", "email", "name", "role", "status", "created", "last_login")}, "prefs": prefs(u),
+            "has_password": bool(u.get("pw_hash")), "google": bool(u.get("google_sub"))}
 
 
 def throttle(request: Request, who="", record=True, per_account=True, ip_limit=(10, 300)):
@@ -149,6 +181,9 @@ def create_user(email, name, pw=None, google_sub=None, invite=None):
     first = db.one("SELECT COUNT(*) n FROM users")["n"] == 0
     if not first and not invite and db.setting("allow_signup") != "1":
         raise HTTPException(403, "Hệ thống đang tắt đăng ký mới — cần lời mời từ admin.")
+    doms = [d.strip().lower().lstrip("@") for d in (db.setting("signup_domains") or "").split(",") if d.strip()]
+    if not first and not invite and doms and email.split("@")[-1].lower() not in doms:
+        raise HTTPException(403, f"Chỉ email thuộc {', '.join('@' + d for d in doms)} được tự đăng ký — người khác cần lời mời.")
     role = "owner" if first else (invite["role"] if invite else "user")
     uid = db.insert("users", email=email, name=name or email.split("@")[0], pw_hash=hash_pw(pw) if pw else None,
                     google_sub=google_sub, role=role, status="active", created=db.now(),
@@ -230,6 +265,7 @@ def public(invite: str = ""):
         except HTTPException as e:
             inv = {"error": e.detail}
     return {"invite": inv, "site_name": db.setting("site_name"), "allow_signup": db.setting("allow_signup") == "1",
+            "signup_domains": db.setting("signup_domains"), "support_email": db.setting("support_email"),
             "google": bool(db.setting("google_client_id")), "has_owner": db.one("SELECT COUNT(*) n FROM users")["n"] > 0}
 
 
@@ -317,7 +353,9 @@ def me(u=Depends(need_user)):
     keys = db.one("SELECT COUNT(*) n FROM api_keys WHERE user_id=?", (u["id"],))["n"]
     return {**public_user(u), "has_keys": keys > 0, "site_name": db.setting("site_name"),
             "plan_billing": db.setting("plan_billing"), "quota": quota(u), "demo_allowed": db.setting("allow_demo_engine") == "1",
-            "core_ready": agents.active_profile() is not None, "onboarding": onboarding(u, keys > 0)}
+            "core_ready": agents.active_profile() is not None, "onboarding": onboarding(u, keys > 0),
+            "announcement": db.setting("announcement"), "announcement_level": db.setting("announcement_level"),
+            "maintenance": db.setting("maintenance") == "1", "support_email": db.setting("support_email")}
 
 
 def onboarding(u, has_keys):
@@ -351,6 +389,100 @@ async def onboarding_mark(request: Request, u=Depends(need_user)):
             ob[k] = bool(b[k])
     db.update("users", u["id"], onboarding=json.dumps(ob))
     return {"ok": True}
+
+
+@app.patch("/api/me")
+async def edit_me(request: Request, u=Depends(need_user)):
+    b = await body(request)
+    kw = {}
+    if "name" in b:
+        kw["name"] = str(b["name"] or "").strip()[:80] or None
+    if isinstance(b.get("prefs"), dict):
+        p = {**json.loads(u.get("prefs") or "{}")}
+        theme = b["prefs"].get("theme")
+        if theme is not None:
+            if theme not in ("system", "light", "dark"):
+                raise HTTPException(400, "Giao diện: system | light | dark")
+            p["theme"] = theme
+        if "country" in b["prefs"]:
+            p["country"] = str(b["prefs"]["country"] or "").strip()[:60] or None
+        kw["prefs"] = json.dumps(p, ensure_ascii=False)
+    if kw:
+        db.update("users", u["id"], **kw)
+    return me(db.one("SELECT * FROM users WHERE id=?", (u["id"],)))
+
+
+@app.post("/api/me/logout-others")
+def logout_others(u=Depends(need_user)):
+    """Đăng xuất mọi phiên khác (máy lạ, máy cũ) — phiên hiện tại nhận cookie mới."""
+    db.update("users", u["id"], session_ver=u["session_ver"] + 1)
+    db.audit(u["id"], "logout_others", u["email"])
+    return login_response(db.one("SELECT * FROM users WHERE id=?", (u["id"],)))
+
+
+@app.get("/api/me/usage")
+def my_usage(u=Depends(need_user)):
+    """Mức dùng 6 tháng gần nhất: token trợ lý (key của bạn) và lần chạy Plan theo nguồn chi phí."""
+    since = (dt.date.today().replace(day=1) - dt.timedelta(days=150)).replace(day=1).isoformat()
+    tok = {r["m"]: r for r in db.q("SELECT substr(created,1,7) m, COALESCE(SUM(input_tokens),0) i, COALESCE(SUM(output_tokens),0) o, "
+                                    "COALESCE(SUM(cost_usd),0) c FROM usage WHERE user_id=? AND created>=? GROUP BY m", (u["id"], since))}
+    runs = {}
+    for r in db.q("SELECT substr(created,1,7) m, billing, COUNT(*) n FROM jobs WHERE user_id=? AND kind='plan' AND created>=? "
+                  "AND system_fault=0 GROUP BY m, billing", (u["id"], since)):
+        runs.setdefault(r["m"], {})[r["billing"] or "?"] = r["n"]
+    months = sorted(set(tok) | set(runs), reverse=True)
+    return {"quota": quota(u), "months": [{"month": m, "input_tokens": tok.get(m, {}).get("i", 0), "output_tokens": tok.get(m, {}).get("o", 0),
+                                          "cost_usd": round(tok.get(m, {}).get("c", 0) or 0, 4), "runs": runs.get(m, {})} for m in months]}
+
+
+@app.get("/api/me/export")
+def my_export(u=Depends(need_user)):
+    """Toàn bộ dữ liệu của tôi (.zip): tài khoản, mọi dự án (phỏng vấn, điểm chốt, hội thoại, SSOT, hồ sơ đã dựng). Không chứa key/bí mật."""
+    import io
+    import zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("account.json", json.dumps({**public_user(u), "keys": [
+            {k: r[k] for k in ("provider", "label", "key_hint", "model", "created")} for r in db.q("SELECT * FROM api_keys WHERE user_id=?", (u["id"],))],
+            "api_tokens": [{k: r[k] for k in ("name", "prefix", "created", "last_used", "revoked")} for r in db.q("SELECT * FROM api_tokens WHERE user_id=?", (u["id"],))],
+            "exported": db.now()}, ensure_ascii=False, indent=1))
+        for p in db.q("SELECT * FROM projects WHERE user_id=? AND is_sample=0", (u["id"],)):
+            base = f"projects/{p['slug']}/"
+            z.writestr(base + "project.json", json.dumps({
+                "project": {k: p[k] for k in ("slug", "name", "idea", "country", "status", "created", "updated", "archived")},
+                "interview": db.one("SELECT answers, done FROM interview WHERE project_id=?", (p["id"],)),
+                "decisions": db.q("SELECT title, detail, category, status, created FROM decisions WHERE project_id=?", (p["id"],)),
+                "messages": db.q("SELECT room, role, content, created FROM messages WHERE project_id=? ORDER BY id", (p["id"],)),
+                "changes": db.q("SELECT key, label, old, new, created FROM changes WHERE project_id=?", (p["id"],))}, ensure_ascii=False, indent=1))
+            if p["brief_md"]:
+                z.writestr(base + "brief.md", p["brief_md"])
+            if (WORKSPACE / p["slug"]).exists():
+                z.writestr(base + "dossier.zip", ssot.bundle(p["slug"]))
+    db.audit(u["id"], "data_export", u["email"])
+    name = f"gen-planner-{u['email'].split('@')[0]}-{dt.date.today().isoformat()}.zip"
+    return Response(buf.getvalue(), media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@app.post("/api/me/delete")
+async def delete_me(request: Request, u=Depends(need_user)):
+    """Xoá tài khoản: mọi dự án, key, token, link chia sẻ. Owner phải trao quyền cho người khác trước."""
+    b = await body(request)
+    if u["role"] == "owner":
+        raise HTTPException(400, "Owner không tự xoá được — trao quyền owner cho người khác trước (Quản trị → Người dùng).")
+    if str(b.get("confirm", "")).strip().lower() != u["email"]:
+        raise HTTPException(400, "Gõ đúng email của bạn để xác nhận.")
+    if u["pw_hash"] and not await run_in_threadpool(check_pw, str(b.get("password", "")), u["pw_hash"]):
+        raise HTTPException(400, "Mật khẩu không đúng.")
+    for p in db.q("SELECT * FROM projects WHERE user_id=? AND is_sample=0", (u["id"],)):
+        purge_project(p)
+    for t in ("api_keys", "api_tokens"):
+        db.x(f"DELETE FROM {t} WHERE user_id=?", (u["id"],))
+    db.x("UPDATE usage SET user_id=NULL WHERE user_id=?", (u["id"],))       # giữ số liệu tổng, bỏ liên kết người dùng
+    db.x("DELETE FROM users WHERE id=?", (u["id"],))
+    db.audit(None, "account_delete", u["email"])
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(COOKIE)
+    return resp
 
 
 @app.post("/api/me/password")
@@ -496,7 +628,7 @@ def get_project(slug, u, write=False):
 def project_summary(p):
     j = db.one("SELECT id,status,engine,billing,created,finished,error FROM jobs WHERE project_id=? ORDER BY id DESC LIMIT 1", (p["id"],))
     st = interview.state(p["id"])
-    return {**{k: p[k] for k in ("id", "slug", "name", "country", "status", "created", "updated", "is_sample")},
+    return {**{k: p[k] for k in ("id", "slug", "name", "country", "status", "created", "updated", "is_sample", "archived")},
             "progress": interview.progress(st["answers"]), "last_job": j,
             "exported": (WORKSPACE / p["slug"] / "build" / "export" / "project.json").exists(),
             "locked": db.one("SELECT COUNT(*) n FROM decisions WHERE project_id=? AND status='locked'", (p["id"],))["n"]}
@@ -504,7 +636,7 @@ def project_summary(p):
 
 @app.get("/api/projects")
 def my_projects(u=Depends(need_user)):
-    return [project_summary(p) for p in db.q("SELECT * FROM projects WHERE user_id=? AND is_sample=0 ORDER BY updated DESC", (u["id"],))]
+    return [project_summary(p) for p in db.q("SELECT * FROM projects WHERE user_id=? AND is_sample=0 ORDER BY archived, updated DESC", (u["id"],))]
 
 
 @app.get("/api/samples")
@@ -522,7 +654,7 @@ async def new_project(request: Request, u=Depends(need_user)):
     if qo["projects_limit"] is not None and qo["projects"] >= qo["projects_limit"]:
         raise HTTPException(403, f"Đã đạt giới hạn {qo['projects_limit']} dự án của gói. Liên hệ admin để nâng.")
     slug = slugify(name)
-    pid = db.insert("projects", slug=slug, user_id=u["id"], name=name, idea=idea, country=b.get("country") or "Việt Nam",
+    pid = db.insert("projects", slug=slug, user_id=u["id"], name=name, idea=idea, country=b.get("country") or prefs(u)["country"],
                     status="interview", created=db.now(), updated=db.now())
     p = db.one("SELECT * FROM projects WHERE id=?", (pid,))
     interview.start_interview(p)
@@ -550,14 +682,25 @@ def project_detail(slug: str, u=Depends(need_user)):
 @app.patch("/api/projects/{slug}")
 async def edit_project(slug: str, request: Request, u=Depends(need_user)):
     p, b = get_project(slug, u, True), await body(request)
-    kw = {k: str(b[k]).strip() for k in ("name", "idea", "country") if b.get(k)}
+    kw = {k: str(b[k]).strip()[:20000] for k in ("name", "idea", "country") if str(b.get(k) or "").strip()}
+    if "name" in kw:
+        kw["name"] = kw["name"][:120]
+    if "archived" in b:
+        kw["archived"] = int(bool(b["archived"]))
+        db.audit(u["id"], "project_archive" if kw["archived"] else "project_unarchive", slug)
     db.update("projects", p["id"], **kw, updated=db.now())
     return project_summary(db.one("SELECT * FROM projects WHERE id=?", (p["id"],)))
 
 
 @app.delete("/api/projects/{slug}")
 def delete_project(slug: str, u=Depends(need_user)):
-    p = get_project(slug, u, True)
+    purge_project(get_project(slug, u, True))
+    db.audit(u["id"], "project_delete", slug)
+    return {"ok": True}
+
+
+def purge_project(p):
+    """Xoá hẳn một dự án: dừng job, xoá dữ liệu DB, workspace và lịch sử git (dùng cho xoá dự án và xoá tài khoản)."""
     for j in db.q("SELECT id FROM jobs WHERE project_id=? AND status IN ('queued','starting','running','waiting')", (p["id"],)):
         worker.cancel(j["id"])                                        # không để agent chạy tiếp trong thư mục sắp xoá
     for t in ("messages", "decisions", "interview", "changes", "shares"):
@@ -565,8 +708,36 @@ def delete_project(slug: str, u=Depends(need_user)):
     db.x("DELETE FROM projects WHERE id=?", (p["id"],))
     shutil.rmtree(WORKSPACE / p["slug"], ignore_errors=True)
     history.remove(p["slug"])
-    db.audit(u["id"], "project_delete", slug)
-    return {"ok": True}
+
+
+@app.post("/api/projects/{slug}/duplicate")
+def duplicate_project(slug: str, u=Depends(need_user)):
+    """Nhân bản để thử hướng khác: chép ý tưởng, câu trả lời phỏng vấn, điểm chốt, brief và bộ SSOT (không chép hội thoại, job, link chia sẻ)."""
+    src = get_project(slug, u)
+    if src["user_id"] != u["id"] and not src["is_sample"]:            # admin xem được dự án người khác nhưng không được chép về
+        raise HTTPException(403, "Chỉ nhân bản được dự án của bạn hoặc dự án mẫu")
+    qo = quota(u)
+    if qo["projects_limit"] is not None and qo["projects"] >= qo["projects_limit"]:
+        raise HTTPException(403, f"Đã đạt giới hạn {qo['projects_limit']} dự án. Xoá hoặc liên hệ admin để nâng.")
+    name = (src["name"] + " (bản sao)")[:120]
+    nslug = slugify(name)
+    pid = db.insert("projects", slug=nslug, user_id=u["id"], name=name, idea=src["idea"], country=src["country"],
+                    status="ready" if (WORKSPACE / src["slug"]).exists() else "interview", brief_md=src["brief_md"],
+                    created=db.now(), updated=db.now())
+    st = db.one("SELECT * FROM interview WHERE project_id=?", (src["id"],))
+    if st:
+        db.insert("interview", project_id=pid, answers=st["answers"], current_qid=st["current_qid"], done=st["done"])
+    for d in db.q("SELECT title, detail, category, status FROM decisions WHERE project_id=?", (src["id"],)):
+        db.insert("decisions", project_id=pid, **d, created=db.now(), updated=db.now())
+    if (WORKSPACE / src["slug"]).exists():
+        shutil.copytree(WORKSPACE / src["slug"], WORKSPACE / nslug, symlinks=False,
+                        ignore=shutil.ignore_patterns(".git", "build", "*.tmp"), ignore_dangling_symlinks=True)
+        sandbox.strip_links(WORKSPACE / nslug)
+        sandbox.private(WORKSPACE / nslug)
+        history.ensure(nslug, f"Nhân bản từ {src['name']}", u["email"])
+        queue_job(db.one("SELECT * FROM projects WHERE id=?", (pid,)), u, "rebuild")   # dựng lại hồ sơ cho bản sao
+    db.audit(u["id"], "project_duplicate", nslug, {"from": slug})
+    return project_summary(db.one("SELECT * FROM projects WHERE id=?", (pid,)))
 
 
 @app.get("/api/projects/{slug}/messages")
@@ -1180,6 +1351,147 @@ def admin_users(a=Depends(need_admin)):
     return out
 
 
+def _dur(a, b):
+    try:
+        return (dt.datetime.fromisoformat(b) - dt.datetime.fromisoformat(a)).total_seconds()
+    except (TypeError, ValueError):
+        return None
+
+
+def _pct(xs, q):
+    xs = sorted(x for x in xs if x is not None)
+    return round(xs[min(len(xs) - 1, int(q * len(xs)))]) if xs else None
+
+
+def _du(path):
+    total = 0
+    for root, _, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.lstat(os.path.join(root, f)).st_size
+            except OSError:
+                pass
+    return total
+
+
+@app.get("/api/admin/metrics")
+def metrics(days: int = 30, a=Depends(need_admin)):
+    """Chỉ số vận hành theo khoảng thời gian: người dùng, chất lượng job, chi phí, dung lượng, sức khoẻ hệ thống."""
+    days = days if days in (7, 30, 90) else 30
+    now = dt.datetime.now(dt.timezone.utc)
+    since = (now - dt.timedelta(days=days)).replace(microsecond=0).isoformat()
+    ago = lambda d: (now - dt.timedelta(days=d)).replace(microsecond=0).isoformat()  # noqa: E731
+    c = lambda sql, args=(): db.one(sql, args)["n"]  # noqa: E731
+    wau, mau = c("SELECT COUNT(*) n FROM users WHERE last_login>=?", (ago(7),)), c("SELECT COUNT(*) n FROM users WHERE last_login>=?", (ago(30),))
+    jobs = db.q("SELECT status, engine, billing, created, started, finished, error, system_fault FROM jobs WHERE kind='plan' AND created>=?", (since,))
+    done = [j for j in jobs if j["status"] == "done"]
+    failed = [j for j in jobs if j["status"] == "failed"]
+    reasons = {}
+    for j in failed:
+        k = re.sub(r"\d+", "N", (j["error"] or "không rõ").split(" — ")[0])[:90]
+        reasons[k] = reasons.get(k, 0) + 1
+    tok = db.one("SELECT COALESCE(SUM(CASE WHEN profile_id IS NOT NULL THEN input_tokens+output_tokens END),0) owner_t, "
+                 "COALESCE(SUM(CASE WHEN profile_id IS NULL THEN input_tokens+output_tokens END),0) user_t, "
+                 "COALESCE(SUM(CASE WHEN profile_id IS NOT NULL THEN cost_usd END),0) owner_c, COALESCE(SUM(cost_usd),0) all_c FROM usage WHERE created>=?", (since,))
+    series = {}
+    for r in db.q("SELECT substr(created,1,10) d, COUNT(*) n FROM users WHERE created>=? GROUP BY d", (since,)):
+        series.setdefault(r["d"], {})["signups"] = r["n"]
+    for r in db.q("SELECT substr(created,1,10) d, SUM(status='done') ok, SUM(status='failed') bad FROM jobs WHERE kind='plan' AND created>=? GROUP BY d", (since,)):
+        series.setdefault(r["d"], {}).update(done=r["ok"], failed=r["bad"])
+    for r in db.q("SELECT substr(created,1,10) d, SUM(input_tokens+output_tokens) t FROM usage WHERE created>=? GROUP BY d", (since,)):
+        series.setdefault(r["d"], {})["tokens"] = r["t"]
+    disk = shutil.disk_usage(DATA)
+    sizes = {"db": sum(f.stat().st_size for f in DATA.glob("app.db*")), "workspace": _du(WORKSPACE), "history": _du(HISTORY),
+             "agents": _du(AGENTS_HOME), "jobs_tmp": _du(JOBS_HOME)}
+    oldest = db.one("SELECT MIN(created) t FROM jobs WHERE status='queued'")["t"]
+    sb = sandbox.status()
+    return {
+        "days": days,
+        "users": {"total": c("SELECT COUNT(*) n FROM users"), "new": c("SELECT COUNT(*) n FROM users WHERE created>=?", (since,)),
+                  "active": c("SELECT COUNT(*) n FROM users WHERE last_login>=?", (since,)), "wau": wau, "mau": mau,
+                  "stickiness": round(wau / mau, 2) if mau else None, "locked": c("SELECT COUNT(*) n FROM users WHERE status!='active'")},
+        "projects": {"total": c("SELECT COUNT(*) n FROM projects WHERE is_sample=0"), "new": c("SELECT COUNT(*) n FROM projects WHERE is_sample=0 AND created>=?", (since,)),
+                     "with_dossier": c("SELECT COUNT(*) n FROM projects WHERE is_sample=0 AND status='done'"),
+                     "shares": c("SELECT COUNT(*) n FROM shares WHERE revoked=0"), "share_views": c("SELECT COALESCE(SUM(views),0) n FROM shares")},
+        "jobs": {"total": len(jobs), "done": len(done), "failed": len(failed), "system_failed": sum(j["system_fault"] for j in failed),
+                 "cancelled": sum(j["status"] == "cancelled" for j in jobs),
+                 "success_rate": round(len(done) / (len(done) + len(failed)), 3) if done or failed else None,
+                 "duration_p50": _pct([_dur(j["started"], j["finished"]) for j in done], .5),
+                 "duration_p90": _pct([_dur(j["started"], j["finished"]) for j in done], .9),
+                 "wait_p50": _pct([_dur(j["created"], j["started"]) for j in jobs if j["started"]], .5),
+                 "by_engine": {e: sum(j["engine"] == e for j in jobs) for e in sorted({j["engine"] or "?" for j in jobs})},
+                 "reasons": sorted(([k, n] for k, n in reasons.items()), key=lambda x: -x[1])[:8]},
+        "tokens": {"owner": tok["owner_t"], "users": tok["user_t"], "owner_cost_usd": round(tok["owner_c"], 2), "cost_usd": round(tok["all_c"], 2)},
+        "series": [{"d": d, **v} for d, v in sorted(series.items())],
+        "storage": {**sizes, "disk_total": disk.total, "disk_free": disk.free},
+        "health": {"version": GIT_REV, "sandbox": sb["enabled"], "sandbox_hint": sb["hint"], "pandoc": bool(shutil.which("pandoc")),
+                   "queue": c("SELECT COUNT(*) n FROM jobs WHERE status='queued'"), "running": c("SELECT COUNT(*) n FROM jobs WHERE status IN ('running','starting')"),
+                   "oldest_queued_s": _dur(oldest, now.replace(microsecond=0).isoformat()) if oldest else None,
+                   "core_agent": bool(agents.active_profile()), "maintenance": db.setting("maintenance") == "1",
+                   "uptime_s": round(time.time() - STARTED), "python": sys.version.split()[0]}}
+
+
+CSV_EXPORTS = {
+    "users": ("SELECT id, email, name, role, status, created, last_login, quota_projects, quota_jobs_month FROM users ORDER BY id", ()),
+    "jobs": ("SELECT j.id, j.kind, j.status, j.engine, j.billing, p.slug, u.email, j.created, j.started, j.finished, j.error, j.system_fault "
+             "FROM jobs j LEFT JOIN projects p ON p.id=j.project_id LEFT JOIN users u ON u.id=j.user_id ORDER BY j.id DESC", ()),
+    "usage": ("SELECT g.created, u.email, g.source, g.provider, g.model, g.input_tokens, g.output_tokens, g.cost_usd FROM usage g "
+              "LEFT JOIN users u ON u.id=g.user_id ORDER BY g.id DESC", ()),
+    "audit": ("SELECT a.created, u.email, a.action, a.target, a.detail FROM audit a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.id DESC", ()),
+}
+
+
+@app.get("/api/admin/export/{kind}.csv")
+def export_csv(kind: str, a=Depends(need_admin)):
+    import csv
+    import io
+    if kind not in CSV_EXPORTS:
+        raise HTTPException(404)
+    rows = db.q(*CSV_EXPORTS[kind])
+    buf = io.StringIO()
+    buf.write("\ufeff")                                     # BOM: Excel mở đúng tiếng Việt
+    w = csv.writer(buf)
+    w.writerow(rows[0].keys() if rows else ["(trống)"])
+    for r in rows:
+        w.writerow([("'" + v if isinstance(v, str) and v[:1] in "=+-@" else v) for v in r.values()])   # chặn công thức CSV
+    db.audit(a["id"], "csv_export", kind)
+    return Response(buf.getvalue(), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="gen-planner-{kind}-{dt.date.today().isoformat()}.csv"'})
+
+
+@app.get("/api/admin/backup")
+def backup(o=Depends(need_owner)):
+    """Sao lưu nhất quán: app.db (qua SQLite backup API), khoá mã hoá + khoá phiên, workspace dự án, lịch sử phiên bản.
+    Không gồm HOME các tài khoản agent (phiên đăng nhập — đăng nhập lại sau khi khôi phục). File chứa khoá: cất như mật khẩu."""
+    import sqlite3
+    import tempfile
+    import zipfile
+    tmp = Path(tempfile.mkdtemp(prefix="gp-backup-"))
+    try:
+        snap = tmp / "app.db"
+        with sqlite3.connect(snap) as dst:
+            db._conn.backup(dst)
+        out = tmp / "backup.zip"
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+            z.write(snap, "app.db")
+            for k in ("fernet.key", "session.key"):
+                if (DATA / k).exists():
+                    z.write(DATA / k, k)
+            for base in (WORKSPACE, HISTORY):
+                for f in base.rglob("*"):
+                    if f.is_file() and not f.is_symlink() and "build" not in f.relative_to(base).parts[1:2]:
+                        z.write(f, str(f.relative_to(DATA)))
+            z.writestr("RESTORE.txt", "Khôi phục: dừng máy chủ, giải nén vào thư mục GP_DATA (app.db, fernet.key, session.key, workspace/, history/),\n"
+                                      "khởi động lại. Tài khoản core agent cần đăng nhập lại. Hồ sơ đã dựng (build/) tự dựng lại khi bấm Build lại.\n")
+        db.audit(o["id"], "backup_download", "")
+    except Exception:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    from starlette.background import BackgroundTask                       # gửi file từ đĩa (có thể vài GB), xoá thư mục tạm sau khi gửi xong
+    return FileResponse(out, media_type="application/zip", filename=f"gen-planner-backup-{dt.date.today().isoformat()}.zip",
+                        background=BackgroundTask(shutil.rmtree, tmp, True))
+
+
 def funnel():
     """Phễu kích hoạt người dùng thường: đăng ký → có key → có dự án → phỏng vấn xong → chạy Plan xong → chia sẻ."""
     us = db.q("SELECT id FROM users WHERE role='user'")
@@ -1479,12 +1791,15 @@ def term_stop(pid: int, o=Depends(need_owner)):
 
 # --- settings (owner)
 EDITABLE = {"site_name", "allow_signup", "plan_billing", "default_quota_projects", "default_quota_jobs_month", "job_timeout_min",
-            "max_concurrent_jobs", "auto_failover", "allow_demo_engine", "google_client_id", "public_base_url"}
+            "max_concurrent_jobs", "auto_failover", "allow_demo_engine", "google_client_id", "public_base_url",
+            "signup_domains", "support_email", "default_country", "announcement", "announcement_level", "maintenance", "log_retention_days"}
 
 
-NUMERIC = {"default_quota_projects": (0, 10000), "default_quota_jobs_month": (0, 10000), "job_timeout_min": (5, 1440), "max_concurrent_jobs": (1, 16)}
+NUMERIC = {"default_quota_projects": (0, 10000), "default_quota_jobs_month": (0, 10000), "job_timeout_min": (5, 1440), "max_concurrent_jobs": (1, 16),
+           "log_retention_days": (0, 3650)}
 SETTING_LABEL = {"default_quota_projects": "Số dự án tối đa", "default_quota_jobs_month": "Số lần chạy / tháng",
-                 "job_timeout_min": "Thời gian tối đa mỗi job", "max_concurrent_jobs": "Số job song song"}
+                 "job_timeout_min": "Thời gian tối đa mỗi job", "max_concurrent_jobs": "Số job song song",
+                 "log_retention_days": "Số ngày giữ log job"}
 
 
 @app.get("/api/admin/settings")
@@ -1499,7 +1814,18 @@ async def put_settings(request: Request, o=Depends(need_owner)):
     for k, (lo, hi) in NUMERIC.items():
         if k in b:
             b[k] = to_int(b[k], SETTING_LABEL.get(k, k), lo, hi, allow_none=False)
-    for k in ("allow_signup", "auto_failover", "allow_demo_engine"):
+    if str(b.get("support_email") or "").strip() and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", str(b["support_email"]).strip()):
+        raise HTTPException(400, "Email hỗ trợ không hợp lệ")
+    if "signup_domains" in b:
+        doms = [d.strip().lower().lstrip("@") for d in str(b["signup_domains"] or "").split(",") if d.strip()]
+        if any(not re.fullmatch(r"[a-z0-9-]+(\.[a-z0-9-]+)+", d) for d in doms):
+            raise HTTPException(400, "Tên miền không hợp lệ — ví dụ: afi.io, congty.vn")
+        b["signup_domains"] = ", ".join(doms)
+    if "announcement" in b:
+        b["announcement"] = str(b["announcement"] or "").strip()[:500]
+    if "announcement_level" in b and b["announcement_level"] not in ("info", "warn"):
+        raise HTTPException(400, "Mức thông báo: info | warn")
+    for k in ("allow_signup", "auto_failover", "allow_demo_engine", "maintenance"):
         if k in b and str(b[k]) not in ("0", "1"):
             raise HTTPException(400, f"{k}: 0 hoặc 1")
     if "plan_billing" in b and b["plan_billing"] not in ("owner", "user_key", "either"):

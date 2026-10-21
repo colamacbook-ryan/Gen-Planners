@@ -36,7 +36,7 @@ def _git(slug, *args, check=True, text=True):
     return r
 
 
-def _ensure(slug):
+def _ensure(slug, message="Khởi tạo dự án", who=None):
     d, g = WORKSPACE / slug, git_dir(slug)
     if not d.exists():
         return
@@ -57,7 +57,7 @@ def _ensure(slug):
         os.chmod(g, 0o700)
         (g / "info").mkdir(exist_ok=True)
         (g / "info" / "exclude").write_text("build/\n*.tmp\n.git\n.gitignore\n")
-        _commit(slug, "Khởi tạo dự án")
+        _commit(slug, message, who)
     else:
         (g / "info").mkdir(exist_ok=True)
         (g / "info" / "exclude").write_text("build/\n*.tmp\n.git\n.gitignore\n")
@@ -127,9 +127,9 @@ def _restore(slug, rv, who=None):
     return commit(slug, f"Khôi phục về phiên bản {rv}", who)
 
 
-def ensure(slug):
+def ensure(slug, message="Khởi tạo dự án", who=None):
     with _lock:
-        return _ensure(slug)
+        return _ensure(slug, message, who)
 
 
 def commit(slug, message, who=None):

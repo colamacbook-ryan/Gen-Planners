@@ -16,9 +16,16 @@ let _tt; function toast(t) { let e = $(".toast"); if (!e) { e = document.createE
 const fmt = n => (n ?? 0).toLocaleString("vi-VN");
 const ago = iso => { if (!iso) return "—"; const s = (Date.now() - new Date(iso)) / 1000;
   return s < 60 ? "vừa xong" : s < 3600 ? Math.floor(s / 60) + " phút trước" : s < 86400 ? Math.floor(s / 3600) + " giờ trước" : new Date(iso).toLocaleDateString("vi-VN"); };
+// Giao diện Sáng/Tối/Theo hệ thống: lưu theo tài khoản (prefs.theme) + localStorage để áp ngay khi tải trang, không nháy màu.
+function applyTheme(t) {
+  try { localStorage.setItem("gp-theme", t || "system"); } catch (e) { /* trình duyệt chặn bộ nhớ: vẫn áp cho phiên này */ }
+  if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+}
+try { const t = localStorage.getItem("gp-theme"); if (t) applyTheme(t); } catch (e) { /* không có localStorage */ }
+const fmtInt = n => Number(n || 0).toLocaleString("vi-VN");
 const STATUS = {interview: "phỏng vấn", brainstorm: "brainstorm", ready: "sẵn sàng chạy", running: "đang chạy", done: "hoàn thành", failed: "lỗi",
   queued: "chờ", starting: "khởi động", cancelled: "đã huỷ", proposed: "đề xuất", locked: "đã chốt", rejected: "đã loại",
-  active: "hoạt động", disabled: "khoá", new: "mới", not_installed: "chưa cài", error: "lỗi", quota_exhausted: "hết quota", needs_login: "cần đăng nhập", waiting: "chờ agent"};
+  ok: "ổn", active: "hoạt động", disabled: "khoá", new: "mới", not_installed: "chưa cài", error: "lỗi", quota_exhausted: "hết quota", needs_login: "cần đăng nhập", waiting: "chờ agent"};
 const pill = s => `<span class="pill ${esc(s)}">${esc(STATUS[s] || s || "—")}</span>`;
 async function logout() { await api("/auth/logout", {method: "POST"}); location.href = "/login"; }
 document.addEventListener("click", e => { if (e.target.closest(".burger")) $(".side").classList.toggle("open");
@@ -44,3 +51,27 @@ function dialog({title, body = "", fields = [], ok = "Đồng ý", danger = fals
 }
 const ask = (title, ok = "Đồng ý", danger = true) => dialog({title, ok, danger}).then(v => v !== null);
 const askText = (title, value = "", type = "text") => dialog({title, fields: [{value, type}], ok: "Lưu"}).then(v => v && v[0].trim() ? v[0].trim() : null);
+// Menu thả xuống gắn với một nút: items = [[nhãn, hàm, nguy hiểm?] | null (vạch ngăn)]. Esc / bấm ra ngoài để đóng; phím mũi tên để chọn.
+function menu(anchor, items) {
+  document.querySelector(".menu")?.remove();
+  const m = document.createElement("div"); m.className = "menu"; m.setAttribute("role", "menu");
+  m.innerHTML = items.map((it, i) => it ? `<button type="button" role="menuitem" data-i="${i}" class="${it[2] ? "danger" : ""}">${esc(it[0])}</button>` : "<hr>").join("");
+  document.body.append(m);
+  const r = anchor.getBoundingClientRect();
+  m.style.top = r.bottom + window.scrollY + 6 + "px";
+  m.style.left = Math.max(8, Math.min(r.right - m.offsetWidth, innerWidth - m.offsetWidth - 8)) + window.scrollX + "px";
+  const btns = [...m.querySelectorAll("button")]; btns[0]?.focus();
+  const close = () => { m.remove(); document.removeEventListener("keydown", key); document.removeEventListener("mousedown", out); anchor.focus(); };
+  const key = e => { const i = btns.indexOf(document.activeElement);
+    if (e.key === "Escape") close(); else if (e.key === "ArrowDown") { e.preventDefault(); btns[(i + 1) % btns.length].focus(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); btns[(i - 1 + btns.length) % btns.length].focus(); } };
+  const out = e => { if (!m.contains(e.target) && e.target !== anchor) close(); };
+  btns.forEach(b => b.onclick = () => { close(); items[+b.dataset.i][1](); });
+  document.addEventListener("keydown", key); setTimeout(() => document.addEventListener("mousedown", out), 0);
+}
+// Dải thông báo toàn hệ thống (owner đặt ở Cài đặt → Vận hành) + trạng thái bảo trì — hiện ở đầu mọi trang.
+function globalBanner(me) {
+  if (!me) return "";
+  const parts = [me.maintenance && "<b>Đang bảo trì</b> — tạm thời chỉ xem được, chưa tạo/chạy/sửa.", me.announcement && esc(me.announcement)].filter(Boolean);
+  return parts.length ? `<div class="gbanner ${me.maintenance || me.announcement_level === "warn" ? "warn" : ""}" role="status">${parts.join(" ")}${me.support_email ? ` <span class="hint">Hỗ trợ: <a href="mailto:${esc(me.support_email)}">${esc(me.support_email)}</a></span>` : ""}</div>` : "";
+}

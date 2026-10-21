@@ -69,6 +69,13 @@ DEFAULT_SETTINGS = {
     "google_client_id": "",
     "google_client_secret_enc": "",
     "public_base_url": "",
+    "signup_domains": "",               # rỗng = mọi email; "afi.io, abc.vn" = chỉ email các tên miền này tự đăng ký
+    "support_email": "",
+    "default_country": "Việt Nam",
+    "announcement": "",                 # thông báo hiện cho mọi người dùng (bảo trì, tính năng mới…)
+    "announcement_level": "info",       # info | warn
+    "maintenance": "0",                 # 1 = người dùng thường chỉ xem; không tạo/chạy/sửa (admin vẫn làm được)
+    "log_retention_days": "0",          # 0 = giữ mãi; N = xoá log job cũ hơn N ngày (giữ dòng thống kê)
 }
 
 _lock = threading.RLock()
@@ -79,7 +86,8 @@ _conn.executescript(SCHEMA)
 # Cột thêm sau phiên bản đầu — thêm nếu DB cũ chưa có.
 for _t, _c, _d in (("jobs", "progress", "TEXT"), ("projects", "is_sample", "INTEGER NOT NULL DEFAULT 0"),
                    ("users", "onboarding", "TEXT"), ("users", "invited_by", "INTEGER"),
-                   ("jobs", "system_fault", "INTEGER NOT NULL DEFAULT 0"), ("jobs", "by_admin", "INTEGER")):
+                   ("jobs", "system_fault", "INTEGER NOT NULL DEFAULT 0"), ("jobs", "by_admin", "INTEGER"),
+                   ("users", "prefs", "TEXT"), ("projects", "archived", "INTEGER NOT NULL DEFAULT 0")):
     if _c not in [r[1] for r in _conn.execute(f"PRAGMA table_info({_t})")]:
         _conn.execute(f"ALTER TABLE {_t} ADD COLUMN {_c} {_d}")
 for k, v in DEFAULT_SETTINGS.items():

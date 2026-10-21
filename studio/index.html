@@ -359,6 +359,10 @@ textarea{min-height:170px;resize:vertical}
 <div id="tip" hidden></div>
 
 <script>
+// Giao diện theo lựa chọn của người dùng trong ứng dụng (cùng origin); trang chia sẻ/không có lựa chọn → theo hệ thống.
+try { const t = localStorage.getItem("gp-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) { /* bỏ qua */ }
+</script>
+<script>
 const STAGES=[["01-intake","Ý tưởng"],["02-market","Thị trường"],["03-competitors","Đối thủ"],["04-customer","Khách hàng"],["05-product-supply","Sản phẩm"],["06-legal-tax","Pháp lý"],["07-business-model","Mô hình"],["08-gtm","Lộ trình"],["09-financials","Tài chính"],["10-deal","Vốn"],["11-risk","Rủi ro"],["12-pitch","Pitch"]];
 const STATUS={done:"Hoàn thành",running:"Agent đang làm",queued:"Chờ agent"};
 const ROLE={core:"Lõi giá trị",wedge:"Mũi nhọn",cash:"Dòng tiền sớm",later:"Để sau",drop:"Loại"};

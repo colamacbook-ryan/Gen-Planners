@@ -3,6 +3,7 @@
 billing = owner    → chạy bằng agent profile (tài khoản của owner), tính vào quota job/tháng của user.
 billing = user_key → chạy bằng API key của chính user (Anthropic → claude CLI, Gemini → agy chế độ API key), HOME tạm riêng job.
 """
+import datetime as dt
 import json
 import re
 import os
@@ -392,10 +393,27 @@ def recover():
             db.update("projects", j["project_id"], status="failed", updated=db.now())
 
 
+def prune_logs():
+    """Chính sách lưu log (Cài đặt → Vận hành): xoá nội dung log job đã xong lâu hơn N ngày, giữ dòng job cho thống kê."""
+    days = db.setting_int("log_retention_days", 0)
+    if days <= 0:
+        return
+    cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)).replace(microsecond=0).isoformat()
+    db.x("UPDATE jobs SET log=? WHERE finished IS NOT NULL AND finished < ? AND log NOT LIKE '(log đã xoá%'",
+         (f"(log đã xoá theo chính sách lưu {days} ngày)", cutoff))
+
+
 def loop():
     recover()
     active: dict[int, threading.Thread] = {}
+    last_prune = 0.0
     while True:
+        if time.time() - last_prune > 3600:
+            last_prune = time.time()
+            try:
+                prune_logs()
+            except Exception as e:  # noqa: BLE001 — dọn log lỗi không được làm dừng hàng đợi
+                print("prune_logs:", e)
         for k in [k for k, t in active.items() if not t.is_alive()]:
             active.pop(k)
         if len(active) < max(1, db.setting_int("max_concurrent_jobs", 1)):
