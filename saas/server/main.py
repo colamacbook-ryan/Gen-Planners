@@ -310,7 +310,7 @@ def me(u=Depends(need_user)):
     keys = db.one("SELECT COUNT(*) n FROM api_keys WHERE user_id=?", (u["id"],))["n"]
     return {**public_user(u), "has_keys": keys > 0, "site_name": db.setting("site_name"),
             "plan_billing": db.setting("plan_billing"), "quota": quota(u), "demo_allowed": db.setting("allow_demo_engine") == "1",
-            "onboarding": onboarding(u, keys > 0)}
+            "core_ready": agents.active_profile() is not None, "onboarding": onboarding(u, keys > 0)}
 
 
 def onboarding(u, has_keys):
@@ -319,17 +319,20 @@ def onboarding(u, has_keys):
     pids = [r["id"] for r in db.q("SELECT id FROM projects WHERE user_id=? AND is_sample=0", (u["id"],))]
     ph = ",".join("?" * len(pids)) or "NULL"
     interviewed = any(not interview.progress(interview.state(pid)["answers"])["required_missing"] for pid in pids)
+    demo = db.setting("allow_demo_engine") == "1"
     steps = [
         ("sample", "Xem một bộ hồ sơ mẫu hoàn chỉnh", bool(ob.get("viewed_sample"))),
-        ("key", "Thêm API key AI của bạn", has_keys),
+        ("key", "Thêm API key AI của bạn" + (" (tuỳ chọn — đang có chế độ demo)" if demo and not has_keys else ""), has_keys),
         ("project", "Tạo dự án đầu tiên", bool(pids)),
         ("interview", f"Trả lời đủ {sum(1 for q in interview.QUESTIONS if q.get('required'))} câu phỏng vấn bắt buộc", interviewed),
         ("locked", "Chốt ít nhất một điểm ở Brainstorm", bool(pids) and db.one(f"SELECT COUNT(*) n FROM decisions WHERE status='locked' AND project_id IN ({ph})", pids)["n"] > 0),
         ("plan", "Chạy Plan và xem hồ sơ", bool(pids) and db.one(f"SELECT COUNT(*) n FROM jobs WHERE kind='plan' AND status='done' AND project_id IN ({ph})", pids)["n"] > 0),
         ("share", "Gửi link hồ sơ cho nhà đầu tư", bool(pids) and db.one(f"SELECT COUNT(*) n FROM shares WHERE revoked=0 AND project_id IN ({ph})", pids)["n"] > 0),
     ]
-    return {"steps": [{"id": i, "title": t, "done": d} for i, t, d in steps], "done": sum(d for *_, d in steps),
-            "total": len(steps), "dismissed": bool(ob.get("dismissed"))}
+    optional = {"key"} if demo and not has_keys else set()          # chưa có key mà vẫn dùng demo được → không chặn tiến độ
+    return {"steps": [{"id": i, "title": t, "done": d, "optional": i in optional} for i, t, d in steps],
+            "done": sum(d for i, _, d in steps if i not in optional), "total": len(steps) - len(optional),
+            "dismissed": bool(ob.get("dismissed"))}
 
 
 @app.post("/api/me/onboarding")
@@ -396,6 +399,11 @@ async def add_key(request: Request, u=Depends(need_user)):
     model = str(b.get("model") or (llm.PROVIDERS[prov]["models"] or [""])[0]).strip()
     if not model:
         raise HTTPException(400, "Provider này cần nhập tên model")
+    try:
+        await run_in_threadpool(llm.list_models, prov, key)       # hỏi thẳng nhà cung cấp, không tốn token
+    except llm.LLMError as e:
+        if e.status in (400, 401, 403):                           # key sai/hết hạn: không lưu — tránh trợ lý hỏng ngay sau đó
+            raise HTTPException(400, f"{llm.PROVIDERS[prov]['label']} từ chối key này (HTTP {e.status}) — kiểm tra lại key rồi dán lại.") from None
     first = not db.one("SELECT id FROM api_keys WHERE user_id=?", (u["id"],))
     kid = db.insert("api_keys", user_id=u["id"], provider=prov, label=b.get("label") or llm.PROVIDERS[prov]["label"],
                     key_enc=enc(key), key_hint=hint(key), model=model, is_default=int(first), created=db.now())
@@ -911,7 +919,8 @@ async def create_share(slug: str, request: Request, u=Depends(need_user)):
     p, b = get_project(slug, u, True), await body(request)
     if not (export_dir(slug) / "project.json").exists():
         raise HTTPException(400, "Chưa có hồ sơ để chia sẻ — chạy Plan trước.")
-    sid = db.insert("shares", project_id=p["id"], token=secrets.token_urlsafe(18), label=str(b.get("label") or "")[:80],
+    sid = db.insert("shares", project_id=p["id"], token=secrets.token_urlsafe(18),
+                    label=(str(b.get("label") or "").strip() or "Link " + dt.datetime.now().strftime("%d/%m %H:%M"))[:80],
                     created_by=u["id"], created=db.now())
     db.audit(u["id"], "share_create", slug, {"share": sid})
     return share_row(db.one("SELECT * FROM shares WHERE id=?", (sid,)))

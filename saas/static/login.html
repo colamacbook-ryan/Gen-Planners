@@ -59,7 +59,7 @@ function draw() {
 $("#switch").onclick = e => { const m = e.target.dataset.m; if (m) { e.preventDefault(); mode = m; draw(); } };
 $("#f").onsubmit = async e => { e.preventDefault(); $("#msg").textContent = "";
   try { const r = await api("/auth/" + mode, {body: {email: $("#email").value, password: $("#pw").value, name: $("#name").value, invite: mode === "signup" ? INVITE : ""}});
-    location.href = r.role === "owner" && mode === "signup" ? "/admin" : "/app"; } catch (x) { $("#msg").textContent = x.message; } };
+    location.href = "/app"; /* owner cũng bắt đầu ở trang Bắt đầu — có thẻ dẫn vào quản trị */ } catch (x) { $("#msg").textContent = x.message; } };
 api("/public" + (INVITE ? "?invite=" + encodeURIComponent(INVITE) : "")).then(p => { pub = p; if (p.invite && !p.invite.error) mode = "signup"; $("#site").textContent = p.site_name; document.title = p.site_name + " — Đăng nhập";
   $("#google").hidden = !p.google; if (!p.has_owner) mode = "signup"; draw(); });
 </script></body></html>

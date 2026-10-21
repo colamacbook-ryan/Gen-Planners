@@ -562,12 +562,15 @@ def cmd_check(slug, as_json=False):
             warns.append(f"evidence {k}: thiếu url")
 
     for f in sorted((d / "sections").glob("*.md")) + [d / "deck.md"]:
+        todo = []
         for n, line in enumerate(f.read_text().splitlines(), 1):
             bare = re.sub(r"\{\{.*?\}\}|\{%.*?%\}|\{#.*?#\}|\[ev-[\w-]+\]", "", line)
             if HARDCODED.search(bare):
                 errors.append(f"{f.relative_to(d)}:{n}: số liệu gõ tay → đưa vào assumptions.yaml: {line.strip()[:80]}")
             if "TODO" in line:
-                warns.append(f"{f.relative_to(d)}:{n}: TODO")
+                todo.append(n)
+        if todo:                                          # gộp mỗi file một dòng — log không bị ngập
+            warns.append(f"{f.relative_to(d)}: {len(todo)} chỗ TODO (dòng {', '.join(map(str, todo[:6]))}{', …' if len(todo) > 6 else ''})")
 
     model_errs, model_warns = validate_model(assumptions)
     errors += model_errs

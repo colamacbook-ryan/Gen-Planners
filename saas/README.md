@@ -53,7 +53,7 @@ Biến môi trường: `GP_DATA` (mặc định `saas/data/`, đã gitignore), `
 `GP_SESSION_SECRET` / `GP_FERNET_KEY` nếu muốn quản lý khoá ngoài file. **Sao lưu `GP_DATA/fernet.key`** — mất file này là
 mất mọi API key đã lưu.
 
-Kiểm thử: `GP_DATA=$(mktemp -d) python -m pytest saas/tests -q` — 26 test: luồng đầy đủ (kèm lịch sử phiên bản, lint, khôi phục); quét quyền mọi route (người lạ,
+Kiểm thử: `GP_DATA=$(mktemp -d) python -m pytest saas/tests -q` — 354 test (gồm 300 model ngẫu nhiên): luồng đầy đủ (kèm lịch sử phiên bản, lint, khôi phục); quét quyền mọi route (người lạ,
 người dùng khác, user→admin, admin→owner); sửa số liệu trên mọi giả định thật; tách doanh thu định kỳ/một lần; đường ống agent với CLI giả lập (stream-json,
 token, tiến độ, huỷ, hết quota → chuyển tài khoản, khởi động lại, job chỉ được nhận một lần); cô lập agent; agent ngoài qua API token; dữ liệu đầu vào lạ.
 
@@ -91,6 +91,12 @@ Header: `Authorization: Bearer gp_…`. Token không tạo được token khác,
   được trao quyền vào thư mục dự án + HOME của job; `app.db`, khoá phiên, khoá mã hoá, dự án khác đều không đọc được, biến môi
   trường bí mật bị loại. Không có user đó → trang Core agent hiện cảnh báo. Test: `saas/tests/test_hardening.py`.
 - Kiểm link nguồn chặn địa chỉ nội bộ (localhost, 10.x, 169.254.x…) ở mọi bước chuyển hướng.
+- Văn bản hồ sơ (Jinja trong sections/deck/story) chạy trong **sandbox** — nội dung bị prompt-injection không chạm được Python/OS.
+  gen.py/export.py chạy với môi trường đã loại bí mật.
+- Lịch sử git của dự án nằm ở `GP_DATA/history/` (ngoài thư mục agent ghi được), tắt hook/fsmonitor. Symlink và file đặc biệt
+  agent để lại bị xoá trước mọi lần build; đọc/ghi SSOT, media, gói .zip đều từ chối symlink. `media/` chỉ phục vụ ảnh raster.
+- API token chỉ mở các lệnh của agent ngoài (không vào được quản trị, key, token, tài khoản). Body request giới hạn khi đang đọc.
+- Hồi quy cho từng lỗ đã tái hiện: `saas/tests/test_security.py`.
 - Job chạy bằng key của user dùng HOME tạm, xoá ngay khi job kết thúc. Agent chỉ được ghi trong thư mục dự án (theo prompt
   `pipeline/core-agent-prompt.md`); nên chạy trong container riêng vì agent có quyền shell.
 

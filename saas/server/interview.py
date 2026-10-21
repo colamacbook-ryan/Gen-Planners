@@ -3,6 +3,7 @@
 Nguồn câu hỏi: pipeline/interview.yaml (một phần của chuẩn dự án). Mọi lượt chat chạy bằng API key của chính user;
 không có key thì dùng chế độ demo (kịch bản cố định) nếu owner cho phép.
 """
+import html
 import json
 
 import yaml
@@ -10,6 +11,11 @@ import yaml
 from . import db, llm
 from .config import ROOT
 from .security import dec
+
+
+def md_text(s):
+    """Chữ người dùng đặt vào markdown sẽ render thành HTML (tên dự án…) — chỉ là chữ, không thành thẻ."""
+    return html.escape(str(s or ""), quote=False)
 
 BANK = yaml.safe_load((ROOT / "pipeline" / "interview.yaml").read_text())
 QUESTIONS = BANK["questions"]
@@ -98,7 +104,7 @@ def _call(user_id, pid, system, msgs):
 # ------------------------------------------------------------------ interview
 def start_interview(p):
     st = state(p["id"])
-    intro = (f"Chào anh/chị — tôi là trợ lý phỏng vấn của **{p['name']}**. Tôi sẽ hỏi {len(QIDS)} câu ngắn theo "
+    intro = (f"Chào anh/chị — tôi là trợ lý phỏng vấn của **{md_text(p['name'])}**. Tôi sẽ hỏi {len(QIDS)} câu ngắn theo "
              f"{len(BLOCKS)} chủ đề để hiểu đúng ý tưởng gốc trước khi agent nghiên cứu. Câu nào chưa biết, cứ nói \"chưa biết\" — "
              "agent sẽ nghiên cứu sau.\n\n" + ask_text(st["current_qid"]))
     add_msg(p["id"], "interview", "assistant", intro, {"qid": st["current_qid"]})
@@ -165,9 +171,15 @@ def brainstorm_turn(p, user_id, text):
     )
     out, provider = _call(user_id, pid, sysmsg, history(pid, "brainstorm"))
     if out is None:
-        out = {"reply": "(Chế độ demo — chưa có API key) Tôi ghi ý này thành một điểm đề xuất để anh/chị chốt hoặc loại. "
-                        "Thêm API key ở Cài đặt để có cố vấn AI thật phản biện và đề xuất.",
-               "proposals": [{"title": text.strip()[:80], "detail": text.strip(), "category": "other"}] if len(text.strip()) > 15 else []}
+        t = text.strip()
+        if t.endswith("?"):                          # câu hỏi không phải quyết định — demo không có AI để trả lời
+            out = {"reply": "(Chế độ demo — chưa có API key) Câu hỏi hay, nhưng ở chế độ demo không có AI để phân tích. "
+                            "Hãy viết thành một nhận định để chốt, ví dụ: *“Làm mảng đồ uống trước để có dòng tiền.”* "
+                            "Thêm API key ở Cài đặt để có cố vấn AI thật phản biện.", "proposals": []}
+        else:
+            out = {"reply": "(Chế độ demo — chưa có API key) Tôi ghi ý này thành một điểm đề xuất để anh/chị chốt hoặc loại. "
+                            "Thêm API key ở Cài đặt để có cố vấn AI thật phản biện và đề xuất.",
+                   "proposals": [{"title": t[:80], "detail": t, "category": "other"}] if len(t) > 15 else []}
     out = out if isinstance(out, dict) else {"reply": str(out)}
     props = out.get("proposals")
     created = []
@@ -189,7 +201,7 @@ def build_brief(p):
     pid = p["id"]
     answers = state(pid)["answers"]
     decs = db.q("SELECT * FROM decisions WHERE project_id=? ORDER BY category, id", (pid,))
-    L = [f"# Brief — {p['name']}", "",
+    L = [f"# Brief — {md_text(p['name'])}", "",
          "> Biên dịch tự động từ phòng phỏng vấn + phòng brainstorm. Đây là neo **founder-first**: agent phải giữ ý tưởng gốc "
          "và các điểm đã chốt làm trung tâm; đề xuất khác chỉ ghi ở mục \"Phương án khác\".", "",
          f"Thị trường mục tiêu: {p.get('country') or 'Việt Nam'}", "", "## Ý tưởng gốc (nguyên văn)", "", p["idea"] or "", "",

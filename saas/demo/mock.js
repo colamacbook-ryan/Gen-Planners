@@ -275,7 +275,7 @@ R("POST", "/auth/login", (b) => {
   D.session = u.id; u.last_login = now(); audit(u.id, "login", u.email); return {ok: true, role: u.role};
 });
 R("POST", "/auth/logout", () => { D.session = null; return {ok: true}; });
-R("GET", "/me", () => { const u = need(); return {...pub(u), has_keys: D.keys.some(k => k.user_id === u.id), site_name: S("site_name"), plan_billing: S("plan_billing"), quota: quota(u), demo_allowed: S("allow_demo_engine") === "1", ai_live: !aiOff, onboarding: onboarding(u)}; });
+R("GET", "/me", () => { const u = need(); return {...pub(u), has_keys: D.keys.some(k => k.user_id === u.id), site_name: S("site_name"), plan_billing: S("plan_billing"), quota: quota(u), demo_allowed: S("allow_demo_engine") === "1", ai_live: !aiOff, core_ready: true, onboarding: onboarding(u)}; });
 R("POST", "/me/onboarding", (b) => { const u = need(); u.onboarding ??= {}; for (const k of ["viewed_sample", "dismissed"]) if (k in b) u.onboarding[k] = !!b[k]; return {ok: true}; });
 R("POST", "/me/password", (b) => { const u = need(); if (u.pw !== hashish(b.old || "")) fail(400, "Mật khẩu cũ không đúng"); if (String(b.new || "").length < 8) fail(400, "Mật khẩu mới tối thiểu 8 ký tự"); u.pw = hashish(b.new); audit(u.id, "password_change", u.email); return {ok: true}; });
 

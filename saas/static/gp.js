@@ -9,7 +9,8 @@ async function api(path, opt = {}) {
   if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : `Lỗi ${r.status}`);
   return j;
 }
-function md(s) { const h = window.marked ? marked.parse(String(s || ""), {breaks: true}) : esc(s).replace(/\n/g, "<br>"); return window.DOMPurify ? DOMPurify.sanitize(h) : h; }
+// Không có DOMPurify (CDN lỗi/bị chặn) thì KHÔNG trả HTML thô — hiện chữ thuần, an toàn hơn đẹp.
+function md(s) { return window.marked && window.DOMPurify ? DOMPurify.sanitize(marked.parse(String(s || ""), {breaks: true})) : esc(s).replace(/\n/g, "<br>"); }
 let _tt; function toast(t) { let e = $(".toast"); if (!e) { e = document.createElement("div"); e.className = "toast"; document.body.append(e); }
   e.textContent = t; e.hidden = false; clearTimeout(_tt); _tt = setTimeout(() => e.hidden = true, 3200); }
 const fmt = n => (n ?? 0).toLocaleString("vi-VN");
