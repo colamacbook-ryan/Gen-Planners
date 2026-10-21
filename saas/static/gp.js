@@ -21,7 +21,10 @@ const STATUS = {interview: "phỏng vấn", brainstorm: "brainstorm", ready: "s�
   active: "hoạt động", disabled: "khoá", new: "mới", not_installed: "chưa cài", error: "lỗi", quota_exhausted: "hết quota", needs_login: "cần đăng nhập", waiting: "chờ agent"};
 const pill = s => `<span class="pill ${esc(s)}">${esc(STATUS[s] || s || "—")}</span>`;
 async function logout() { await api("/auth/logout", {method: "POST"}); location.href = "/login"; }
-document.addEventListener("click", e => { if (e.target.closest(".burger")) $(".side").classList.toggle("open"); else if (!e.target.closest(".side")) $(".side")?.classList.remove("open"); });
+document.addEventListener("click", e => { if (e.target.closest(".burger")) $(".side").classList.toggle("open");
+  else if (!e.target.closest(".side") || e.target.closest(".side a[href], .side button:not(.burger)")) $(".side")?.classList.remove("open"); });  // chọn mục → đóng menu trên điện thoại
+// Lưới an toàn: lỗi API nào chưa được bắt riêng vẫn hiện cho người dùng (thay vì im lặng như đã lưu).
+window.addEventListener("unhandledrejection", e => { toast(e.reason?.message || "Có lỗi xảy ra — thử lại"); e.preventDefault(); });
 // Hộp thoại trong trang (thay confirm/prompt — nhiều trình nhúng như claude.ai chặn hộp thoại của trình duyệt).
 function dialog({title, body = "", fields = [], ok = "Đồng ý", danger = false}) {
   return new Promise(res => {

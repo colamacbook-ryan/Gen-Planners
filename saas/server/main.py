@@ -110,11 +110,11 @@ def public_user(u):
     return {k: u[k] for k in ("id", "email", "name", "role", "status", "created", "last_login")}
 
 
-def throttle(request: Request, who="", record=True, per_account=True):
+def throttle(request: Request, who="", record=True, per_account=True, ip_limit=(10, 300)):
     """Chặn dò mật khẩu: tối đa 10 lần THẤT BẠI / 5 phút cho mỗi (IP, email), và 30 / 15 phút cho mỗi email bất kể IP —
     IP có thể bị giả qua X-Forwarded-For nếu proxy cấu hình sai, giới hạn theo tài khoản thì không."""
     now = time.time()
-    rules = [(f"{request.client.host if request.client else '?'}|{who}", 10, 300)] + ([(f"*|{who}", 30, 900)] if per_account else [])
+    rules = [(f"{request.client.host if request.client else '?'}|{who}", *ip_limit)] + ([(f"*|{who}", 30, 900)] if per_account else [])
     for k, limit, window in rules:
         _attempts[k] = [t for t in _attempts[k] if now - t < window]
         if len(_attempts[k]) >= limit:
@@ -235,7 +235,7 @@ def public(invite: str = ""):
 
 @app.post("/api/auth/signup")
 async def signup(request: Request):
-    throttle(request, "signup", per_account=False)
+    throttle(request, "signup", per_account=False, ip_limit=(40, 3600))   # cả lớp học chung một NAT vẫn đăng ký được
     b = await body(request)
     email, pw = str(b.get("email", "")).strip().lower(), str(b.get("password", ""))
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email) or len(pw) < 8:
@@ -243,7 +243,10 @@ async def signup(request: Request):
     if db.one("SELECT id FROM users WHERE email=?", (email,)):
         raise HTTPException(409, "Email đã có tài khoản.")
     inv = valid_invite(str(b["invite"]), email) if b.get("invite") else None
-    return login_response(create_user(email, b.get("name"), pw, invite=inv))
+    return login_response(await run_in_threadpool(create_user, email, b.get("name"), pw, invite=inv))   # scrypt ~70 ms CPU: không chặn event loop
+
+
+DUMMY_HASH = hash_pw(secrets.token_hex(16))
 
 
 @app.post("/api/auth/login")
@@ -252,7 +255,8 @@ async def login(request: Request):
     email = str(b.get("email", "")).strip().lower()
     throttle(request, email, record=False)
     u = db.one("SELECT * FROM users WHERE email=?", (email,))
-    if not u or not check_pw(str(b.get("password", "")), u["pw_hash"]):
+    ok = await run_in_threadpool(check_pw, str(b.get("password", "")), (u or {}).get("pw_hash") or DUMMY_HASH)  # cùng thời gian dù email không có
+    if not u or not ok:
         throttle(request, email)
         raise HTTPException(401, "Sai email hoặc mật khẩu.")
     if u["status"] != "active":
@@ -365,9 +369,10 @@ def quota(u):
     month = db.now()[:7] + "-01"
     # Lần chạy bằng tài khoản hệ thống: tính khi job đã chờ/đã bắt đầu (huỷ giữa chừng vẫn tính — chống lách quota),
     # không tính lỗi do phía hệ thống (tài khoản agent hết quota / chưa đăng nhập, máy chủ khởi động lại).
+    # system_fault: lỗi phía hệ thống (agent hết quota/chưa đăng nhập, key gói miễn phí, máy chủ khởi động lại);
+    # by_admin: admin bấm chạy lại — không trừ vào hạn mức của người dùng.
     used_jobs = db.one("SELECT COUNT(*) n FROM jobs WHERE user_id=? AND billing='owner' AND engine!='demo' AND kind='plan' AND created>=? "
-                       "AND (started IS NOT NULL OR status IN ('queued','starting')) "
-                       "AND NOT (status='failed' AND (COALESCE(error,'') LIKE 'Tài khoản agent%' OR COALESCE(error,'') LIKE 'Máy chủ khởi động lại%'))",
+                       "AND (started IS NOT NULL OR status IN ('queued','starting')) AND system_fault=0 AND by_admin IS NULL",
                        (u["id"], month))["n"]
     projects = db.one("SELECT COUNT(*) n FROM projects WHERE user_id=? AND is_sample=0", (u["id"],))["n"]
     lim_p = u["quota_projects"] if u["quota_projects"] is not None else db.setting_int("default_quota_projects", 5)
@@ -1158,7 +1163,7 @@ def overview(a=Depends(need_admin)):
             "owner_tokens_month": db.one("SELECT COALESCE(SUM(input_tokens+output_tokens),0) n FROM usage WHERE created>=? AND profile_id IS NOT NULL", (month,))["n"],
             "days": days, "active_agent": (lambda a: {k: a[k] for k in ("id", "name", "engine", "auth_mode", "model", "status")} if a else None)(agents.active_profile()),
             "new_users_7d": c("SELECT COUNT(*) n FROM users WHERE created >= ?", ((dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)).isoformat(),)),
-            "funnel": funnel(), "invites_open": c("SELECT COUNT(*) n FROM invites WHERE used_by IS NULL AND revoked=0"),
+            "funnel": funnel(), "invites_open": c("SELECT COUNT(*) n FROM invites WHERE used_by IS NULL AND revoked=0 AND (expires IS NULL OR expires > ?)", (db.now(),)),
             "recent_jobs": db.q("SELECT j.id,j.status,j.engine,j.billing,j.created,p.slug,p.name,u.email FROM jobs j LEFT JOIN projects p ON p.id=j.project_id "
                                 "LEFT JOIN users u ON u.id=j.user_id ORDER BY j.id DESC LIMIT 8")}
 
@@ -1182,7 +1187,8 @@ def funnel():
     for u in us:
         steps["key"] += db.one("SELECT COUNT(*) n FROM api_keys WHERE user_id=?", (u["id"],))["n"] > 0
         steps["project"] += db.one("SELECT COUNT(*) n FROM projects WHERE user_id=? AND is_sample=0", (u["id"],))["n"] > 0
-        steps["plan"] += db.one("SELECT COUNT(*) n FROM jobs WHERE user_id=? AND kind='plan' AND status='done'", (u["id"],))["n"] > 0
+        steps["plan"] += db.one("SELECT COUNT(*) n FROM jobs j JOIN projects p ON p.id=j.project_id WHERE j.user_id=? AND j.kind='plan' "
+                                "AND j.status='done' AND p.is_sample=0", (u["id"],))["n"] > 0   # cùng tập dự án với bước "Tạo dự án"
         steps["share"] += db.one("SELECT COUNT(*) n FROM shares s JOIN projects p ON p.id=s.project_id WHERE p.user_id=? AND s.revoked=0", (u["id"],))["n"] > 0
     return steps
 
@@ -1300,12 +1306,17 @@ def admin_retry(jid: int, a=Depends(need_admin)):
     j = db.one("SELECT * FROM jobs WHERE id=?", (jid,))
     if not j or j["status"] in ("queued", "starting", "running", "waiting") or j["kind"] != "plan":
         raise HTTPException(400, "Job không thể chạy lại")
+    if not db.one("SELECT id FROM projects WHERE id=?", (j["project_id"],)):
+        raise HTTPException(410, "Dự án của job này đã bị xoá — không chạy lại được.")
+    owner_u = db.one("SELECT status FROM users WHERE id=?", (j["user_id"],))
+    if not owner_u or owner_u["status"] != "active":
+        raise HTTPException(409, "Người dùng của job đang bị khoá — mở khoá trước khi chạy lại.")
     if db.one("SELECT id FROM jobs WHERE project_id=? AND status IN ('queued','starting','running','waiting')", (j["project_id"],)):
         raise HTTPException(409, "Dự án đang có job khác chạy.")
     prof = agents.active_profile() if j["billing"] == "owner" else None
     nid = db.insert("jobs", kind=j["kind"], project_id=j["project_id"], user_id=j["user_id"], engine=prof["engine"] if prof else j["engine"],
                     billing=j["billing"], profile_id=prof["id"] if prof else j["profile_id"], api_key_id=j["api_key_id"],
-                    model=j["model"], status="queued", created=db.now())
+                    model=j["model"], status="queued", created=db.now(), by_admin=a["id"])
     db.audit(a["id"], "job_retry", jid, {"new": nid})
     return {"job_id": nid}
 
@@ -1377,6 +1388,11 @@ async def edit_agent(pid: int, request: Request, o=Depends(need_owner)):
             kw[k] = to_int(b[k], k, 0, 10**12)
     if "enabled" in b:
         kw["enabled"] = int(bool(b["enabled"]))
+        if not kw["enabled"] and p["is_active"]:                           # tắt tài khoản đang dùng → chuyển "đang dùng" sang tài khoản kế
+            kw["is_active"] = 0
+            nxt = agents.active_profile(exclude=(pid,))
+            if nxt:
+                db.update("agent_profiles", nxt["id"], is_active=1)
     if b.get("auth_mode") in ("account", "api_key"):
         kw["auth_mode"] = b["auth_mode"]
     if b.get("key"):
@@ -1490,11 +1506,18 @@ async def put_settings(request: Request, o=Depends(need_owner)):
         raise HTTPException(400, "plan_billing không hợp lệ")
     if "site_name" in b and not str(b["site_name"]).strip():
         raise HTTPException(400, "Tên hệ thống không được trống")
+    if str(b.get("public_base_url") or "").strip():                      # dùng trong redirect OAuth và link chia sẻ
+        u = urllib.parse.urlsplit(str(b["public_base_url"]).strip())
+        if u.scheme not in ("http", "https") or not u.netloc or u.query or u.fragment:
+            raise HTTPException(400, "Địa chỉ công khai phải dạng https://ten-mien.com (không kèm ?… hay #…)")
+        b["public_base_url"] = str(b["public_base_url"]).strip().rstrip("/")
     for k, v in b.items():
         if k in EDITABLE:
             db.set_setting(k, str(v).strip())
     if b.get("google_client_secret"):
         db.set_setting("google_client_secret_enc", enc(b["google_client_secret"]))
+    if b.get("clear_google_client_secret"):
+        db.set_setting("google_client_secret_enc", "")
     db.audit(o["id"], "settings_update", "", {k: v for k, v in b.items() if k in EDITABLE})
     return get_settings(o)
 

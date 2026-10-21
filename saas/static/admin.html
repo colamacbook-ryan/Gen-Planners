@@ -60,7 +60,7 @@ function jobTable(rows, actions) {
   return `<div class="scroll-x"><table class="t"><thead><tr><th>#</th><th>Trạng thái</th><th>Dự án</th><th>Người dùng</th><th>Engine</th><th>Tính phí</th><th>Tạo</th>${actions ? "<th></th>" : ""}</tr></thead><tbody>
   ${rows.map(j => `<tr><td>${j.id}</td><td>${pill(j.status)}${j.error ? `<div class="hint err">${esc(j.error)}</div>` : ""}</td><td>${j.kind === "install" ? `<i>cài ${esc(j.engine)}</i>` : esc(j.name || "—")}<div class="hint">${esc(j.slug || "")}</div></td>
   <td>${esc(j.email || "")}</td><td>${esc(j.engine)}${j.profile ? `<div class="hint">${esc(j.profile)}</div>` : ""}</td><td>${esc({owner: "hệ thống", user_key: "key user", demo: "demo"}[j.billing] || "—")}</td><td class="hint">${ago(j.created)}</td>
-  ${actions ? `<td class="row" style="flex-wrap:nowrap"><button class="sm" data-log="${j.id}" type="button">Log</button>${["queued", "starting", "running", "waiting"].includes(j.status) ? `<button class="sm danger" data-cancel="${j.id}" type="button">Huỷ</button>` : j.kind === "plan" ? `<button class="sm ghost" data-retry="${j.id}" type="button">Chạy lại</button>` : ""}</td>` : ""}</tr>`).join("") || '<tr><td colspan="8" class="hint">Chưa có job.</td></tr>'}</tbody></table></div>`;
+  ${actions ? `<td><div class="row" style="flex-wrap:nowrap"><button class="sm" data-log="${j.id}" type="button">Log</button>${["queued", "starting", "running", "waiting"].includes(j.status) ? `<button class="sm danger" data-cancel="${j.id}" type="button">Huỷ</button>` : j.kind === "plan" ? `<button class="sm ghost" data-retry="${j.id}" type="button">Chạy lại</button>` : ""}</td>` : ""}</tr>`).join("") || '<tr><td colspan="8" class="hint">Chưa có job.</td></tr>'}</tbody></table></div>`;
 }
 
 // ---------------------------------------------------------------- users
@@ -77,7 +77,7 @@ async function users() {
       <select id="us2" aria-label="Lọc theo trạng thái"><option value="">Mọi trạng thái</option><option value="active" ${A.uf.status === "active" ? "selected" : ""}>Hoạt động</option><option value="disabled" ${A.uf.status === "disabled" ? "selected" : ""}>Đã khoá</option></select>
       <span class="grow"></span><span class="hint">Bấm vào một dòng để xem chi tiết · hạn mức để trống = mặc định hệ thống</span></div>
     <div class="card scroll-x"><table class="t"><thead><tr><th>Tài khoản</th><th>Vai trò</th><th>Trạng thái</th><th>Bắt đầu</th><th class="num">Dự án</th><th class="num">Job hệ thống / tháng</th><th class="num">Token tháng</th><th>Hoạt động</th></tr></thead><tbody id="urows"></tbody></table></div>
-    ${pending.length || inv.length ? `<div class="card" style="margin-top:14px"><h2>Lời mời</h2><table class="t"><thead><tr><th>Gửi cho</th><th>Vai trò</th><th>Trạng thái</th><th>Hết hạn</th><th></th></tr></thead><tbody>
+    ${pending.length || inv.length ? `<div class="card scroll-x" style="margin-top:14px"><h2>Lời mời</h2><table class="t"><thead><tr><th>Gửi cho</th><th>Vai trò</th><th>Trạng thái</th><th>Hết hạn</th><th></th></tr></thead><tbody>
     ${inv.slice(0, 30).map(i => { const st = i.used_by ? "used" : i.revoked ? "revoked" : i.expires < new Date().toISOString() ? "expired" : "open";
       return `<tr><td>${esc(i.email || "Link mở (ai có link đều đăng ký được)")}${i.note ? `<div class="hint">${esc(i.note)}</div>` : ""}</td><td>${ROLE[i.role]}</td>
       <td>${{used: `<span class="pill ok">đã dùng</span> <span class="hint">${esc(i.used_email || "")}</span>`, revoked: '<span class="pill bad">đã thu hồi</span>', expired: '<span class="pill">hết hạn</span>', open: '<span class="pill warn">đang chờ</span>'}[st]}</td>
@@ -97,7 +97,7 @@ async function users() {
   $("#us2").onchange = e => { A.uf.status = e.target.value; draw(); };
   $("#invBtn").onclick = () => { const p = $("#invPanel"); p.hidden = !p.hidden; if (!p.hidden) invitePanel(owner); };
   $$("[data-icopy]").forEach(b => b.onclick = () => copyText(inviteUrl(b.dataset.icopy)));
-  $$("[data-irev]").forEach(b => b.onclick = async () => { if (await ask("Thu hồi lời mời này?", "Thu hồi")) { await api("/admin/invites/" + b.dataset.irev, {method: "DELETE"}); users(); } });
+  $$("[data-irev]").forEach(b => b.onclick = async () => { if (await ask("Thu hồi lời mời này?", "Thu hồi")) { await api("/admin/invites/" + b.dataset.irev, {method: "DELETE"}); toast("Đã thu hồi lời mời"); users(); } });
   draw();
 }
 const inviteUrl = t => `${location.origin}/login?invite=${encodeURIComponent(t)}`;
@@ -142,6 +142,7 @@ async function userDrawer(uid) {
   const done = async m => { toast(m); await users(); userDrawer(uid); };
   $("#dx").onclick = closeDrawer;
   $("#dsave").onclick = async () => { try { const b = {quota_projects: $("#dq1").value, quota_jobs_month: $("#dq2").value}; if ($("#drole") && $("#drole").value !== u.role) b.role = $("#drole").value;
+    if (b.role === "owner" && !await ask(`Trao quyền OWNER cho ${u.email}? Owner có toàn quyền hệ thống — kể cả khoá hay hạ quyền chính bạn.`, "Trao quyền owner")) return;
     await api("/admin/users/" + uid, {method: "PATCH", body: b}); done("Đã lưu"); } catch (x) { toast(x.message); } };
   $("#dpw") && ($("#dpw").onclick = async () => { const pw = await askText(`Mật khẩu mới cho ${u.email} (≥ 8 ký tự)`, "", "password"); if (!pw) return;
     try { await api("/admin/users/" + uid, {method: "PATCH", body: {password: pw}}); toast("Đã đặt mật khẩu — phiên cũ của người dùng bị đăng xuất"); } catch (x) { toast(x.message); } });
@@ -168,12 +169,12 @@ async function projects() {
 async function jobs() {
   const st = new URLSearchParams(location.search).get("s") || "";
   const js = await api("/admin/jobs" + (A.filter ? "?status=" + A.filter : ""));
-  $("#main").innerHTML = topbar("Jobs", "Hàng đợi chạy core agent", `<select id="jf" style="width:auto">${["", "queued", "running", "done", "failed", "cancelled"].map(s => `<option value="${s}" ${A.filter === s ? "selected" : ""}>${s ? STATUS[s] : "tất cả"}</option>`).join("")}</select>`) +
+  $("#main").innerHTML = topbar("Jobs", "Hàng đợi chạy core agent", `<select id="jf" style="width:auto">${["", "queued", "starting", "running", "waiting", "done", "failed", "cancelled"].map(s => `<option value="${s}" ${A.filter === s ? "selected" : ""}>${s ? STATUS[s] : "tất cả"}</option>`).join("")}</select>`) +
   `<div class="body"><div class="card">${jobTable(js, true)}</div><div class="card" style="margin-top:14px" id="logc" hidden><div class="row"><h2 class="grow" id="lt" style="margin:0"></h2><button class="sm ghost" id="lx" type="button">Đóng</button></div><pre class="log" id="lg" style="margin-top:10px"></pre></div></div>`;
   $("#jf").onchange = e => { A.filter = e.target.value; jobs(); };
   $$("[data-log]").forEach(b => b.onclick = () => showLog(+b.dataset.log));
   $$("[data-cancel]").forEach(b => b.onclick = async () => { if (await ask("Huỷ job này?", "Huỷ job")) { await api(`/jobs/${b.dataset.cancel}/cancel`, {method: "POST"}); jobs(); } });
-  $$("[data-retry]").forEach(b => b.onclick = async () => { const r = await api(`/admin/jobs/${b.dataset.retry}/retry`, {method: "POST"}); toast("Đã xếp hàng job #" + r.job_id); jobs(); });
+  $$("[data-retry]").forEach(b => b.onclick = async () => { try { const r = await api(`/admin/jobs/${b.dataset.retry}/retry`, {method: "POST"}); toast("Đã xếp hàng job #" + r.job_id + " (không trừ hạn mức của người dùng)"); jobs(); } catch (x) { toast(x.message); } });
 }
 function showLog(id) { clearInterval(A.poll); $("#logc").hidden = false; $("#lx").onclick = () => { clearInterval(A.poll); $("#logc").hidden = true; };
   const tick = async () => { const j = await api("/jobs/" + id); $("#lt").innerHTML = `Job #${id} ${pill(j.status)}`; const el = $("#lg"); el.textContent = j.log || "…"; el.scrollTop = el.scrollHeight;
@@ -212,16 +213,18 @@ async function agents() {
   $$(".prof").forEach(card => { const id = +card.dataset.p, p = profiles.find(x => x.id === id);
     card.querySelectorAll("[data-a]").forEach(b => b.onclick = () => profAction(p, b.dataset.a, b));
     const ms = card.querySelector(".msel"); if (ms) ms.onchange = async () => { await api("/admin/agents/" + id, {method: "PATCH", body: {model: ms.value}}); toast("Model: " + (ms.value || "mặc định")); };
-    const bu = card.querySelector(".budget"); if (bu) bu.onchange = async () => { await api("/admin/agents/" + id, {method: "PATCH", body: {budget_tokens_month: bu.value ? +bu.value : null}}); agents(); }; });
+    const bu = card.querySelector(".budget"); if (bu) bu.onchange = async () => { await api("/admin/agents/" + id, {method: "PATCH", body: {budget_tokens_month: bu.value ? +bu.value : null}}); toast("Đã lưu ngân sách"); agents(); };
+    const pr = card.querySelector(".prio"); if (pr) pr.onchange = async () => { await api("/admin/agents/" + id, {method: "PATCH", body: {priority: +pr.value || 0}}); toast("Đã lưu ưu tiên"); agents(); }; });
   const live = profiles.find(p => p.terminal); if (live) openTerm(live);
 }
 function profCard(p) {
   const pct = p.budget_tokens_month ? Math.min(100, p.tokens_month / p.budget_tokens_month * 100) : null;
   const models = [...new Set([p.model, ...p.models].filter(Boolean))];
-  return `<div class="prof ${p.is_active ? "act" : ""}" data-p="${p.id}"><div class="row"><h3 class="grow">${esc(p.name)}</h3>${p.is_active ? '<span class="pill core">đang dùng</span>' : ""}${pill(p.enabled ? p.status || "new" : "disabled")}</div>
+  return `<div class="prof ${p.is_active ? "act" : ""}" data-p="${p.id}"><div class="row"><h3 class="grow">${esc(p.name)}</h3>${p.is_active ? '<span class="pill core">đang dùng</span>' : ""}${p.enabled ? pill(p.status || "new") : '<span class="pill">đã tắt</span>'}</div>
   <div class="kv"><span>Engine</span><span>${esc(p.engine)} ${p.installed ? "" : '<span class="err">· chưa cài CLI</span>'}</span><span>Xác thực</span><span>${p.auth_mode === "api_key" ? `API key ${esc(p.key_hint || "(chưa có)")}` : "đăng nhập tài khoản"}${p.account_label ? " · " + esc(p.account_label) : ""}</span>
   <span>Phiên bản</span><span>${esc(p.version || "—")}</span><span>Model</span><span><select class="msel" aria-label="Model của tài khoản agent" style="padding:4px 8px"><option value="">mặc định</option>${models.map(m => `<option ${m === p.model ? "selected" : ""}>${esc(m)}</option>`).join("")}</select></span>
   <span>Tháng này</span><span>${tok(p.tokens_month)} token · ${p.jobs_month} lượt</span>
+  <span>Ưu tiên</span><span><input class="prio" type="number" min="0" aria-label="Ưu tiên (số nhỏ chạy trước)" value="${p.priority ?? 100}" style="padding:4px 8px;width:110px"> <span class="hint">số nhỏ dùng trước</span></span>
   <span>Ngân sách</span><span><input class="budget" type="number" aria-label="Ngân sách token mỗi tháng" value="${p.budget_tokens_month ?? ""}" placeholder="token/tháng (tuỳ chọn)" style="padding:4px 8px"></span></div>
   ${pct != null ? `<div class="meter" title="${Math.round(pct)}% ngân sách"><i style="width:${pct}%;background:${pct > 85 ? "var(--bad)" : "var(--core)"}"></i></div>` : ""}
   ${p.quota_text ? `<details style="margin-top:8px"><summary class="hint">Quota đọc lúc ${ago(p.quota_checked)}</summary><pre class="log" style="max-height:200px">${esc(p.quota_text.slice(-2500))}</pre></details>` : ""}
@@ -242,7 +245,7 @@ async function profAction(p, a, btn) {
       await api(P + "/terminal", {body: {action: a}}); return openTerm(p, a); }
     if (a === "key") { const k = await askText(p.auth_mode === "account" ? "Dán token mà `claude setup-token` in ra sau khi đăng nhập" : "API key mới", "", "password"); if (!k) return; await api(P, {method: "PATCH", body: {key: k}}); }
     if (a === "reset") await api(P, {method: "PATCH", body: {reset_status: true}});
-    if (a === "toggle") await api(P, {method: "PATCH", body: {enabled: !p.enabled}});
+    if (a === "toggle") { await api(P, {method: "PATCH", body: {enabled: !p.enabled}}); toast(p.enabled ? `Đã tắt ${p.name}${p.is_active ? " — job mới chuyển sang tài khoản kế tiếp" : ""}` : `Đã bật ${p.name}`); }
     if (a === "del") { if (!await ask(`Xoá profile ${p.name}? Phiên đăng nhập lưu trong profile cũng bị xoá.`, "Xoá")) return; await api(P, {method: "DELETE"}); }
   } catch (x) { toast(x.message); }
   agents();
@@ -286,10 +289,13 @@ async function settings() {
     ${f("job_timeout_min", "Thời gian tối đa mỗi job (phút)", "number")}${f("max_concurrent_jobs", "Số job chạy song song", "number")}
     ${sel("auto_failover", "Tự chuyển tài khoản agent khi hết quota", yn)}${sel("allow_demo_engine", "Cho phép chế độ demo (không key)", yn)}</div></div>
   <div class="card"><h2>Đăng nhập Google (tuỳ chọn)</h2><p class="hint">Tạo OAuth Client (Web) ở Google Cloud Console, redirect URI: <code>${esc((s.public_base_url || location.origin) + "/api/auth/google/callback")}</code></p>
-    <div class="grid g2" style="gap:0 14px">${f("google_client_id", "Client ID")}<div><label for="gcs">Client secret</label><input id="gcs" type="password" placeholder="${s.google_client_secret_set ? "đã lưu — nhập để thay" : ""}" autocomplete="off"></div></div></div>
+    <div class="grid g2" style="gap:0 14px">${f("google_client_id", "Client ID")}<div><label for="gcs">Client secret</label><input id="gcs" type="password" placeholder="${s.google_client_secret_set ? "đã lưu — nhập để thay" : ""}" autocomplete="off">
+      ${s.google_client_secret_set ? '<label class="row hint" style="margin-top:6px"><input type="checkbox" id="gcsClear" style="width:auto"> Xoá secret đã lưu (tắt đăng nhập Google)</label>' : ""}</div></div></div>
   <div><button class="pri">Lưu cài đặt</button> <span class="hint" id="smsg"></span></div></form></div>`;
   $("#sf").onsubmit = async e => { e.preventDefault(); const b = {}; $$("[data-k]").forEach(i => b[i.dataset.k] = i.value); if ($("#gcs").value) b.google_client_secret = $("#gcs").value;
-    await api("/admin/settings", {method: "PUT", body: b}); toast("Đã lưu cài đặt"); settings(); };
+    if ($("#gcsClear")?.checked) b.clear_google_client_secret = true;
+    try { await api("/admin/settings", {method: "PUT", body: b}); toast("Đã lưu cài đặt"); settings(); }
+    catch (x) { $("#smsg").textContent = "✗ " + x.message; $("#smsg").className = "err"; toast("Chưa lưu: " + x.message); } };
 }
 
 // ---------------------------------------------------------------- audit

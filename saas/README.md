@@ -57,7 +57,7 @@ Biến môi trường: `GP_DATA` (mặc định `saas/data/`, đã gitignore), `
 `GP_SESSION_SECRET` / `GP_FERNET_KEY` nếu muốn quản lý khoá ngoài file. **Sao lưu `GP_DATA/fernet.key`** — mất file này là
 mất mọi API key đã lưu.
 
-Kiểm thử: `GP_DATA=$(mktemp -d) python -m pytest saas/tests -q` — 354 test (gồm 300 model ngẫu nhiên): luồng đầy đủ (kèm lịch sử phiên bản, lint, khôi phục); quét quyền mọi route (người lạ,
+Kiểm thử: `GP_DATA=$(mktemp -d) python -m pytest saas/tests -q` — 363 test (gồm 300 model ngẫu nhiên): luồng đầy đủ (kèm lịch sử phiên bản, lint, khôi phục); quét quyền mọi route (người lạ,
 người dùng khác, user→admin, admin→owner); sửa số liệu trên mọi giả định thật; tách doanh thu định kỳ/một lần; đường ống agent với CLI giả lập (stream-json,
 token, tiến độ, huỷ, hết quota → chuyển tài khoản, khởi động lại, job chỉ được nhận một lần); cô lập agent; agent ngoài qua API token; dữ liệu đầu vào lạ.
 

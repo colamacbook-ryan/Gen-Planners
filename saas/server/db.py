@@ -78,7 +78,8 @@ _conn.execute("PRAGMA journal_mode=WAL")
 _conn.executescript(SCHEMA)
 # Cột thêm sau phiên bản đầu — thêm nếu DB cũ chưa có.
 for _t, _c, _d in (("jobs", "progress", "TEXT"), ("projects", "is_sample", "INTEGER NOT NULL DEFAULT 0"),
-                   ("users", "onboarding", "TEXT"), ("users", "invited_by", "INTEGER")):
+                   ("users", "onboarding", "TEXT"), ("users", "invited_by", "INTEGER"),
+                   ("jobs", "system_fault", "INTEGER NOT NULL DEFAULT 0"), ("jobs", "by_admin", "INTEGER")):
     if _c not in [r[1] for r in _conn.execute(f"PRAGMA table_info({_t})")]:
         _conn.execute(f"ALTER TABLE {_t} ADD COLUMN {_c} {_d}")
 for k, v in DEFAULT_SETTINGS.items():

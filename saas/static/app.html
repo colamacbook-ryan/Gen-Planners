@@ -66,7 +66,7 @@ function viewHome() {
   const ob = S.me.onboarding, next = ob.steps.find(x => !x.done && !x.optional), sm = S.samples[0], first = S.me.name || S.me.email.split("@")[0];
   $("#main").innerHTML = topbar(`Chào ${esc(first)}`) + `</div><div class="body">
     <div class="grid g2" style="align-items:start">
-      <section class="card"><div class="row"><h2 class="grow" style="margin:0">Bắt đầu trong 7 bước</h2><span class="hint">${ob.done}/${ob.total}</span></div>
+      <section class="card"><div class="row"><h2 class="grow" style="margin:0">Bắt đầu trong ${ob.total} bước</h2><span class="hint">${ob.done}/${ob.total}</span></div>
         <div class="meter" style="margin:10px 0 6px"><i style="width:${ob.done / ob.total * 100}%"></i></div>
         <ol class="checklist">${ob.steps.map(x => `<li class="${x.done ? "done" : x === next ? "next" : ""}"><span class="tick" aria-hidden="true">${x.done ? "✓" : ""}</span>
           <span class="grow">${esc(x.title)}</span>${x.done ? "" : x.optional ? `<button type="button" class="sm ghost" data-step="${x.id}">Mở</button>` : `<button type="button" class="sm ${x === next ? "pri" : "ghost"}" data-step="${x.id}">${x === next ? "Làm ngay" : "Mở"}</button>`}</li>`).join("")}</ol>

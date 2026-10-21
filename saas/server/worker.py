@@ -252,7 +252,7 @@ def run_job(job):
         else:
             home_dir = Path(env["HOME"])
             if sandbox.agent_ids() and sandbox.problem():
-                return finish(jid, "failed", sandbox.problem(), p)
+                return finish(jid, "failed", sandbox.problem(), p, system=True)
             sandbox.grant(d, home_dir)
             try:
                 code, usage, tail = run_agent(job, engine, env, job["model"] or (profile or {}).get("model"), d, p)
@@ -272,7 +272,7 @@ def run_job(job):
             if code != 0:
                 if "free_tier" in tail and "limit: 0" in tail:               # không phải hết quota tạm thời: model không có trong gói
                     return finish(jid, "failed", "Key Gemini đang ở gói miễn phí, model này có hạn mức 0 — chọn model Flash "
-                                                 "(ví dụ gemini-3.8-flash-medium) cho tài khoản agent rồi chạy lại.", p)
+                                                 "(ví dụ gemini-3.8-flash-medium) cho tài khoản agent rồi chạy lại.", p, system=True)
                 reason = ("needs_login" if agents.AUTH_HINT.search(tail) else
                           "quota_exhausted" if agents.QUOTA_HINT.search(tail) else None)
                 if profile and reason:
@@ -282,7 +282,8 @@ def run_job(job):
                         log(jid, f"⚠ Tài khoản \"{profile['name']}\" {STATUS_VI[reason]} → chuyển sang \"{nxt['name']}\" và chạy lại.")
                         db.update("jobs", jid, status="queued", profile_id=nxt["id"], attempt=job["attempt"] + 1)
                         return
-                    return finish(jid, "failed", free_tier_daily(tail) or f"Tài khoản agent {STATUS_VI[reason]} — báo owner (admin → Core agent)", p)
+                    return finish(jid, "failed", free_tier_daily(tail) or f"Tài khoản agent {STATUS_VI[reason]} — báo owner (admin → Core agent)", p,
+                                  system=True)
                 return finish(jid, "failed", f"Agent thoát mã {code}", p)
         ok, errors = post_build(jid, p, link_check=engine != "demo")
         if not ok:
@@ -290,7 +291,7 @@ def run_job(job):
         finish(jid, "done", f"check: {errors} lỗi" if errors else None, p)
     except Exception as e:  # noqa: BLE001 — mọi lỗi phải hiện trong log job
         log(jid, f"✗ {type(e).__name__}: {e}")
-        finish(jid, "failed", str(e)[:500], db.one("SELECT * FROM projects WHERE id=?", (job.get("project_id"),)))
+        finish(jid, "failed", str(e)[:500], db.one("SELECT * FROM projects WHERE id=?", (job.get("project_id"),)), system=True)
     finally:
         h = JOBS_HOME / str(jid)
         if h.exists():
@@ -334,18 +335,19 @@ def finalize_external(jid, summary=""):
 VERSION_MSG = {"plan": "Chạy Plan ({engine})", "rebuild": "Build lại sau khi sửa số liệu", "linkcheck": None}
 
 
-def finish(jid, status, error=None, p=None):
+def finish(jid, status, error=None, p=None, system=False):
+    """system=True: lỗi phía hệ thống (không phải do người dùng) — không trừ hạn mức lần chạy của họ."""
     if status != "cancelled" and db.one("SELECT status FROM jobs WHERE id=?", (jid,))["status"] == "cancelled":
         status, error = "cancelled", "Đã huỷ"                       # người dùng huỷ trong lúc build — không ghi đè
 
-    db.update("jobs", jid, status=status, error=error, finished=db.now(), pid=None)
+    db.update("jobs", jid, status=status, error=error, finished=db.now(), pid=None, system_fault=int(system))
     log(jid, f"— kết thúc: {status}" + (f" ({error})" if error else ""))
     if p:
         db.update("projects", p["id"], status={"done": "done", "cancelled": "ready"}.get(status, "failed"), updated=db.now())
 
 
 def cancel(jid):
-    db.update("jobs", jid, status="cancelled", finished=db.now())
+    db.update("jobs", jid, status="cancelled", error="Đã huỷ", finished=db.now())
     j = db.one("SELECT project_id FROM jobs WHERE id=?", (jid,))
     if j and j["project_id"]:                                         # dự án thôi "đang chạy" ngay, không đợi tiến trình dừng hẳn
         db.x("UPDATE projects SET status='ready', updated=? WHERE id=? AND status='running'", (db.now(), j["project_id"]))
@@ -354,10 +356,38 @@ def cancel(jid):
         threading.Thread(target=stop, args=(proc,), daemon=True).start()
 
 
+def _ours(pid):
+    """PID còn sống VÀ đúng là agent của chính máy chủ này (PID có thể đã bị tái dùng sau khi máy khởi động lại)."""
+    try:
+        env = Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
+    except OSError:
+        return False
+    return f"GP_PROJECTS={WORKSPACE}".encode() in env
+
+
+def kill_orphan(pid):
+    """Agent sống sót sau khi máy chủ chết (start_new_session) vẫn tiêu quota và ghi vào dự án — dừng cả nhóm tiến trình."""
+    if not pid or not _ours(pid):
+        return False
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(pid, sig)
+        except (ProcessLookupError, PermissionError):
+            return True
+        for _ in range(50):
+            if not _ours(pid):
+                return True
+            time.sleep(0.1)
+    return True
+
+
 def recover():
-    """Job đang chạy khi máy chủ tắt thì không thể tiếp tục — đánh dấu lỗi để người dùng chạy lại."""
-    for j in db.q("SELECT id, project_id FROM jobs WHERE status IN ('running','starting')"):
-        db.update("jobs", j["id"], status="failed", error="Máy chủ khởi động lại khi job đang chạy — bấm chạy lại", finished=db.now())
+    """Job đang chạy khi máy chủ tắt thì không thể tiếp tục — dừng agent mồ côi, đánh dấu lỗi để người dùng chạy lại."""
+    for j in db.q("SELECT id, project_id, pid FROM jobs WHERE status IN ('running','starting')"):
+        killed = kill_orphan(j["pid"])
+        log(j["id"], "✗ Máy chủ khởi động lại khi job đang chạy" + (" — đã dừng agent còn sót" if killed else "") + ". Bấm chạy lại.")
+        db.update("jobs", j["id"], status="failed", error="Máy chủ khởi động lại khi job đang chạy — bấm chạy lại", finished=db.now(),
+                  pid=None, system_fault=1)
         if j["project_id"]:
             db.update("projects", j["project_id"], status="failed", updated=db.now())
 
