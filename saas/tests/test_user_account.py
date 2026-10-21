@@ -36,7 +36,7 @@ def test_profile_prefs_and_sessions():
         login(a, "acct@x.io")
         login(other, "acct@x.io")
         me = a.patch("/api/me", json={"name": "  Ryan  ", "prefs": {"theme": "dark", "country": "Singapore"}}).json()
-        assert me["name"] == "Ryan" and me["prefs"] == {"theme": "dark", "country": "Singapore"}
+        assert me["name"] == "Ryan" and me["prefs"] == {"theme": "dark", "country": "Singapore", "notify_job": True}
         assert a.patch("/api/me", json={"prefs": {"theme": "neon"}}).status_code == 400
         p = a.post("/api/projects", json={"name": "Mặc định thị trường", "idea": "Dự án để thử thị trường mặc định của người dùng."}).json()
         assert p["country"] == "Singapore"

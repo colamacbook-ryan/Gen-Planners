@@ -14,7 +14,7 @@ PROVIDERS = {
     "openai": {"label": "OpenAI", "models": [], "plan_engine": None},
     # Alias "-latest" do Google tự trỏ sang bản hiện hành — không bị ngừng như tên phiên bản cố định
     "gemini": {"label": "Google Gemini", "models": ["gemini-flash-latest", "gemini-pro-latest"], "plan_engine": "agy"},
-    "openrouter": {"label": "OpenRouter", "models": [], "plan_engine": None},
+    "openrouter": {"label": "OpenRouter", "models": [], "plan_engine": "claude"},   # Plan: Claude Code qua Anthropic Skin, chỉ model anthropic/*
 }
 TIMEOUT = httpx.Timeout(120, connect=15)
 

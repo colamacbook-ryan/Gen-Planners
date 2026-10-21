@@ -148,12 +148,14 @@ function invitePanel(owner) {
       <div><label for="ij">Lần chạy Plan bằng tài khoản hệ thống / tháng</label><input id="ij" type="number" min="0" placeholder="mặc định hệ thống"></div>
       <div><label for="id2">Hết hạn sau (ngày)</label><input id="id2" type="number" min="1" max="90" value="7"></div>
       <div><label for="in">Ghi chú</label><input id="in" placeholder="Ví dụ: founder chương trình ươm tạo đợt 3"></div>
-      <div style="grid-column:1/-1" class="row"><button class="pri">Tạo link mời</button><span class="err" id="imsg"></span></div></form><div id="invOut"></div>`;
+      <label class="row hint" style="grid-column:1/-1;margin:4px 0"><input type="checkbox" id="isend" style="width:auto" ${A.me.mail ? "checked" : "disabled"}>
+        ${A.me.mail ? "Gửi lời mời qua email (cần nhập email ở trên)" : 'Gửi email lời mời — cần cấu hình SMTP ở <a href="#settings">Cài đặt hệ thống → Email</a>'}</label>
+      <div style="grid-column:1/-1" class="row"><button class="pri">Tạo lời mời</button><span class="err" id="imsg"></span></div></form><div id="invOut"></div>`;
   $("#invX").onclick = () => p.hidden = true;
   $("#invF").onsubmit = async e => { e.preventDefault(); $("#imsg").textContent = "";
-    try { const r = await api("/admin/invites", {body: {email: $("#ie").value, role: $("#ir").value, quota_projects: $("#ip").value, quota_jobs_month: $("#ij").value, days: $("#id2").value, note: $("#in").value}});
+    try { const r = await api("/admin/invites", {body: {email: $("#ie").value, role: $("#ir").value, quota_projects: $("#ip").value, quota_jobs_month: $("#ij").value, days: $("#id2").value, note: $("#in").value, send_email: $("#isend").checked}});
       const url = inviteUrl(r.token); copyText(url);
-      $("#invOut").innerHTML = `<div class="next" style="margin-top:12px"><span class="grow">Đã tạo và sao chép link mời${r.email ? ` cho <b>${esc(r.email)}</b>` : ""}: <code>${esc(url)}</code></span><button class="sm" type="button" id="invC">Sao chép lại</button></div>`;
+      $("#invOut").innerHTML = `<div class="next" style="margin-top:12px"><span class="grow">${r.emailed ? `Đã gửi email lời mời tới <b>${esc(r.email)}</b> và sao chép link` : `Đã tạo và sao chép link mời${r.email ? ` cho <b>${esc(r.email)}</b>` : ""}`}: <code>${esc(url)}</code></span><button class="sm" type="button" id="invC">Sao chép lại</button></div>`;
       $("#invC").onclick = () => copyText(url); e.target.reset(); $("#id2").value = 7; } catch (x) { $("#imsg").textContent = x.message; } };
 }
 async function userDrawer(uid) {
@@ -316,7 +318,7 @@ async function settings() {
   const f = (k, l, t = "text", h = "", ph = "") => `<div><label for="s_${k}">${l}</label><input id="s_${k}" data-k="${k}" type="${t}" value="${esc(s[k])}" placeholder="${esc(ph)}">${h ? `<div class="hint">${h}</div>` : ""}</div>`;
   const sel = (k, l, opts, h = "") => `<div><label for="s_${k}">${l}</label><select id="s_${k}" data-k="${k}">${opts.map(([v, t]) => `<option value="${v}" ${s[k] === v ? "selected" : ""}>${t}</option>`).join("")}</select>${h ? `<div class="hint">${h}</div>` : ""}</div>`;
   const yn = [["1", "Bật"], ["0", "Tắt"]];
-  $("#main").innerHTML = topbar("Cài đặt hệ thống", "Thay đổi có hiệu lực ngay cho mọi người dùng") + `<div class="body"><div class="settings"><nav class="subnav" aria-label="Mục cài đặt">${[["s-general", "Chung"], ["s-access", "Đăng ký & truy cập"], ["s-plan", "Chạy Plan & hạn mức"], ["s-ops", "Vận hành"], ["s-backup", "Sao lưu"]]
+  $("#main").innerHTML = topbar("Cài đặt hệ thống", "Thay đổi có hiệu lực ngay cho mọi người dùng") + `<div class="body"><div class="settings"><nav class="subnav" aria-label="Mục cài đặt">${[["s-general", "Chung"], ["s-access", "Đăng ký & truy cập"], ["s-plan", "Chạy Plan & hạn mức"], ["s-mail", "Email"], ["s-ops", "Vận hành"], ["s-backup", "Sao lưu"]]
     .map(([id, l], i) => `<button type="button" data-jump="${id}" class="${i ? "" : "on"}">${l}</button>`).join("")}</nav><div><form id="sf" class="grid">
   <section class="card" id="s-general"><h2>Chung</h2><div class="grid g2" style="gap:0 14px">${f("site_name", "Tên hệ thống")}${f("support_email", "Email hỗ trợ", "email", "Hiện cho người dùng khi gặp lỗi hoặc cần trợ giúp", "hotro@congty.vn")}
     ${f("public_base_url", "URL công khai", "url", "Dùng cho Google OAuth và link chia sẻ, ví dụ https://plan.afi.io")}${f("default_country", "Thị trường mặc định", "text", "Cho dự án mới khi người dùng chưa chọn")}</div></section>
@@ -329,7 +331,15 @@ async function settings() {
     ${sel("plan_billing", "Ai trả chi phí chạy Plan", [["either", "Người dùng chọn: tài khoản hệ thống hoặc key riêng"], ["owner", "Chỉ tài khoản hệ thống (core agent)"], ["user_key", "Chỉ API key của người dùng"]])}
     ${f("default_quota_jobs_month", "Lần chạy bằng tài khoản hệ thống / người dùng / tháng", "number")}${f("default_quota_projects", "Số dự án tối đa / người dùng", "number")}
     ${f("job_timeout_min", "Thời gian tối đa mỗi job (phút)", "number")}${f("max_concurrent_jobs", "Số job chạy song song", "number", "1–16; mỗi job là một core agent đang chạy")}
+    ${f("owner_job_budget_usd", "Trần chi phí mỗi lượt chạy bằng tài khoản hệ thống (USD)", "text", "0 = không giới hạn. Chỉ áp dụng cho Claude Code (key Anthropic / OpenRouter); agent làm tiết kiệm khi có trần")}
     ${sel("auto_failover", "Tự chuyển tài khoản agent khi hết quota", yn)}${sel("allow_demo_engine", "Chế độ demo (không cần key)", yn, "Cho người mới thử luồng; hồ sơ demo có cảnh báo khi chia sẻ")}</div></section>
+  <section class="card" id="s-mail"><h2>Email (SMTP)</h2><p class="hint">Dùng cho quên mật khẩu, gửi lời mời và báo Plan chạy xong. Dùng máy chủ mail của công ty, Google Workspace (smtp.gmail.com, mật khẩu ứng dụng), Amazon SES, Mailgun…
+      ${s.mail_configured ? pill("ok") : '<span class="pill warn">chưa cấu hình</span>'}</p><div class="grid g2" style="gap:0 14px">
+    ${f("smtp_host", "Máy chủ SMTP", "text", "", "smtp.gmail.com")}${f("smtp_port", "Cổng", "number", "587 cho STARTTLS, 465 cho SSL")}
+    ${sel("smtp_tls", "Bảo mật", [["starttls", "STARTTLS (cổng 587)"], ["ssl", "SSL/TLS (cổng 465)"], ["none", "Không mã hoá (chỉ mạng nội bộ)"]])}${f("smtp_from", "Địa chỉ gửi (From)", "email", "", "noreply@congty.vn")}
+    ${f("smtp_user", "Tên đăng nhập SMTP", "text", "Bỏ trống nếu máy chủ không cần đăng nhập")}<div><label for="smpw">Mật khẩu SMTP</label><input id="smpw" type="password" autocomplete="off" placeholder="${s.smtp_password_set ? "đã lưu — nhập để thay" : ""}">
+      ${s.smtp_password_set ? '<label class="row hint" style="margin-top:6px"><input type="checkbox" id="smpwClear" style="width:auto"> Xoá mật khẩu đã lưu</label>' : ""}</div></div>
+    <div class="form-actions"><input id="smto" type="email" placeholder="Gửi thử tới (mặc định: email của bạn)" style="max-width:320px"><button type="button" id="smtest">Gửi email thử</button><span class="hint">Lưu cài đặt trước khi gửi thử.</span></div></section>
   <section class="card" id="s-ops"><h2>Vận hành</h2><div class="grid g2" style="gap:0 14px">
     ${sel("maintenance", "Chế độ bảo trì", [["0", "Tắt"], ["1", "Bật — người dùng chỉ xem, không tạo/chạy/sửa"]], "Admin vẫn thao tác bình thường; job đang chạy không bị dừng")}
     ${f("log_retention_days", "Giữ log job (ngày)", "number", "0 = giữ mãi. Log cũ bị xoá nội dung, thống kê vẫn giữ")}
@@ -342,8 +352,12 @@ async function settings() {
   $$("[data-jump]").forEach(b => b.onclick = () => { $$("[data-jump]").forEach(x => x.classList.toggle("on", x === b)); $("#" + b.dataset.jump).scrollIntoView({behavior: "smooth", block: "start"}); });
   $("#sf").onsubmit = async e => { e.preventDefault(); const b = {}; $$("[data-k]").forEach(i => b[i.dataset.k] = i.value); if ($("#gcs").value) b.google_client_secret = $("#gcs").value;
     if ($("#gcsClear")?.checked) b.clear_google_client_secret = true;
-    try { await api("/admin/settings", {method: "PUT", body: b}); toast("Đã lưu cài đặt"); settings(); }
+    if ($("#smpw").value) b.smtp_password = $("#smpw").value; if ($("#smpwClear")?.checked) b.clear_smtp_password = true;
+    try { await api("/admin/settings", {method: "PUT", body: b}); A.me = await api("/me"); toast("Đã lưu cài đặt"); settings(); }
     catch (x) { $("#smsg").textContent = "✗ " + x.message; $("#smsg").className = "err"; toast("Chưa lưu: " + x.message); } };
+  $("#smtest").onclick = async e => { const b = e.currentTarget; b.disabled = true; b.textContent = "Đang gửi…";
+    try { const r = await api("/admin/settings/test-email", {body: {to: $("#smto").value}}); toast("Đã gửi email thử tới " + r.to); }
+    catch (x) { toast(x.message); } finally { b.disabled = false; b.textContent = "Gửi email thử"; } };
   $("#bk").onclick = async () => { if (!await ask("Tải bản sao lưu toàn hệ thống? File chứa khoá giải mã API key — chỉ lưu ở nơi an toàn.", "Tải sao lưu", false)) return;
     location.href = "/api/admin/backup"; toast("Đang đóng gói bản sao lưu…"); };
 }

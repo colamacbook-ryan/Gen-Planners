@@ -21,7 +21,8 @@ const KEY = "gp-demo-v1";
 const DEFAULT_SETTINGS = {site_name: "Gen Planner", allow_signup: "1", plan_billing: "either", default_quota_projects: "5",
   default_quota_jobs_month: "3", job_timeout_min: "120", max_concurrent_jobs: "1", auto_failover: "1", allow_demo_engine: "1",
   google_client_id: "", public_base_url: "", signup_domains: "", support_email: "", default_country: "Việt Nam", announcement: "",
-  announcement_level: "info", maintenance: "0", log_retention_days: "0"};
+  announcement_level: "info", maintenance: "0", log_retention_days: "0", smtp_host: "", smtp_port: "587", smtp_user: "", smtp_from: "",
+  smtp_tls: "starttls", owner_job_budget_usd: "0"};
 
 // ------------------------------------------------------------------ storage
 let D;
@@ -277,6 +278,9 @@ R("POST", "/auth/login", (b) => {
   D.session = u.id; u.last_login = now(); audit(u.id, "login", u.email); return {ok: true, role: u.role};
 });
 R("POST", "/auth/logout", () => { D.session = null; return {ok: true}; });
+R("POST", "/auth/forgot", () => ({ok: true, mail: false, message: "Bản demo không gửi email — tài khoản chỉ nằm trong trình duyệt này. Trên bản máy chủ, link đặt lại mật khẩu được gửi qua email."}));
+R("POST", "/auth/reset", () => fail(400, "Bản demo không có đặt lại mật khẩu qua email."));
+R("POST", "/admin/settings/test-email", () => fail(400, "Bản demo không gửi email — cấu hình SMTP trên bản máy chủ."));
 R("GET", "/me", () => meOf(need()));
 const meOf = u => ({...pub(u), has_keys: D.keys.some(k => k.user_id === u.id), site_name: S("site_name"), plan_billing: S("plan_billing"), quota: quota(u), demo_allowed: S("allow_demo_engine") === "1", ai_live: !aiOff, core_ready: true, onboarding: onboarding(u),
   announcement: S("announcement"), announcement_level: S("announcement_level"), maintenance: S("maintenance") === "1", support_email: S("support_email")});

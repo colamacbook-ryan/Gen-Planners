@@ -183,3 +183,13 @@ def test_sandbox_preflight_explains_unreachable_cli_and_data(tmp_path, monkeypat
     assert sandbox.blocked_parent(data) == str(locked)
     st = sandbox.status()
     assert st["enabled"] is False and "không đi qua được" in st["hint"]
+
+
+def test_child_env_is_allowlisted(monkeypatch):
+    """Tiến trình con chỉ nhận biến cần thiết — biến lạ của máy chủ (phiên điều khiển, token file…) không lọt sang agent."""
+    from saas.server import sandbox
+    env = {"PATH": "/usr/bin", "LANG": "vi_VN.UTF-8", "HTTPS_PROXY": "http://proxy:3128", "NODE_EXTRA_CA_CERTS": "/ca.pem",
+           "CLAUDE_CODE_SESSION_ID": "abc", "CLAUDE_SESSION_INGRESS_TOKEN_FILE": "/home/x/token", "AWS_PROFILE": "prod",
+           "DATABASE_URL": "postgres://u:p@h/db", "GP_DATA": "/data", "OPENAI_API_KEY": "sk-x", "RANDOM_THING": "1"}
+    out = sandbox.clean_env(env)
+    assert set(out) == {"PATH", "LANG", "HTTPS_PROXY", "NODE_EXTRA_CA_CERTS"}

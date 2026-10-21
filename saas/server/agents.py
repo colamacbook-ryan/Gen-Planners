@@ -31,7 +31,7 @@ ENGINES = {
             "terminal": {"login": (["agy"], []), "usage": (["agy"], ["/usage"]), "credits": (["agy"], ["/credits"]),
                          "logout": (["agy"], ["/logout"])}},
     "claude": {"label": "Claude Code CLI", "install": "npm install -g @anthropic-ai/claude-code",
-               "key_env": "ANTHROPIC_API_KEY", "key_label": "Anthropic API key",
+               "key_env": "ANTHROPIC_API_KEY", "key_label": "Anthropic hoặc OpenRouter API key",
                "terminal": {"login": (["claude", "setup-token"], []), "usage": (["claude"], ["/status"]),
                             "logout": (["claude"], ["/logout"])}},
     "demo": {"label": "Demo (không gọi AI — chỉ build template)", "install": "", "terminal": {}},
@@ -41,6 +41,9 @@ ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*(\x07|\x1b\\)|\x1b[(
 CURSOR_RIGHT = re.compile(r"\x1b\[(\d*)C")
 URL = re.compile(r"https?://[^\s\"'<>]+")
 AUTH_HINT = re.compile(r"authentication required|not signed in|please sign in|authentication failed|invalid api key|api key not valid|api_key_invalid|401", re.I)
+CREDIT_HINT = re.compile(r"key limit exceeded|insufficient (credits|funds|balance)|credit balance is too low|payment required|\b402\b|"
+                         r"exceeded your current quota|billing", re.I)
+BUDGET_HINT = re.compile(r"max[_ -]?budget|budget (exceeded|reached|limit)|exceeded (the )?(usd )?budget", re.I)
 QUOTA_HINT = re.compile(r"quota|rate.?limit|429|resource.?exhausted|credits?|usage limit|out of", re.I)
 
 
@@ -70,7 +73,17 @@ def cli_problem(engine):
             f"(thư mục cha không cho đi qua). Bấm “Cài đặt CLI” để cài vào /usr/local/bin.")
 
 
-def env_for(profile, home_dir: Path, key: str | None = None):
+OPENROUTER_DEFAULT_PLAN_MODEL = "anthropic/claude-sonnet-5.5"
+OPENROUTER_ANTHROPIC = "https://openrouter.ai/api"       # "Anthropic Skin" của OpenRouter — Claude Code nói chuyện như với Anthropic
+MODEL_SLOTS = ("ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+               "CLAUDE_CODE_SUBAGENT_MODEL")
+
+
+def is_openrouter(key):
+    return bool(key) and key.startswith("sk-or-")
+
+
+def env_for(profile, home_dir: Path, key: str | None = None, model: str | None = None):
     """Môi trường cho CLI: HOME riêng; chế độ API key → cài settings provider + biến key."""
     env = sandbox.clean_env(dict(os.environ))                       # không lộ khoá/bí mật của máy chủ cho agent
     env.update(HOME=str(home_dir), BROWSER="echo", NO_BROWSER="1", TERM="xterm-256color")
@@ -80,6 +93,13 @@ def env_for(profile, home_dir: Path, key: str | None = None):
     key = key if key is not None else (dec(profile.get("key_enc")) if profile.get("auth_mode") == "api_key" else "")
     if key:
         eng = profile["engine"]
+        if eng == "claude" and is_openrouter(key):
+            # Claude Code qua OpenRouter: base URL + auth token; mọi "khe" model (kể cả subagent, tác vụ nền haiku) trỏ về
+            # đúng model đã chọn — model mặc định của Claude Code không tồn tại trên OpenRouter.
+            env.update(ANTHROPIC_BASE_URL=OPENROUTER_ANTHROPIC, ANTHROPIC_AUTH_TOKEN=key, ANTHROPIC_API_KEY="")
+            m = model or profile.get("model") or OPENROUTER_DEFAULT_PLAN_MODEL
+            env.update({slot: m for slot in MODEL_SLOTS})
+            return _readable_certs(env, home_dir)
         env[ENGINES[eng]["key_env"]] = key
         if eng == "agy":
             s = home_dir / ".gemini" / "antigravity-cli" / "settings.json"
@@ -87,6 +107,24 @@ def env_for(profile, home_dir: Path, key: str | None = None):
             cur = json.loads(s.read_text()) if s.exists() else {}
             cur["modelProvider"] = "gemini"
             s.write_text(json.dumps(cur, indent=2))
+    return _readable_certs(env, home_dir)
+
+
+CERT_VARS = ("NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE")
+
+
+def _readable_certs(env, home_dir: Path):
+    """Chứng chỉ CA của proxy công ty thường nằm chỗ chỉ root đọc được — chép vào HOME của job để agent (user cô lập) vẫn ra mạng."""
+    if not sandbox.agent_ids():
+        return env
+    for var in CERT_VARS:
+        src = env.get(var)
+        if src and Path(src).is_file() and not sandbox.can_read(src):
+            dst = home_dir / ".gp-certs" / Path(src).name
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, dst)
+            dst.chmod(0o644)
+            env[var] = str(dst)
     return env
 
 

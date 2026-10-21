@@ -15,7 +15,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import agents, db, history, interview, sandbox, ssot
+from . import agents, db, history, interview, mail, sandbox, ssot
 from .config import HISTORY, JOBS_HOME, ROOT, WORKSPACE
 from .security import dec
 
@@ -91,7 +91,7 @@ def norm_usage(ev):
     return {"input_tokens": int(inp), "output_tokens": int(out), "cost_usd": ev.get("total_cost_usd"), "raw": u}
 
 
-def agent_cmd(engine, prompt, model, timeout_min, project_dir):
+def agent_cmd(engine, prompt, model, timeout_min, project_dir, budget=None):
     b, found = agents.agent_binary(engine)
     if not b:
         raise RuntimeError(agents.cli_problem(engine) if found else f"Chưa cài {engine} trên máy chủ (admin → Core agent → Cài đặt CLI).")
@@ -101,17 +101,23 @@ def agent_cmd(engine, prompt, model, timeout_min, project_dir):
     else:
         cmd = [b, "-p", prompt, "--output-format", "stream-json", "--verbose", "--add-dir", str(project_dir),
                "--allowedTools", "Bash,Read,Edit,Write,Glob,Grep,WebSearch,WebFetch,Task"]
+        if budget:
+            cmd += ["--max-budget-usd", f"{budget:g}"]               # Claude Code tự dừng khi ước tính chi phí chạm trần
     return cmd + (["--model", model] if model else [])
+
+
+BUDGET_NOTE = ("\n\nNGÂN SÁCH LƯỢT CHẠY: khoảng {budget:g} USD. Làm tiết kiệm: tối đa 3 subagent chạy song song, chỉ đọc trang web cần cho một con số, "
+               "tóm tắt ngay vào research/*.md thay vì giữ cả trang trong ngữ cảnh; ưu tiên hoàn tất SSOT + build 0 lỗi trước khi mở rộng nghiên cứu.")
 
 
 def run_agent(job, engine, env, model, project_dir, p):
     timeout_min = db.setting_int("job_timeout_min", 120)
     prompt = PROMPT.format(root=ROOT, project_dir=project_dir, slug=p["slug"], country=p.get("country") or "Việt Nam",
-                           projects_root=WORKSPACE)
+                           projects_root=WORKSPACE) + (BUDGET_NOTE.format(budget=job["budget_usd"]) if job.get("budget_usd") else "")
     env = {**env, "GP_PROJECTS": str(WORKSPACE), "PYTHONUNBUFFERED": "1"}
     if db.one("SELECT status FROM jobs WHERE id=?", (job["id"],))["status"] == "cancelled":   # huỷ trước khi agent kịp khởi động
         return -1, None, "cancelled"
-    proc = subprocess.Popen(agent_cmd(engine, prompt, model, timeout_min, project_dir), env=env, cwd=str(project_dir),
+    proc = subprocess.Popen(agent_cmd(engine, prompt, model, timeout_min, project_dir, job.get("budget_usd")), env=env, cwd=str(project_dir),
                             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                             start_new_session=True, **sandbox.popen_kwargs())
     _running[job["id"]] = proc
@@ -197,6 +203,23 @@ def export_check(slug):
     return {"errors": errors, "output": "\n".join(out)[-8000:]}
 
 
+def explain_failure(tail, job):
+    """Lỗi của lượt chạy bằng key người dùng → câu người dùng hiểu và biết phải làm gì (thay cho "Agent thoát mã 1")."""
+    if agents.BUDGET_HINT.search(tail):
+        return (f"Đã chạm trần chi phí {job['budget_usd']:g} USD của lượt chạy (theo ước tính của Claude Code) — tăng trần ở tab Chạy Plan "
+                "rồi chạy lại; phần đã làm vẫn còn trong dự án.") if job.get("budget_usd") else "Đã chạm trần chi phí của lượt chạy."
+    if free_tier_daily(tail):                                  # gói miễn phí Gemini: nói cụ thể hơn "hết tín dụng"
+        return free_tier_daily(tail)
+    m = agents.CREDIT_HINT.search(tail)
+    if m:
+        detail = re.search(r"\$[\d.]+ of \$[\d.]+ used", tail)
+        return ("Key AI của bạn đã hết hạn mức / tín dụng tại nhà cung cấp" + (f" ({detail.group(0).replace(' of ', ' / ').replace(' used', ' đã dùng')})" if detail else "")
+                + " — nạp thêm hoặc tăng giới hạn key, rồi chạy lại.")
+    if agents.AUTH_HINT.search(tail):
+        return "Nhà cung cấp AI từ chối key (sai, hết hạn hoặc bị thu hồi) — kiểm tra ở Cài đặt → AI & API key."
+    return None
+
+
 def free_tier_daily(tail):
     """Key Gemini gói miễn phí hết lượt/ngày: nói thẳng là gói không đủ chạy Plan, không chỉ 'có vẻ hết quota'."""
     m = re.search(r"free_tier\w*, limit: (\d+), model: ([\w.-]+)", tail)
@@ -231,11 +254,11 @@ def run_job(job):
         usage, engine, profile = None, job["engine"], None
         if job["billing"] == "user_key":
             k = db.one("SELECT * FROM api_keys WHERE id=?", (job["api_key_id"],))
-            engine = {"anthropic": "claude", "gemini": "agy"}[k["provider"]]
+            engine = {"anthropic": "claude", "gemini": "agy", "openrouter": "claude"}[k["provider"]]
             h = JOBS_HOME / str(jid)
             h.mkdir(parents=True, exist_ok=True)
             fake = {"engine": engine, "auth_mode": "api_key"}
-            env = agents.env_for(fake, h, dec(k["key_enc"]))
+            env = agents.env_for(fake, h, dec(k["key_enc"]), job["model"])
             log(jid, f"Engine {engine} · API key của user ({k['provider']} {k['key_hint']}) · model {job['model'] or 'mặc định'}")
         elif engine not in ("demo", "external"):
             profile = db.one("SELECT * FROM agent_profiles WHERE id=?", (job["profile_id"],))
@@ -262,6 +285,8 @@ def run_job(job):
                 gone = sandbox.strip_links(d)
                 if gone:
                     log(jid, f"Đã xoá {len(gone)} symlink/file đặc biệt agent tạo: {', '.join(gone[:5])}")
+            if usage and job["billing"] == "user_key" and agents.is_openrouter(dec(k["key_enc"])):
+                usage["cost_usd"] = None            # Claude Code tính theo bảng giá Anthropic — sai với OpenRouter; xem chi phí thật ở OpenRouter
             if usage:
                 db.insert("usage", user_id=job["user_id"], project_id=p["id"], source="job",
                           provider="owner:" + engine if profile else "user:" + engine, model=job["model"] or (profile or {}).get("model"),
@@ -274,7 +299,8 @@ def run_job(job):
                 if "free_tier" in tail and "limit: 0" in tail:               # không phải hết quota tạm thời: model không có trong gói
                     return finish(jid, "failed", "Key Gemini đang ở gói miễn phí, model này có hạn mức 0 — chọn model Flash "
                                                  "(ví dụ gemini-3.8-flash-medium) cho tài khoản agent rồi chạy lại.", p, system=True)
-                reason = ("needs_login" if agents.AUTH_HINT.search(tail) else
+                credit = agents.CREDIT_HINT.search(tail)                       # hết tiền/hạn mức key — kiểm TRƯỚC lỗi đăng nhập
+                reason = ("quota_exhausted" if credit else "needs_login" if agents.AUTH_HINT.search(tail) else
                           "quota_exhausted" if agents.QUOTA_HINT.search(tail) else None)
                 if profile and reason:
                     db.update("agent_profiles", profile["id"], status=reason)
@@ -285,7 +311,7 @@ def run_job(job):
                         return
                     return finish(jid, "failed", free_tier_daily(tail) or f"Tài khoản agent {STATUS_VI[reason]} — báo owner (admin → Core agent)", p,
                                   system=True)
-                return finish(jid, "failed", f"Agent thoát mã {code}", p)
+                return finish(jid, "failed", explain_failure(tail, job) or f"Agent thoát mã {code}", p)
         ok, errors = post_build(jid, p, link_check=engine != "demo")
         if not ok:
             return finish(jid, "failed", "Build lỗi", p)
@@ -345,6 +371,26 @@ def finish(jid, status, error=None, p=None, system=False):
     log(jid, f"— kết thúc: {status}" + (f" ({error})" if error else ""))
     if p:
         db.update("projects", p["id"], status={"done": "done", "cancelled": "ready"}.get(status, "failed"), updated=db.now())
+        if status in ("done", "failed"):
+            notify_finished(jid, status, error, p)
+
+
+def notify_finished(jid, status, error, p):
+    """Plan chạy 30–120 phút: báo người dùng qua email khi xong (nếu có SMTP và người dùng không tắt trong Tuỳ chọn)."""
+    j = db.one("SELECT kind, user_id FROM jobs WHERE id=?", (jid,))
+    u = j and db.one("SELECT email, prefs FROM users WHERE id=?", (j["user_id"],))
+    if not u or j["kind"] != "plan" or not mail.configured() or json.loads(u["prefs"] or "{}").get("notify_job") is False:
+        return
+    base = db.setting("public_base_url")
+    url = f"{base}/app#p={p['slug']}&t={'dossier' if status == 'done' else 'run'}" if base else None
+    if status == "done":
+        mail.send(u["email"], f"Hồ sơ “{p['name']}” đã sẵn sàng", *mail.layout(
+            "Hồ sơ đã dựng xong", f"Agent đã chạy xong Plan cho “{p['name']}”. Mở tab Hồ sơ để xem console, dashboard và tải Word / PowerPoint / Excel.",
+            "Xem hồ sơ" if url else None, url))
+    else:
+        mail.send(u["email"], f"Chạy Plan cho “{p['name']}” chưa xong", *mail.layout(
+            "Lượt chạy Plan bị lỗi", f"Lượt chạy cho “{p['name']}” dừng với lỗi: {error or 'không rõ'}.\n\nMở tab Chạy Plan để xem log và chạy lại.",
+            "Xem lượt chạy" if url else None, url))
 
 
 def cancel(jid):

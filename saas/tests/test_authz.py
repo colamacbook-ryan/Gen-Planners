@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from saas.server import db, main  # noqa: E402
 
 H = {"X-GP": "1"}
-PUBLIC = {"/api/public", "/api/auth/signup", "/api/auth/login", "/api/auth/logout", "/api/auth/google", "/api/auth/google/callback"}
+PUBLIC = {"/api/public", "/api/auth/signup", "/api/auth/login", "/api/auth/logout", "/api/auth/google", "/api/auth/google/callback", "/api/auth/forgot", "/api/auth/reset"}
 OWNER_ONLY = re.compile(r"^/api/admin/(agents|settings|seed-sample)")
 
 

@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS changes(
   id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, user_id INTEGER, key TEXT, label TEXT, old TEXT, new TEXT, created TEXT);
 CREATE INDEX IF NOT EXISTS ix_msg ON messages(project_id, room);
 CREATE INDEX IF NOT EXISTS ix_usage ON usage(created);
+CREATE TABLE IF NOT EXISTS password_resets(
+  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, token_hash TEXT UNIQUE NOT NULL, created TEXT, expires TEXT, used TEXT);
 """
 
 DEFAULT_SETTINGS = {
@@ -76,6 +78,8 @@ DEFAULT_SETTINGS = {
     "announcement_level": "info",       # info | warn
     "maintenance": "0",                 # 1 = người dùng thường chỉ xem; không tạo/chạy/sửa (admin vẫn làm được)
     "log_retention_days": "0",          # 0 = giữ mãi; N = xoá log job cũ hơn N ngày (giữ dòng thống kê)
+    "owner_job_budget_usd": "0",       # trần chi phí mỗi lượt chạy bằng tài khoản hệ thống (0 = không giới hạn; chỉ claude CLI hỗ trợ)
+    "smtp_host": "", "smtp_port": "587", "smtp_user": "", "smtp_password_enc": "", "smtp_from": "", "smtp_tls": "starttls",
 }
 
 _lock = threading.RLock()
@@ -87,7 +91,7 @@ _conn.executescript(SCHEMA)
 for _t, _c, _d in (("jobs", "progress", "TEXT"), ("projects", "is_sample", "INTEGER NOT NULL DEFAULT 0"),
                    ("users", "onboarding", "TEXT"), ("users", "invited_by", "INTEGER"),
                    ("jobs", "system_fault", "INTEGER NOT NULL DEFAULT 0"), ("jobs", "by_admin", "INTEGER"),
-                   ("users", "prefs", "TEXT"), ("projects", "archived", "INTEGER NOT NULL DEFAULT 0")):
+                   ("users", "prefs", "TEXT"), ("projects", "archived", "INTEGER NOT NULL DEFAULT 0"), ("jobs", "budget_usd", "REAL")):
     if _c not in [r[1] for r in _conn.execute(f"PRAGMA table_info({_t})")]:
         _conn.execute(f"ALTER TABLE {_t} ADD COLUMN {_c} {_d}")
 for k, v in DEFAULT_SETTINGS.items():

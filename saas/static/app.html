@@ -280,7 +280,7 @@ async function tabRun() {
   const opts = [
     mode !== "user_key" && ["owner", "Tài khoản hệ thống (core agent)", S.me.core_ready ? `Agent chạy trên tài khoản AI của chủ hệ thống · ${ownerLeft}.`
       : S.me.role === "owner" ? 'Chưa có core agent sẵn sàng — <a href="/admin#agents">cấu hình ở trang Core agent</a>.' : "Chủ hệ thống chưa bật core agent — chọn cách khác bên dưới.", !S.me.core_ready],
-    mode !== "owner" && ["user_key", "API key của tôi", planKeys.length ? `Chạy core agent bằng key của bạn — Anthropic → Claude Code CLI, Gemini → Antigravity CLI. Chi phí tính vào tài khoản AI của bạn.` : "Cần key Anthropic hoặc Gemini (OpenAI/OpenRouter chỉ dùng để chat).", !planKeys.length],
+    mode !== "owner" && ["user_key", "API key của tôi", planKeys.length ? `Chạy core agent bằng key của bạn — Anthropic / OpenRouter → Claude Code CLI, Gemini → Antigravity CLI. Chi phí tính vào tài khoản AI của bạn.` : "Cần key Anthropic, OpenRouter hoặc Gemini (key OpenAI chỉ dùng để chat).", !planKeys.length],
     ["external", "Agent ngoài của tôi", "Claude Code, Antigravity hay agent bất kỳ bạn đang dùng nhận việc qua API token — chạy trên máy của bạn, chi phí của bạn.", false],
     S.me.demo_allowed && ["demo", "Demo", "Không gọi AI: ghi brief vào dự án và build từ template — để thử luồng.", false]].filter(Boolean);
   const running = p.jobs.find(j => ["queued", "starting", "running", "waiting"].includes(j.status));
@@ -289,7 +289,10 @@ async function tabRun() {
     <p class="hint">Core agent đọc <code>brief.md</code>, chạy 9 luồng nghiên cứu theo playbook chuẩn, dựng số liệu một nguồn và tự kiểm tra (0 lỗi) trước khi xuất hồ sơ. Thường mất 30–120 phút.</p>
     ${miss.length ? `<div class="banner">Còn ${miss.length} câu phỏng vấn bắt buộc chưa trả lời: ${miss.map(m => esc(p.questions.find(q => q.id === m).ask)).join(" · ")}</div>` : ""}
     <div id="opts">${opts.map(([v, t, d, dis]) => `<label class="opt ${dis ? "dis" : ""}"><input type="radio" name="bill" value="${v}" ${dis ? "disabled" : ""} ${v === opts.find(o => !o[3])?.[0] ? "checked" : ""}><span><b>${t}</b><br><span class="hint">${d}</span></span></label>`).join("")}</div>
-    <div id="keyRow" hidden><label for="rk">Key dùng để chạy</label><select id="rk">${planKeys.map(k => `<option value="${k.id}">${esc(k.label)} · ${esc(k.key_hint)} · ${esc(k.model)}</option>`).join("")}</select></div>
+    <div id="keyRow" hidden><label for="rk">Key dùng để chạy</label><select id="rk">${planKeys.map(k => `<option value="${k.id}" data-p="${esc(k.provider)}">${esc(k.label)} · ${esc(k.key_hint)} · ${esc(k.model)}</option>`).join("")}</select>
+      <label for="rb2">Trần chi phí lượt chạy (USD, tuỳ chọn)</label><input id="rb2" inputmode="decimal" placeholder="ví dụ 5 — để trống = không giới hạn">
+      <div class="hint">Một lượt Plan đầy đủ thường tốn vài USD tới vài chục USD tuỳ model. Có trần, agent làm tiết kiệm và tự dừng khi chạm trần (ước tính của Claude Code; chỉ áp dụng cho key Anthropic / OpenRouter).</div>
+      <div class="hint" id="orHint" hidden>Key OpenRouter: chỉ dùng model <code>anthropic/…</code> để chạy Plan, ví dụ <code>anthropic/claude-sonnet-5.5</code> (chất lượng) hoặc <code>anthropic/claude-haiku-5.5</code> (rẻ).</div></div>
     <label for="rm">Model (tuỳ chọn — để trống dùng mặc định)</label><input id="rm" placeholder="mặc định">
     <div class="row" style="margin-top:14px"><button class="pri" id="go" ${running || !p.mine ? "disabled" : ""}>${icon("play")}Chạy Plan</button>
     ${miss.length ? '<label class="row hint" style="margin:0"><input type="checkbox" id="force" style="width:auto"> chạy dù còn thiếu</label>' : ""}</div><p class="err" id="rmsg"></p></div>
@@ -298,10 +301,11 @@ async function tabRun() {
     <div id="handoff" hidden style="margin-top:10px"></div>
     <pre class="log" id="jlog" style="margin-top:10px">${running ? "Đang tải…" : "Chưa có lượt chạy nào đang diễn ra."}</pre>
     <div class="k" style="margin-top:14px">Lịch sử</div><table class="t"><tbody>${p.jobs.map(j => `<tr><td>#${j.id}</td><td>${pill(j.status)}</td><td>${esc(JOBKIND[j.kind] || "Plan")}<div class="hint">${esc(ENGINE[j.engine] || j.engine)}${BILL[j.billing] ? " · " + BILL[j.billing] : ""}</div></td><td class="hint">${when(j.created)}</td><td><a href="#" data-j="${j.id}">log</a></td></tr>`).join("") || emptyRow(5, "Chưa chạy lần nào — chọn cách chạy bên trái rồi bấm Chạy Plan.")}</tbody></table></div></div>`;
-  const sync = () => { const v = $("input[name=bill]:checked")?.value; $("#keyRow").hidden = v !== "user_key"; $$(".opt").forEach(o => o.classList.toggle("on", o.querySelector("input").checked)); };
-  $$("input[name=bill]").forEach(r => r.onchange = sync); sync();
+  const sync = () => { const v = $("input[name=bill]:checked")?.value; $("#keyRow").hidden = v !== "user_key";
+    $("#orHint").hidden = $("#rk")?.selectedOptions[0]?.dataset.p !== "openrouter"; $$(".opt").forEach(o => o.classList.toggle("on", o.querySelector("input").checked)); };
+  $$("input[name=bill]").forEach(r => r.onchange = sync); $("#rk") && ($("#rk").onchange = sync); sync();
   $("#go").onclick = async () => { $("#rmsg").textContent = "";
-    try { const r = await api(`/projects/${p.slug}/run`, {body: {billing: $("input[name=bill]:checked")?.value, api_key_id: +$("#rk")?.value || null, model: $("#rm").value, force: $("#force")?.checked}});
+    try { const r = await api(`/projects/${p.slug}/run`, {body: {billing: $("input[name=bill]:checked")?.value, api_key_id: +$("#rk")?.value || null, model: $("#rm").value, force: $("#force")?.checked, budget_usd: $("#rb2")?.value}});
       await refresh(); S.me = await api("/me"); await tabRun(); watch(r.job_id); } catch (x) { $("#rmsg").textContent = x.message; } };
   $$("[data-j]").forEach(a => a.onclick = e => { e.preventDefault(); watch(+a.dataset.j); });
   if (running) watch(running.id); else if (p.jobs[0]) watch(p.jobs[0].id, true);
@@ -502,11 +506,14 @@ function setPrefs(v) {
   if (!sbody(v, `<section class="card"><h2>Giao diện</h2><div class="seg" role="radiogroup" aria-label="Giao diện">
       ${[["system", "Theo hệ thống"], ["light", "Sáng"], ["dark", "Tối"]].map(([k, l]) => `<label class="${p.theme === k ? "on" : ""}"><input type="radio" name="th" value="${k}" ${p.theme === k ? "checked" : ""}>${l}</label>`).join("")}</div>
       <p class="hint" style="margin:10px 0 0">Áp dụng cho ứng dụng, trang quản trị và trình xem hồ sơ trên thiết bị này và các thiết bị khác của bạn.</p></section>
+    <section class="card"><h2>Thông báo</h2><label class="row" style="margin:0"><input type="checkbox" id="ntf" style="width:auto" ${p.notify_job !== false ? "checked" : ""} ${S.me.mail ? "" : "disabled"}>
+      Gửi email cho tôi khi một lượt Chạy Plan xong hoặc bị lỗi</label>${S.me.mail ? "" : '<p class="hint" style="margin:6px 0 0">Hệ thống chưa bật gửi email — chủ hệ thống cấu hình ở Cài đặt hệ thống → Email.</p>'}</section>
     <section class="card"><h2>Mặc định cho dự án mới</h2><form id="mf"><div class="grid g2" style="gap:0 14px">
       <div><label for="pc">Thị trường mặc định</label><input id="pc" list="mkts" value="${esc(p.country)}"><datalist id="mkts">${MARKETS.map(x => `<option value="${x}">`).join("")}</datalist>
       <div class="hint">Agent nghiên cứu số liệu, luật và đối thủ theo thị trường này. Đổi được riêng cho từng dự án.</div></div></div>
       <div class="form-actions"><button class="pri">Lưu</button></div></form></section>`)) return;
   $$("input[name=th]").forEach(r => r.onchange = async () => { S.me = await api("/me", {method: "PATCH", body: {prefs: {theme: r.value}}}); applyTheme(r.value); setPrefs(S.view); toast("Đã đổi giao diện"); });
+  $("#ntf").onchange = async e => { S.me = await api("/me", {method: "PATCH", body: {prefs: {notify_job: e.target.checked}}}); toast(e.target.checked ? "Sẽ gửi email khi Plan xong" : "Đã tắt email thông báo"); };
   $("#mf").onsubmit = async e => { e.preventDefault(); S.me = await api("/me", {method: "PATCH", body: {prefs: {country: $("#pc").value}}}); toast("Đã lưu thị trường mặc định"); };
 }
 

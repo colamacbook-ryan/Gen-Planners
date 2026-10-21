@@ -32,21 +32,31 @@
     <h2 id="title">Đăng nhập</h2><p class="hint" id="sub">Chào mừng trở lại.</p>
     <form id="f">
       <div id="nameRow" hidden><label for="name">Tên hiển thị</label><input id="name" autocomplete="name"></div>
-      <label for="email">Email</label><input id="email" type="email" required autocomplete="email">
-      <label for="pw">Mật khẩu</label><input id="pw" type="password" required minlength="8" autocomplete="current-password">
+      <div id="emailRow"><label for="email">Email</label><input id="email" type="email" required autocomplete="email"></div>
+      <div id="pwRow"><label for="pw" id="pwLabel">Mật khẩu</label><input id="pw" type="password" required minlength="8" autocomplete="current-password"></div>
       <p class="err" id="msg" role="alert"></p>
       <button class="pri" style="width:100%" id="go">Đăng nhập</button>
     </form>
     <div id="google" hidden><div class="or">hoặc</div><a href="/api/auth/google"><button class="gbtn" type="button">Tiếp tục với Google</button></a></div>
     <p class="hint" style="margin-top:16px" id="switch"></p>
+    <p class="hint" id="forgotRow"><a href="#" data-m="forgot">Quên mật khẩu?</a></p>
   </div></section>
 </div>
 <script src="/static/gp.js"></script>
 <script>
-let mode = "login", pub = {};
-const INVITE = new URLSearchParams(location.search).get("invite") || window.GPDEMO?.invite || "";
+const QS = new URLSearchParams(location.search);
+let mode = QS.get("reset") ? "reset" : "login", pub = {};
+const INVITE = QS.get("invite") || window.GPDEMO?.invite || "", RESET = QS.get("reset") || "";
 function draw() {
-  const su = mode === "signup";
+  const su = mode === "signup", fg = mode === "forgot", rs = mode === "reset";
+  $("#emailRow").hidden = rs; $("#email").required = !rs; $("#pwRow").hidden = fg; $("#pw").required = !fg;
+  $("#forgotRow").hidden = mode !== "login"; $("#google").hidden = !pub.google || fg || rs;
+  $("#pwLabel").textContent = rs ? "Mật khẩu mới (≥ 8 ký tự)" : "Mật khẩu";
+  if (fg || rs) { $("#title").textContent = fg ? "Quên mật khẩu" : "Đặt mật khẩu mới"; $("#nameRow").hidden = true;
+    $("#sub").textContent = fg ? (pub.mail ? "Nhập email đăng ký — chúng tôi gửi link đặt lại mật khẩu (hiệu lực 1 giờ)." : "Hệ thống chưa bật gửi email — nhờ admin đặt lại mật khẩu cho bạn.")
+      : "Chọn mật khẩu mới cho tài khoản của bạn. Mọi thiết bị khác sẽ bị đăng xuất.";
+    $("#go").textContent = fg ? "Gửi link đặt lại" : "Lưu mật khẩu mới"; $("#pw").autocomplete = "new-password";
+    $("#switch").innerHTML = `<a href="#" data-m="login">← Quay lại đăng nhập</a>`; return; }
   $("#title").textContent = su ? (pub.has_owner ? "Tạo tài khoản" : "Tạo tài khoản owner") : "Đăng nhập";
   const inv = pub.invite;
   $("#sub").textContent = inv?.error ? inv.error : su && inv ? `Bạn được mời tham gia ${pub.site_name}${inv.role === "admin" ? " với vai trò admin" : ""}. Đặt mật khẩu để bắt đầu.`
@@ -56,10 +66,12 @@ function draw() {
   $("#pw").autocomplete = su ? "new-password" : "current-password";
   $("#switch").innerHTML = su ? `Đã có tài khoản? <a href="#" data-m="login">Đăng nhập</a>` : pub.allow_signup || !pub.has_owner || (inv && !inv.error) ? `Chưa có tài khoản? <a href="#" data-m="signup">Tạo tài khoản</a>` : "Đăng ký mới đang tắt — cần lời mời từ admin.";
 }
-$("#switch").onclick = e => { const m = e.target.dataset.m; if (m) { e.preventDefault(); mode = m; draw(); } };
-$("#f").onsubmit = async e => { e.preventDefault(); $("#msg").textContent = "";
+document.addEventListener("click", e => { const m = e.target.dataset?.m; if (m) { e.preventDefault(); mode = m; $("#msg").textContent = ""; $("#msg").className = "err"; draw(); } });
+$("#f").onsubmit = async e => { e.preventDefault(); $("#msg").textContent = ""; $("#msg").className = "err";
+  if (mode === "forgot") { try { const r = await api("/auth/forgot", {body: {email: $("#email").value}}); $("#msg").className = "hint"; $("#msg").textContent = r.message; } catch (x) { $("#msg").textContent = x.message; } return; }
+  if (mode === "reset") { try { await api("/auth/reset", {body: {token: RESET, password: $("#pw").value}}); location.href = "/app"; } catch (x) { $("#msg").textContent = x.message; } return; }
   try { const r = await api("/auth/" + mode, {body: {email: $("#email").value, password: $("#pw").value, name: $("#name").value, invite: mode === "signup" ? INVITE : ""}});
     location.href = "/app"; /* owner cũng bắt đầu ở trang Bắt đầu — có thẻ dẫn vào quản trị */ } catch (x) { $("#msg").textContent = x.message; } };
 api("/public" + (INVITE ? "?invite=" + encodeURIComponent(INVITE) : "")).then(p => { pub = p; if (p.invite && !p.invite.error) mode = "signup"; $("#site").textContent = p.site_name; document.title = p.site_name + " — Đăng nhập";
-  $("#google").hidden = !p.google; if (!p.has_owner) mode = "signup"; draw(); });
+  $("#google").hidden = !p.google; if (!p.has_owner && mode !== "reset") mode = "signup"; draw(); });
 </script></body></html>

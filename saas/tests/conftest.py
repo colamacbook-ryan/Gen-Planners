@@ -19,6 +19,14 @@ def _offline_key_check(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _fake_agent_env():
+    """CLI giả lập chọn kịch bản qua FAKE_AGENT_MODE — cho biến này đi qua bộ lọc môi trường của sandbox."""
+    from saas.server import sandbox
+    sandbox.EXTRA_ALLOW.add("FAKE_AGENT_MODE")
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _reset_throttle():
     """Các test chạy chung một tiến trình: xoá bộ đếm chống dò mật khẩu giữa các test."""
     from saas.server import main

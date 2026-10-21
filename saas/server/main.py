@@ -21,7 +21,7 @@ import datetime as dt
 import hashlib
 import threading
 
-from . import agents, db, history, interview, llm, sandbox, ssot, worker
+from . import agents, db, history, interview, llm, mail, sandbox, ssot, worker
 from .config import AGENTS_HOME, COOKIE_SECURE, DATA, HISTORY, JOBS_HOME, ROOT, SAAS, WORKSPACE
 from .security import check_pw, dec, enc, hash_pw, hint, sign, unsign
 
@@ -128,7 +128,7 @@ def login_response(u, resp=None):
     return resp
 
 
-PREF_DEFAULTS = {"theme": "system", "country": None}       # country None → theo mặc định hệ thống
+PREF_DEFAULTS = {"theme": "system", "country": None, "notify_job": True}       # country None → theo mặc định hệ thống
 
 
 def prefs(u):
@@ -266,7 +266,53 @@ def public(invite: str = ""):
             inv = {"error": e.detail}
     return {"invite": inv, "site_name": db.setting("site_name"), "allow_signup": db.setting("allow_signup") == "1",
             "signup_domains": db.setting("signup_domains"), "support_email": db.setting("support_email"),
-            "google": bool(db.setting("google_client_id")), "has_owner": db.one("SELECT COUNT(*) n FROM users")["n"] > 0}
+            "google": bool(db.setting("google_client_id")), "has_owner": db.one("SELECT COUNT(*) n FROM users")["n"] > 0,
+            "mail": mail.configured()}
+
+
+def public_base(request):
+    return db.setting("public_base_url") or str(request.base_url).rstrip("/")
+
+
+@app.post("/api/auth/forgot")
+async def forgot(request: Request):
+    """Quên mật khẩu: luôn trả cùng một câu (không để lộ email nào có tài khoản); có tài khoản + SMTP → gửi link dùng một lần, 1 giờ."""
+    b = await body(request)
+    email = str(b.get("email", "")).strip().lower()
+    throttle(request, "forgot:" + email, per_account=True, ip_limit=(5, 900))
+    u = db.one("SELECT * FROM users WHERE email=?", (email,))
+    if u and u["status"] == "active" and mail.configured():
+        raw = secrets.token_urlsafe(32)
+        db.x("UPDATE password_resets SET used=? WHERE user_id=? AND used IS NULL", (db.now(), u["id"]))   # link cũ hết hiệu lực
+        db.insert("password_resets", user_id=u["id"], token_hash=token_hash(raw), created=db.now(),
+                  expires=(dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=1)).replace(microsecond=0).isoformat())
+        url = f"{public_base(request)}/login?reset={urllib.parse.quote(raw)}"
+        mail.send(u["email"], f"Đặt lại mật khẩu {db.setting('site_name')}", *mail.layout(
+            "Đặt lại mật khẩu", "Có người (hy vọng là bạn) vừa yêu cầu đặt lại mật khẩu. Link dùng được một lần trong 1 giờ.\n\n"
+            "Không phải bạn? Bỏ qua email này — mật khẩu không đổi.", "Đặt mật khẩu mới", url))
+        db.audit(u["id"], "password_reset_request", email)
+    return {"ok": True, "mail": mail.configured(),
+            "message": "Nếu email này có tài khoản, link đặt lại mật khẩu đã được gửi — xem hộp thư (kể cả mục Spam)." if mail.configured()
+            else "Hệ thống chưa bật gửi email — nhờ admin đặt lại mật khẩu cho bạn (Quản trị → Người dùng)."}
+
+
+@app.post("/api/auth/reset")
+async def reset_password(request: Request):
+    b = await body(request)
+    raw, pw = str(b.get("token", "")), str(b.get("password", ""))
+    throttle(request, "reset", per_account=False)
+    r = db.one("SELECT * FROM password_resets WHERE token_hash=?", (token_hash(raw),)) if raw else None
+    if not r or r["used"] or r["expires"] < db.now():
+        raise HTTPException(400, "Link đặt lại mật khẩu không còn hiệu lực — yêu cầu link mới.")
+    if len(pw) < 8:
+        raise HTTPException(400, "Mật khẩu mới tối thiểu 8 ký tự")
+    u = db.one("SELECT * FROM users WHERE id=?", (r["user_id"],))
+    if not u or u["status"] != "active":
+        raise HTTPException(400, "Tài khoản không khả dụng.")
+    db.update("password_resets", r["id"], used=db.now())
+    db.update("users", u["id"], pw_hash=await run_in_threadpool(hash_pw, pw), session_ver=u["session_ver"] + 1)   # đăng xuất mọi phiên cũ
+    db.audit(u["id"], "password_reset", u["email"])
+    return login_response(db.one("SELECT * FROM users WHERE id=?", (u["id"],)))
 
 
 @app.post("/api/auth/signup")
@@ -355,7 +401,7 @@ def me(u=Depends(need_user)):
             "plan_billing": db.setting("plan_billing"), "quota": quota(u), "demo_allowed": db.setting("allow_demo_engine") == "1",
             "core_ready": agents.active_profile() is not None, "onboarding": onboarding(u, keys > 0),
             "announcement": db.setting("announcement"), "announcement_level": db.setting("announcement_level"),
-            "maintenance": db.setting("maintenance") == "1", "support_email": db.setting("support_email")}
+            "maintenance": db.setting("maintenance") == "1", "support_email": db.setting("support_email"), "mail": mail.configured()}
 
 
 def onboarding(u, has_keys):
@@ -406,6 +452,8 @@ async def edit_me(request: Request, u=Depends(need_user)):
             p["theme"] = theme
         if "country" in b["prefs"]:
             p["country"] = str(b["prefs"]["country"] or "").strip()[:60] or None
+        if "notify_job" in b["prefs"]:
+            p["notify_job"] = bool(b["prefs"]["notify_job"])
         kw["prefs"] = json.dumps(p, ensure_ascii=False)
     if kw:
         db.update("users", u["id"], **kw)
@@ -859,8 +907,22 @@ async def run_plan(slug: str, request: Request, u=Depends(need_user)):
         k = my_key(u, b.get("api_key_id"))
         eng = llm.PROVIDERS[k["provider"]]["plan_engine"]
         if not eng:
-            raise HTTPException(400, f"Key {k['provider']} chỉ dùng để chat. Chạy Plan cần key Anthropic (claude CLI) hoặc Gemini (agy).")
-        kw.update(engine=eng, billing="user_key", api_key_id=k["id"], model=b.get("model") or k["model"])
+            raise HTTPException(400, f"Key {k['provider']} chỉ dùng để chat. Chạy Plan cần key Anthropic, OpenRouter (claude CLI) hoặc Gemini (agy).")
+        model = str(b.get("model") or "").strip() or k["model"]
+        if k["provider"] == "openrouter":
+            model = model if model.startswith("anthropic/") else agents.OPENROUTER_DEFAULT_PLAN_MODEL
+            if b.get("model") and not str(b["model"]).startswith("anthropic/"):
+                raise HTTPException(400, "Chạy Plan qua OpenRouter cần model Anthropic (vd anthropic/claude-sonnet-5.5 hoặc "
+                                         "anthropic/claude-haiku-5.5 rẻ hơn) — model khác gọi công cụ không ổn định với Claude Code.")
+        budget = None
+        if str(b.get("budget_usd") or "").strip():
+            try:
+                budget = float(str(b["budget_usd"]).replace(",", "."))
+            except ValueError:
+                raise HTTPException(400, "Trần chi phí phải là số (USD)") from None
+            if not 0.05 <= budget <= 1000:
+                raise HTTPException(400, "Trần chi phí trong khoảng 0,05–1000 USD")
+        kw.update(engine=eng, billing="user_key", api_key_id=k["id"], model=model, budget_usd=budget)
     else:
         if mode == "user_key":
             raise HTTPException(403, "Hệ thống yêu cầu chạy Plan bằng API key của bạn.")
@@ -871,7 +933,8 @@ async def run_plan(slug: str, request: Request, u=Depends(need_user)):
         prof = agents.active_profile()
         if not prof:
             raise HTTPException(503, "Hệ thống chưa có core agent sẵn sàng. Báo owner cấu hình ở trang admin.")
-        kw.update(engine=prof["engine"], billing="owner", profile_id=prof["id"])
+        cap = float(db.setting("owner_job_budget_usd") or 0)
+        kw.update(engine=prof["engine"], billing="owner", profile_id=prof["id"], budget_usd=cap or None)
     jid = db.insert("jobs", **kw)
     db.update("projects", p["id"], status="running", updated=db.now())
     db.audit(u["id"], "job_create", slug, {"job": jid, "billing": kw["billing"], "engine": kw["engine"]})
@@ -1543,7 +1606,15 @@ async def create_invite(request: Request, a=Depends(need_admin)):
                     quota_jobs_month=num("quota_jobs_month"), note=str(b.get("note") or "")[:200], created_by=a["id"], created=db.now(),
                     expires=(dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=days)).replace(microsecond=0).isoformat())
     db.audit(a["id"], "invite_create", email or "(link mở)", {"role": role, "days": days})
-    return db.one("SELECT * FROM invites WHERE id=?", (iid,))
+    inv = db.one("SELECT * FROM invites WHERE id=?", (iid,))
+    sent = False
+    if email and b.get("send_email") and mail.configured():
+        url = f"{public_base(request)}/login?invite={urllib.parse.quote(inv['token'])}"
+        sent = mail.send(email, f"Lời mời tham gia {db.setting('site_name')}", *mail.layout(
+            f"{a['name'] or a['email']} mời bạn tham gia {db.setting('site_name')}",
+            "Gen Planner giúp biến ý tưởng thành bộ hồ sơ gọi vốn: phỏng vấn founder, chốt điểm, agent nghiên cứu và dựng kế hoạch, "
+            f"dashboard, model tài chính.\n\nLời mời có hiệu lực {days} ngày.", "Nhận lời mời", url))
+    return {**inv, "emailed": bool(sent)}
 
 
 @app.delete("/api/admin/invites/{iid}")
@@ -1792,7 +1863,8 @@ def term_stop(pid: int, o=Depends(need_owner)):
 # --- settings (owner)
 EDITABLE = {"site_name", "allow_signup", "plan_billing", "default_quota_projects", "default_quota_jobs_month", "job_timeout_min",
             "max_concurrent_jobs", "auto_failover", "allow_demo_engine", "google_client_id", "public_base_url",
-            "signup_domains", "support_email", "default_country", "announcement", "announcement_level", "maintenance", "log_retention_days"}
+            "signup_domains", "support_email", "default_country", "announcement", "announcement_level", "maintenance", "log_retention_days",
+            "smtp_host", "smtp_port", "smtp_user", "smtp_from", "smtp_tls", "owner_job_budget_usd"}
 
 
 NUMERIC = {"default_quota_projects": (0, 10000), "default_quota_jobs_month": (0, 10000), "job_timeout_min": (5, 1440), "max_concurrent_jobs": (1, 16),
@@ -1805,7 +1877,19 @@ SETTING_LABEL = {"default_quota_projects": "Số dự án tối đa", "default_q
 @app.get("/api/admin/settings")
 def get_settings(o=Depends(need_owner)):
     s = {r["key"]: r["value"] for r in db.q("SELECT * FROM settings") if r["key"] in EDITABLE}
-    return {**s, "google_client_secret_set": bool(db.setting("google_client_secret_enc"))}
+    return {**s, "google_client_secret_set": bool(db.setting("google_client_secret_enc")), "smtp_password_set": bool(db.setting("smtp_password_enc")),
+            "mail_configured": mail.configured()}
+
+
+@app.post("/api/admin/settings/test-email")
+async def test_email(request: Request, o=Depends(need_owner)):
+    to = str((await body(request)).get("to") or o["email"]).strip()
+    ok, err = await run_in_threadpool(lambda: mail.send(to, f"Thử email — {db.setting('site_name')}", *mail.layout(
+        "Email hoạt động", "Đây là email thử từ trang Cài đặt hệ thống. Nhận được nghĩa là quên mật khẩu, lời mời và thông báo Plan đều gửi được."),
+        wait=True))
+    if not ok:
+        raise HTTPException(400, f"Không gửi được: {err}")
+    return {"ok": True, "to": to}
 
 
 @app.put("/api/admin/settings")
@@ -1825,6 +1909,20 @@ async def put_settings(request: Request, o=Depends(need_owner)):
         b["announcement"] = str(b["announcement"] or "").strip()[:500]
     if "announcement_level" in b and b["announcement_level"] not in ("info", "warn"):
         raise HTTPException(400, "Mức thông báo: info | warn")
+    if "owner_job_budget_usd" in b:
+        try:
+            v = float(str(b["owner_job_budget_usd"] or 0).replace(",", "."))
+        except ValueError:
+            raise HTTPException(400, "Trần chi phí mỗi lượt: số USD") from None
+        if not 0 <= v <= 1000:
+            raise HTTPException(400, "Trần chi phí mỗi lượt: 0–1000 USD (0 = không giới hạn)")
+        b["owner_job_budget_usd"] = f"{v:g}"
+    if "smtp_tls" in b and b["smtp_tls"] not in mail.TLS_MODES:
+        raise HTTPException(400, "Bảo mật SMTP: starttls | ssl | none")
+    if "smtp_port" in b and str(b["smtp_port"]).strip():
+        b["smtp_port"] = str(to_int(b["smtp_port"], "Cổng SMTP", 1, 65535, allow_none=False))
+    if str(b.get("smtp_from") or "").strip() and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", str(b["smtp_from"]).strip()):
+        raise HTTPException(400, "Địa chỉ gửi (From) không hợp lệ")
     for k in ("allow_signup", "auto_failover", "allow_demo_engine", "maintenance"):
         if k in b and str(b[k]) not in ("0", "1"):
             raise HTTPException(400, f"{k}: 0 hoặc 1")
@@ -1844,6 +1942,10 @@ async def put_settings(request: Request, o=Depends(need_owner)):
         db.set_setting("google_client_secret_enc", enc(b["google_client_secret"]))
     if b.get("clear_google_client_secret"):
         db.set_setting("google_client_secret_enc", "")
+    if b.get("smtp_password"):
+        db.set_setting("smtp_password_enc", enc(str(b["smtp_password"])))
+    if b.get("clear_smtp_password"):
+        db.set_setting("smtp_password_enc", "")
     db.audit(o["id"], "settings_update", "", {k: v for k, v in b.items() if k in EDITABLE})
     return get_settings(o)
 

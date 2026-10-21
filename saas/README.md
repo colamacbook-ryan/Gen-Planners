@@ -18,7 +18,7 @@ Người dùng (/app)                           Owner / admin (/admin)
 
 | | Dùng cho | Ai trả tiền | Cấu hình |
 |---|---|---|---|
-| **API key của user** (BYOK) | Trợ lý phỏng vấn, brainstorm; và Chạy Plan nếu là key Anthropic/Gemini | User | `/app#settings` — Anthropic, OpenAI, Gemini, OpenRouter. Key mã hoá Fernet, không bao giờ trả về trình duyệt |
+| **API key của user** (BYOK) | Trợ lý phỏng vấn, brainstorm; và Chạy Plan nếu là key Anthropic / OpenRouter (qua Claude Code, model `anthropic/*`) / Gemini (agy) | User | `/app#settings` — Anthropic, OpenAI, Gemini, OpenRouter. Key mã hoá Fernet, không bao giờ trả về trình duyệt |
 | **Core agent của owner** | Chạy Plan | Owner (giới hạn bằng hạn mức lần chạy/tháng của từng user) | `/admin#agents` — Antigravity CLI (`agy`) mặc định, Claude Code CLI dự phòng |
 
 Owner chọn ở Cài đặt: chạy Plan bằng tài khoản hệ thống, bằng key của user, hoặc để user chọn.
@@ -57,7 +57,7 @@ Biến môi trường: `GP_DATA` (mặc định `saas/data/`, đã gitignore), `
 `GP_SESSION_SECRET` / `GP_FERNET_KEY` nếu muốn quản lý khoá ngoài file. **Sao lưu `GP_DATA/fernet.key`** — mất file này là
 mất mọi API key đã lưu.
 
-Kiểm thử: `GP_DATA=$(mktemp -d) python -m pytest saas/tests -q` — 369 test (gồm 300 model ngẫu nhiên): luồng đầy đủ (kèm lịch sử phiên bản, lint, khôi phục); quét quyền mọi route (người lạ,
+Kiểm thử: `GP_DATA=$(mktemp -d) python -m pytest saas/tests -q` — 383 test (gồm 300 model ngẫu nhiên): luồng đầy đủ (kèm lịch sử phiên bản, lint, khôi phục); quét quyền mọi route (người lạ,
 người dùng khác, user→admin, admin→owner); sửa số liệu trên mọi giả định thật; tách doanh thu định kỳ/một lần; đường ống agent với CLI giả lập (stream-json,
 token, tiến độ, huỷ, hết quota → chuyển tài khoản, khởi động lại, job chỉ được nhận một lần); cô lập agent; agent ngoài qua API token; dữ liệu đầu vào lạ.
 
@@ -87,6 +87,14 @@ Header: `Authorization: Bearer gp_…`. Token không tạo được token khác,
 | **Cài đặt hệ thống** | Chung (tên, email hỗ trợ, URL công khai, thị trường mặc định) · Đăng ký & truy cập (mở/chỉ mời, giới hạn tên miền email, Google) · Chạy Plan & hạn mức · Vận hành (bảo trì chỉ-xem, thông báo toàn hệ thống, giữ log N ngày) · Sao lưu (.zip nhất quán) |
 
 Quy tắc giao diện (token màu, khung trang, trạng thái, thuật ngữ): `saas/static/DESIGN.md`.
+
+**Email (SMTP):** owner nhập máy chủ SMTP ở Cài đặt hệ thống → Email (có nút gửi thử). Bật: quên mật khẩu (link dùng một lần, 1 giờ;
+câu trả lời không lộ email nào có tài khoản), gửi lời mời qua email, báo khi Plan chạy xong (người dùng tắt được ở Tuỳ chọn).
+Chưa cấu hình → các chỗ đó nói rõ và chỉ cách khác (admin đặt lại mật khẩu, sao chép link mời).
+
+**Trần chi phí mỗi lượt chạy:** người dùng nhập ở tab Chạy Plan (key riêng); owner đặt mặc định cho tài khoản hệ thống. Claude Code
+dừng khi ước tính chạm trần (`--max-budget-usd`) và agent nhận chỉ dẫn làm tiết kiệm (≤ 3 subagent song song). Hết tín dụng / key bị
+từ chối / chạm trần đều có thông báo cụ thể. Key OpenRouter: Claude Code qua "Anthropic Skin" (`ANTHROPIC_BASE_URL=https://openrouter.ai/api`).
 
 ## Lịch sử phiên bản & kiểm tra số liệu
 

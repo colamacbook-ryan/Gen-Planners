@@ -115,6 +115,21 @@ def revoke(*paths):
             os.chmod(p, 0o700)
 
 
+def can_read(path) -> bool:
+    """User agent đọc được file này không (mọi thư mục cha cho đi qua + file cho đọc)."""
+    ids = agent_ids()
+    if not ids:
+        return True
+    uid, gid = ids
+    p = Path(os.path.realpath(path))
+    pick = lambda st, bits: bool(st.st_mode & (bits[0] if st.st_uid == uid else bits[1] if st.st_gid == gid else bits[2]))  # noqa: E731
+    try:
+        return all(pick(os.stat(d), (stat.S_IXUSR, stat.S_IXGRP, stat.S_IXOTH)) for d in p.parents) and \
+            pick(os.stat(p), (stat.S_IRUSR, stat.S_IRGRP, stat.S_IROTH))
+    except OSError:
+        return False
+
+
 def can_exec(path) -> bool:
     """User agent có chạy được file này không — mọi thư mục cha phải cho đi qua, file phải đọc + chạy được.
     Hay vấp: CLI cài theo kiểu per-user vào /root/.local/bin (thư mục /root là 700)."""
@@ -150,9 +165,19 @@ def strip_links(path):
     return removed
 
 
+# Danh sách CHO PHÉP: tiến trình con (agent, gen.py) chỉ nhận đúng những biến cần để chạy và ra mạng.
+# Danh sách cấm từng để lọt biến lạ của máy chủ (vd biến phiên của chính trình điều khiển) sang agent.
+ENV_ALLOW = re.compile(r"^(PATH|LANG|LANGUAGE|LC_\w+|TZ|TERM|TMPDIR|USER|LOGNAME|SHELL|PYTHONPATH|PYTHONUNBUFFERED|"
+                       r"(HTTPS?|NO|ALL)_PROXY|(https?|no|all)_proxy|SSL_CERT_(FILE|DIR)|REQUESTS_CA_BUNDLE|CURL_CA_BUNDLE|NODE_EXTRA_CA_CERTS|"
+                       r"NODE_OPTIONS|PLAYWRIGHT_BROWSERS_PATH)$")
+
+
+EXTRA_ALLOW: set[str] = set()                # biến thêm có chủ đích (vd test đặt FAKE_AGENT_MODE cho CLI giả lập)
+
+
 def clean_env(env: dict) -> dict:
-    """Bỏ mọi biến môi trường bí mật của máy chủ; giữ lại khoá mà chính job cần (đặt sau hàm này)."""
-    return {k: v for k, v in env.items() if not SECRET_ENV.search(k)}
+    """Chỉ giữ biến trong ENV_ALLOW / EXTRA_ALLOW (và không phải bí mật); khoá mà chính job cần được đặt sau hàm này."""
+    return {k: v for k, v in env.items() if (ENV_ALLOW.match(k) or k in EXTRA_ALLOW) and not SECRET_ENV.search(k)}
 
 
 def popen_kwargs():

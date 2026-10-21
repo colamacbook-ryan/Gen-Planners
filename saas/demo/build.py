@@ -45,7 +45,7 @@ def build():
 
     # --- điều hướng: thay URL máy chủ bằng điều hướng trong trang
     ls, lb, lj = pages["login"]
-    lj = sub(lj, 'location.href = "/app";', 'GPDEMO.nav("app");')
+    lj = sub(lj, 'location.href = "/app";', 'GPDEMO.nav("app");', -1)   # mọi chỗ: đăng nhập, đăng ký, đặt lại mật khẩu
     lb = sub(lb, '<p class="hint" style="margin-top:16px" id="switch"></p>',
              '<p class="hint" style="margin-top:16px" id="switch"></p><p class="hint">Bản demo: tài khoản và dữ liệu chỉ lưu trong trình duyệt này.</p>')
     as_, ab, aj = pages["app"]
