@@ -4,6 +4,7 @@ billing = owner    → chạy bằng agent profile (tài khoản của owner), t
 billing = user_key → chạy bằng API key của chính user (Anthropic → claude CLI, Gemini → agy chế độ API key), HOME tạm riêng job.
 """
 import json
+import re
 import os
 import shutil
 import signal
@@ -31,7 +32,8 @@ def log(job_id, text):
 
 def base_env():
     """Môi trường cho gen.py/export.py: không mang bí mật của máy chủ (nội dung dự án do người dùng/agent viết)."""
-    return {**sandbox.clean_env(dict(os.environ)), "GP_PROJECTS": str(WORKSPACE), "GP_HISTORY": str(HISTORY), "PYTHONUNBUFFERED": "1"}
+    return {**sandbox.clean_env(dict(os.environ)), "GP_PROJECTS": str(WORKSPACE), "GP_HISTORY": str(HISTORY), "PYTHONUNBUFFERED": "1",
+            "GP_RENDER_MEM_MB": os.environ.get("GP_RENDER_MEM_MB", "2048")}
 
 
 def sh(job_id, cmd, env=None, cwd=None, timeout=600):
@@ -194,6 +196,17 @@ def export_check(slug):
     return {"errors": errors, "output": "\n".join(out)[-8000:]}
 
 
+def free_tier_daily(tail):
+    """Key Gemini gói miễn phí hết lượt/ngày: nói thẳng là gói không đủ chạy Plan, không chỉ 'có vẻ hết quota'."""
+    m = re.search(r"free_tier\w*, limit: (\d+), model: ([\w.-]+)", tail)
+    if not m or "PerDay" not in tail:
+        return None
+    wait = re.search(r"retry in (\d+)h", tail)
+    return (f"Key Gemini đang ở gói miễn phí: chỉ {m[1]} lượt gọi/ngày cho {m[2]}"
+            f"{f' (mở lại sau khoảng {wait[1]} giờ)' if wait else ''} — một lần Chạy Plan cần hàng trăm lượt. "
+            "Bật thanh toán (billing) cho project Google Cloud của key, hoặc dùng tài khoản agy đăng nhập Google.")
+
+
 # ------------------------------------------------------------------ main job
 def run_job(job):
     jid = job["id"]
@@ -269,7 +282,7 @@ def run_job(job):
                         log(jid, f"⚠ Tài khoản \"{profile['name']}\" {STATUS_VI[reason]} → chuyển sang \"{nxt['name']}\" và chạy lại.")
                         db.update("jobs", jid, status="queued", profile_id=nxt["id"], attempt=job["attempt"] + 1)
                         return
-                    return finish(jid, "failed", f"Tài khoản agent {STATUS_VI[reason]} — báo owner (admin → Core agent)", p)
+                    return finish(jid, "failed", free_tier_daily(tail) or f"Tài khoản agent {STATUS_VI[reason]} — báo owner (admin → Core agent)", p)
                 return finish(jid, "failed", f"Agent thoát mã {code}", p)
         ok, errors = post_build(jid, p, link_check=engine != "demo")
         if not ok:

@@ -177,3 +177,54 @@ def test_project_dir_private_from_creation(env):
     slug = bob.post("/api/projects", json={"name": "Bí mật", "idea": "Ý tưởng chưa muốn ai đọc trộm, chạy demo thôi."}).json()["slug"]
     assert wait(bob, bob.post(f"/api/projects/{slug}/run", json={"billing": "demo", "force": True}).json()["job_id"])["status"] == "done"
     assert (WORKSPACE / slug).stat().st_mode & 0o777 == 0o700
+
+
+def test_template_resource_bombs_are_refused():
+    import gen
+    env = gen.make_env(main.ROOT / "projects" / "ai-robot-pet", {"meta": {}, "assumptions": {}}, {}, [])
+    from jinja2.exceptions import SecurityError
+    for bomb in ("{{ ('ab'*20000000)|length }}", "{{ ([0]*50000000)|length }}", "{{ 10**(10**7) }}", "{{ (('a'*100000)*100000) }}"):
+        with pytest.raises(SecurityError):
+            env.from_string(bomb).render()
+    assert env.from_string("{{ 'ab'*3 }} {{ (1.07**5)|round(2) }}").render() == "ababab 1.4"
+
+
+def test_login_throttle_also_counts_per_account():
+    """IP có thể bị giả (X-Forwarded-For) — xoay IP vẫn bị chặn theo tài khoản."""
+    from types import SimpleNamespace
+    from fastapi import HTTPException
+    main._attempts.clear()
+    blocked = 0
+    for i in range(40):
+        req = SimpleNamespace(client=SimpleNamespace(host=f"203.0.113.{i}"))
+        try:
+            main.throttle(req, "victim@x.io")
+        except HTTPException as e:
+            blocked += e.status_code == 429
+    assert blocked == 10                                                          # 30 lần / 15 phút / tài khoản
+    main._attempts.clear()
+
+
+def test_admin_cannot_reset_another_admins_password(env):
+    owner, bob, _ = env
+    with TestClient(main.app, headers=X) as adm, TestClient(main.app, headers=X) as adm2:
+        login(adm, "sec-adm1@x.io")
+        login(adm2, "sec-adm2@x.io")
+        rows = owner.get("/api/admin/users").json()
+        users = {u["email"]: u["id"] for u in (rows["users"] if isinstance(rows, dict) else rows)}
+        for e in ("sec-adm1@x.io", "sec-adm2@x.io"):
+            assert owner.patch(f"/api/admin/users/{users[e]}", json={"role": "admin"}).status_code == 200
+        assert adm.patch(f"/api/admin/users/{users['sec-adm2@x.io']}", json={"password": "hijacked-123"}).status_code == 403
+        assert adm.patch(f"/api/admin/users/{users['sec-bob@x.io']}", json={"password": "reset-by-admin1"}).status_code == 200
+        assert owner.patch(f"/api/admin/users/{users['sec-adm2@x.io']}", json={"password": "owner-reset-1"}).status_code == 200
+    bob.post("/api/auth/login", json={"email": "sec-bob@x.io", "password": "reset-by-admin1"})
+    main.db.x("UPDATE users SET pw_hash=? WHERE email='sec-bob@x.io'", (main.hash_pw("password1"),))
+
+
+def test_free_tier_daily_quota_message():
+    from saas.server import worker
+    tail = ("Error 429 ... Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, "
+            "limit: 20, model: gemini-3.8-flash\nPlease retry in 19h56m36s ... quotaId:GenerateRequestsPerDayPerProjectPerModel-FreeTier")
+    msg = worker.free_tier_daily(tail)
+    assert "20 lượt gọi/ngày" in msg and "gemini-3.8-flash" in msg and "19 giờ" in msg and "billing" in msg
+    assert worker.free_tier_daily("Error 429 rate limit per minute") is None

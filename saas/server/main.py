@@ -110,15 +110,18 @@ def public_user(u):
     return {k: u[k] for k in ("id", "email", "name", "role", "status", "created", "last_login")}
 
 
-def throttle(request: Request, who="", record=True):
-    """Chặn dò mật khẩu: tối đa 10 lần THẤT BẠI / 5 phút cho mỗi (IP, email). Đứng sau proxy: chạy uvicorn --proxy-headers."""
-    k = f"{request.client.host if request.client else '?'}|{who}"
+def throttle(request: Request, who="", record=True, per_account=True):
+    """Chặn dò mật khẩu: tối đa 10 lần THẤT BẠI / 5 phút cho mỗi (IP, email), và 30 / 15 phút cho mỗi email bất kể IP —
+    IP có thể bị giả qua X-Forwarded-For nếu proxy cấu hình sai, giới hạn theo tài khoản thì không."""
     now = time.time()
-    _attempts[k] = [t for t in _attempts[k] if now - t < 300]
-    if len(_attempts[k]) >= 10:
-        raise HTTPException(429, "Thử quá nhiều lần, đợi 5 phút.")
+    rules = [(f"{request.client.host if request.client else '?'}|{who}", 10, 300)] + ([(f"*|{who}", 30, 900)] if per_account else [])
+    for k, limit, window in rules:
+        _attempts[k] = [t for t in _attempts[k] if now - t < window]
+        if len(_attempts[k]) >= limit:
+            raise HTTPException(429, f"Thử quá nhiều lần, đợi {window // 60} phút.")
     if record:
-        _attempts[k].append(now)
+        for k, *_ in rules:
+            _attempts[k].append(now)
 
 
 def to_int(v, name, lo=0, hi=10**9, allow_none=True):
@@ -232,7 +235,7 @@ def public(invite: str = ""):
 
 @app.post("/api/auth/signup")
 async def signup(request: Request):
-    throttle(request, "signup")
+    throttle(request, "signup", per_account=False)
     b = await body(request)
     email, pw = str(b.get("email", "")).strip().lower(), str(b.get("password", ""))
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email) or len(pw) < 8:
@@ -1268,6 +1271,8 @@ async def admin_edit_user(uid: int, request: Request, a=Depends(need_admin)):
         if k in b:
             kw[k] = to_int(b[k], "Hạn mức", 0, 10000)
     if b.get("password"):
+        if t["role"] != "user" and a["role"] != "owner":
+            raise HTTPException(403, "Chỉ owner đặt lại mật khẩu cho admin")
         if len(b["password"]) < 8:
             raise HTTPException(400, "Mật khẩu tối thiểu 8 ký tự")
         kw.update(pw_hash=hash_pw(b["password"]), session_ver=t["session_ver"] + 1)

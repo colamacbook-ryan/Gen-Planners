@@ -13,8 +13,10 @@ RUN curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr
     && if [ "$WITH_CLAUDE" = "1" ]; then npm install -g @anthropic-ai/claude-code; fi
 # User riêng cho core agent: agent chạy dưới user này, không đọc được app.db, khoá mã hoá hay dự án người khác
 RUN useradd -r -m -d /home/gpagent -s /usr/sbin/nologin gpagent
-ENV GP_DATA=/data PYTHONUNBUFFERED=1
+# FORWARDED_ALLOW_IPS: chỉ tin X-Forwarded-For từ reverse proxy của bạn (đặt IP/CIDR của proxy). KHÔNG đặt "*" —
+# ai cũng giả được IP và vượt giới hạn dò mật khẩu theo IP.
+ENV GP_DATA=/data PYTHONUNBUFFERED=1 FORWARDED_ALLOW_IPS=127.0.0.1
 VOLUME /data
 EXPOSE 8080
-# --proxy-headers: lấy IP thật của người dùng khi đứng sau reverse proxy (chống dò mật khẩu theo IP)
-CMD ["uvicorn", "saas.server.main:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips=*"]
+# --proxy-headers: lấy IP thật của người dùng khi đứng sau reverse proxy (chống dò mật khẩu theo IP) — chỉ từ FORWARDED_ALLOW_IPS
+CMD ["uvicorn", "saas.server.main:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers"]

@@ -39,6 +39,7 @@ def main():
     ap.add_argument("--out")
     ap.add_argument("--media-base", default="media")
     args = ap.parse_args()
+    gen.limit_memory()
     d = gen.PROJECTS / args.slug
     out = Path(args.out) if args.out else d / "build" / "export"
     out.mkdir(parents=True, exist_ok=True)

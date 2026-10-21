@@ -26,7 +26,42 @@ from pathlib import Path
 
 import yaml
 from jinja2 import FileSystemLoader, StrictUndefined
+from jinja2.exceptions import SecurityError
 from jinja2.sandbox import ImmutableSandboxedEnvironment
+
+
+class SafeEnvironment(ImmutableSandboxedEnvironment):
+    """Sandbox chặn chạy code, nhưng không chặn phép tính khổng lồ ('a'*10**10, 10**10**7) làm cạn RAM máy chủ."""
+    intercepted_binops = frozenset({"*", "**"})
+    MAX_ITEMS = 1_000_000
+
+    def call_binop(self, context, operator, left, right):
+        if operator == "**" and isinstance(right, (int, float)) and abs(right) > 1000:
+            raise SecurityError("luỹ thừa quá lớn")
+        if operator == "*":
+            for seq, n in ((left, right), (right, left)):
+                if isinstance(seq, (str, list, tuple)) and isinstance(n, int) and len(seq) * n > self.MAX_ITEMS:
+                    raise SecurityError("chuỗi/danh sách nhân ra quá lớn")
+        return super().call_binop(context, operator, left, right)
+
+
+def limit_memory():
+    """SaaS đặt GP_RENDER_MEM_MB: trần bộ nhớ (soft) cho tiến trình render — phòng hờ ngoài SafeEnvironment.
+    Chỉ hạ soft limit, nên pandoc (Haskell giữ trước nhiều bộ nhớ ảo) được trả lại trần cũ qua _unlimit."""
+    mb = os.environ.get("GP_RENDER_MEM_MB")
+    try:
+        import resource                                   # không có trên Windows — chạy CLI ở máy cá nhân thì bỏ qua
+    except ImportError:
+        return
+    if mb:
+        _, hard = resource.getrlimit(resource.RLIMIT_AS)
+        resource.setrlimit(resource.RLIMIT_AS, (int(mb) * 2**20, hard))
+
+
+def _unlimit():
+    import resource
+    _, hard = resource.getrlimit(resource.RLIMIT_AS)
+    resource.setrlimit(resource.RLIMIT_AS, (hard, hard))
 
 ROOT = Path(__file__).resolve().parent
 PROJECTS = Path(os.environ.get("GP_PROJECTS") or ROOT / "projects")  # SaaS trỏ workspace riêng
@@ -211,7 +246,7 @@ def make_env(d: Path, assumptions: dict, evidence: dict, issues: list):
         return "(" + "; ".join(out) + ")"
 
     # sandbox: văn bản do agent/người dùng viết (có thể bị prompt-injection) — không được chạm tới Python/hệ điều hành
-    env = ImmutableSandboxedEnvironment(loader=FileSystemLoader(str(d)), undefined=StrictUndefined,
+    env = SafeEnvironment(loader=FileSystemLoader(str(d)), undefined=StrictUndefined,
                       trim_blocks=True, lstrip_blocks=True)
     env.filters.update(money=money, num=num, pct=pct, ty=ty)
     env.globals.update(cite=cite)
@@ -277,8 +312,8 @@ def cmd_build(slug):
 
     pandoc = shutil.which("pandoc")
     if pandoc:
-        subprocess.run([pandoc, "business-plan.md", "-o", "business-plan.docx", "--toc"], cwd=out, check=True)
-        subprocess.run([pandoc, "deck.md", "-o", "deck.pptx", "--slide-level=2"], cwd=out, check=True)
+        subprocess.run([pandoc, "business-plan.md", "-o", "business-plan.docx", "--toc"], cwd=out, check=True, preexec_fn=_unlimit)
+        subprocess.run([pandoc, "deck.md", "-o", "deck.pptx", "--slide-level=2"], cwd=out, check=True, preexec_fn=_unlimit)
     else:
         print("! Không có pandoc — chỉ xuất .md/.xlsx")
 
@@ -673,6 +708,7 @@ def main():
     ck.add_argument("--json", action="store_true", help="in lỗi/cảnh báo dạng JSON (cho SaaS)")
     sub.add_parser("status").add_argument("slug", nargs="?")
     a = ap.parse_args()
+    limit_memory()
     if a.cmd == "new":
         cmd_new(a.slug, a.name, a.idea_file)
     elif a.cmd == "build":

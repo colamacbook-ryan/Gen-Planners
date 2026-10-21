@@ -88,7 +88,10 @@ Header: `Authorization: Bearer gp_…`. Token không tạo được token khác,
 ## Bảo mật
 
 - Mật khẩu scrypt; phiên là cookie ký (HttpOnly, SameSite=Lax), khoá tài khoản hay đổi mật khẩu làm phiên cũ mất hiệu lực.
-- Mọi lệnh ghi cần header `X-GP` (chặn CSRF từ form chéo site). Đăng nhập giới hạn 10 lần / 5 phút / IP.
+- Mọi lệnh ghi cần header `X-GP` (chặn CSRF từ form chéo site). Đăng nhập giới hạn 10 lần thất bại / 5 phút / IP và
+  30 / 15 phút / tài khoản (xoay IP giả cũng bị chặn). Sau reverse proxy: đặt `FORWARDED_ALLOW_IPS` = IP proxy, không dùng `*`.
+- Render hồ sơ: phép tính khổng lồ trong template bị chặn, tiến trình render có trần bộ nhớ (`GP_RENDER_MEM_MB`, mặc định 2048).
+- Chỉ owner đặt lại mật khẩu cho admin.
 - Dữ liệu dự án cô lập theo user; admin chỉ đọc. Trang Core agent và Cài đặt chỉ owner.
 - **Cô lập core agent:** agent có quyền shell và đọc nội dung do người dùng viết (có thể bị prompt-injection). Khi máy chủ chạy
   bằng root và có user hệ thống `gpagent` (Dockerfile tạo sẵn; đổi tên bằng `GP_AGENT_USER`), mỗi job chạy dưới user đó và chỉ
