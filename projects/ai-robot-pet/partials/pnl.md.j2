@@ -4,12 +4,20 @@
 |---|{% for y in f.years %}---:|{% endfor %}
 
 | Doanh thu |{% for y in f.years %} {{ y.revenue|num }} |{% endfor %}
+{% if f.metrics.one_off_revenue_total %}
+| · định kỳ |{% for y in f.years %} {{ y.revenue_recurring|num }} |{% endfor %}
+
+| · bán một lần |{% for y in f.years %} {{ y.revenue_one_off|num }} |{% endfor %}
+{% endif %}
 
 | Lợi nhuận gộp |{% for y in f.years %} {{ y.gross_profit|num }} |{% endfor %}
 
 | Chi phí vận hành |{% for y in f.years %} {{ y.opex|num }} |{% endfor %}
 
 | EBITDA |{% for y in f.years %} {{ y.ebitda|num }} |{% endfor %}
+{% if f.metrics.one_off_revenue_total %}
+| EBITDA định kỳ |{% for y in f.years %} {{ y.ebitda_recurring|num }} |{% endfor %}
+{% endif %}
 
 | Lợi nhuận ròng |{% for y in f.years %} {{ y.net_income|num }} |{% endfor %}
 

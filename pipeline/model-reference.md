@@ -29,6 +29,7 @@ model:
   revenue_streams:
     - {id: drinks, segment: drinks, price: price_cup, volume: [cups_per_outlet, cum:new_outlets], cogs_pct: cogs_drink_pct}
     - {id: kids, segment: kids, price: class_fee, volume: class_seats, cogs_pct: cogs_kids_pct, core: true}   # core: mảng lõi
+    - {id: kit, segment: franchise, price: kit_price, volume: new_partners, cogs_pct: kit_cogs, kind: one_off}  # bán một lần
   opex:
     - {name: Thuê mặt bằng, amount: [rent_month_x12, cum:new_outlets], segment: drinks}   # segment → tính vào lợi nhuận đóng góp của mảng
     - {name: Nhân sự văn phòng, amount: opex_hq}
@@ -39,18 +40,21 @@ model:
   pre_money: pre_money
   discount_rate: discount_rate
   exit_multiple: exit_multiple    # × EBITDA năm cuối
+  exit_basis: recurring_ebitda    # (tuỳ chọn) × EBITDA định kỳ — bỏ lãi gộp của dòng kind: one_off; mặc định ebitda
   scenarios:                      # hệ số nhân lên base
     base: {}
     bear: {volume_x: 0.6, price_x: 0.9, opex_x: 1.1}
     kids_weak: {stream_x: {kids: 0.6}}   # tầng yếu nhất chỉ đạt 60% — bắt buộc có một kịch bản như vậy
+    no_kit: {stream_x: {kit: 0}}         # bỏ hẳn doanh thu bán một lần — chứng minh mô hình không sống nhờ bán thiết bị
 ```
 
 ## Dùng trong văn bản (sections/*.md, deck.md) — Jinja, không gõ số tay
 - Giả định: `{{ a.price_cup|money }}`, `{{ a.cups_year[0]|num }}`, `{{ a.cit_rate|pct }}`
 - Kết quả: `{{ fin.base.last.revenue|ty }}` (tỷ đ), `{{ fin.base.metrics.breakeven_year }}`, `{{ fin.bear.metrics.funding_gap|money }}`
-  - `fin.<kịch bản>.years[i]`: year, revenue, cogs, gross_profit, gross_margin, opex, ebitda, tax, net_income, capex, fcf, cash_end, cum_fcf, streams.<id>
+  - `fin.<kịch bản>.years[i]`: year, revenue, cogs, gross_profit, gross_margin, opex, ebitda, tax, net_income, capex, fcf, cash_end, cum_fcf, streams.<id>,
+    revenue_recurring, revenue_one_off, recurring_share, ebitda_recurring
   - `fin.<kịch bản>.metrics`: raise_amount, founder_capital, pre_money, post_money, investor_stake, breakeven_year, payback_year,
-    min_cash, funding_gap, npv, exit_value, investor_exit, investor_moic
+    min_cash, funding_gap, npv, exit_basis, exit_ebitda, recurring_share, one_off_revenue_total, exit_value, investor_exit, investor_moic
   - `fin.<kịch bản>.segments.<id>`: name, years[i].{revenue, gross_profit, direct_opex, contribution, margin}, last, total_revenue, total_contribution
 - Bộ lọc: `money` (đơn vị meta, tự bỏ ,0), `ty` (triệu → tỷ), `num(d)`, `pct(d)`
 - Nguồn: `{{ cite('ev-jll-q2') }}` → "(JLL, 2026)"; danh mục đầy đủ có URL nằm ở Excel và trình xem.
@@ -63,5 +67,5 @@ model:
   `takeaway: "Doanh thu {{ fin.base.last.year }} đạt {{ fin.base.last.revenue|ty }}"`, `value: "{{ fin.base.metrics.breakeven_year }}"`.
   `tools/export.py` render các chuỗi này; `gen.py check` báo lỗi nếu biểu thức sai và nhắc những chỗ số tiền/% gõ tay.
 - `gen.py check` còn có **cảnh báo độ hợp lý**: biên EBITDA > 45%, có lãi ngay năm đầu, doanh thu tăng > 4×/năm, MOIC > 20×,
-  kịch bản xấu thiếu tiền. Không chặn build — nhưng nhà đầu tư sẽ hỏi đúng những chỗ đó.
+  kịch bản xấu thiếu tiền, doanh thu bán một lần > 20% mà định giá vẫn ×EBITDA tổng. `kind` hay `exit_basis` sai giá trị là ERROR. Không chặn build — nhưng nhà đầu tư sẽ hỏi đúng những chỗ đó.
 - `verified` phải có ít nhất một nguồn **bên ngoài**: nguồn `type: founder | interview | internal | estimate` hay `ev-000` không đủ.

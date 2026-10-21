@@ -77,7 +77,8 @@ def compute(assumptions: dict, scenario: dict) -> dict:
             return out
         return per_year(A[ref]["value"] if isinstance(ref, str) else ref, n)
 
-    years = [dict(year=start + i, revenue=0.0, cogs=0.0, opex=0.0, streams={}) for i in range(n)]
+    years = [dict(year=start + i, revenue=0.0, cogs=0.0, opex=0.0, streams={}, revenue_one_off=0.0, gp_one_off=0.0)
+             for i in range(n)]
     segs = {}
     seg = lambda sid: segs.setdefault(sid, dict(
         id=sid, name=M.get("segments", {}).get(sid, sid),
@@ -92,6 +93,9 @@ def compute(assumptions: dict, scenario: dict) -> dict:
             y["streams"][s["id"]] = r
             y["revenue"] += r
             y["cogs"] += r * cogs[i]
+            if s.get("kind") == "one_off":           # bán một lần (thiết bị, phí gia nhập…) — không lặp lại, tách khỏi định giá
+                y["revenue_one_off"] += r
+                y["gp_one_off"] += r * (1 - cogs[i])
             sy[i]["revenue"] += r
             sy[i]["cogs"] += r * cogs[i]
     for o in M["opex"]:
@@ -118,6 +122,9 @@ def compute(assumptions: dict, scenario: dict) -> dict:
         y["gross_profit"] = y["revenue"] - y["cogs"]
         y["gross_margin"] = y["gross_profit"] / y["revenue"] if y["revenue"] else 0
         y["ebitda"] = y["gross_profit"] - y["opex"]
+        y["revenue_recurring"] = y["revenue"] - y["revenue_one_off"]
+        y["recurring_share"] = y["revenue_recurring"] / y["revenue"] if y["revenue"] else 0
+        y["ebitda_recurring"] = y["ebitda"] - y["gp_one_off"]     # EBITDA nếu bỏ lãi gộp từ khoản bán một lần
         taxable = y["ebitda"] + loss_cf          # chuyển lỗ đơn giản
         y["tax"] = max(taxable, 0) * tax_rate[i]
         loss_cf = min(taxable, 0)
@@ -131,7 +138,9 @@ def compute(assumptions: dict, scenario: dict) -> dict:
 
     pre = A[M["pre_money"]]["value"]
     stake = raise_amt / (pre + raise_amt)
-    exit_value = max(years[-1]["ebitda"], 0) * A[M["exit_multiple"]]["value"]
+    basis = M.get("exit_basis", "ebitda")        # recurring_ebitda: chỉ định giá phần lặp lại (thận trọng, chuẩn khi có doanh thu một lần)
+    exit_ebitda = years[-1]["ebitda_recurring" if basis == "recurring_ebitda" else "ebitda"]
+    exit_value = max(exit_ebitda, 0) * A[M["exit_multiple"]]["value"]
     r = A[M["discount_rate"]]["value"]
     first = lambda cond: next((y["year"] for y in years if cond(y)), None)
     metrics = dict(
@@ -145,6 +154,10 @@ def compute(assumptions: dict, scenario: dict) -> dict:
         min_cash=min(y["cash_end"] for y in years),
         funding_gap=max(0, -min(y["cash_end"] for y in years)),
         npv=-raise_amt + sum(y["fcf"] / (1 + r) ** (i + 1) for i, y in enumerate(years)),
+        exit_basis=basis,
+        exit_ebitda=exit_ebitda,
+        recurring_share=years[-1]["recurring_share"],
+        one_off_revenue_total=sum(y["revenue_one_off"] for y in years),
         exit_value=exit_value,
         investor_exit=exit_value * stake,
         investor_moic=exit_value * stake / raise_amt if raise_amt else 0,
@@ -275,8 +288,10 @@ def write_excel(path, ctx, assumptions, evidence):
         val = v["value"] if not isinstance(v["value"], list) else ", ".join(map(str, v["value"]))
         ws.append([k, v.get("label"), val, v.get("unit"), v.get("status"), v.get("confidence"),
                    ", ".join(v.get("source", []) or []), v.get("note")])
-    rows = [("Doanh thu", "revenue"), ("Giá vốn", "cogs"), ("Lợi nhuận gộp", "gross_profit"),
-            ("Chi phí vận hành", "opex"), ("EBITDA", "ebitda"), ("Thuế", "tax"),
+    rows = [("Doanh thu", "revenue"), ("  trong đó định kỳ", "revenue_recurring"), ("  trong đó bán một lần", "revenue_one_off"),
+            ("Giá vốn", "cogs"), ("Lợi nhuận gộp", "gross_profit"),
+            ("Chi phí vận hành", "opex"), ("EBITDA", "ebitda"),
+            ("EBITDA định kỳ (bỏ lãi gộp bán một lần)", "ebitda_recurring"), ("Thuế", "tax"),
             ("Lợi nhuận ròng", "net_income"), ("Capex", "capex"), ("Free cash flow", "fcf"),
             ("Tiền cuối kỳ", "cash_end")]
     for name, f in ctx["fin"].items():
@@ -354,6 +369,9 @@ def check_datasets(d):
 INTERNAL_EVIDENCE = {"internal", "founder", "interview", "estimate"}
 
 
+STREAM_KINDS = ("recurring", "one_off")
+
+
 def sanity(fin):
     """Cảnh báo số liệu khó tin — nhà đầu tư sẽ hỏi ngay; không chặn build, chỉ nhắc kiểm lại giả định."""
     out, base = [], fin.get("base")
@@ -368,6 +386,10 @@ def sanity(fin):
     for a, b in zip(Y[1:], Y[2:]):
         if a["revenue"] > 0 and b["revenue"] / a["revenue"] > 4:
             out.append(f"hợp lý: doanh thu {b['year']} gấp {b['revenue'] / a['revenue']:.1f} lần {a['year']} — tăng trưởng rất nóng, cần lý do cụ thể")
+    one_off = 1 - last["recurring_share"] if last["revenue"] else 0
+    if one_off > 0.2 and M.get("exit_basis") == "ebitda":
+        out.append(f"hợp lý: {one_off:.0%} doanh thu năm {last['year']} là bán một lần nhưng định giá thoát vốn vẫn nhân trên toàn bộ EBITDA "
+                   f"— đặt model.exit_basis: recurring_ebitda (EBITDA định kỳ năm cuối = {last['ebitda_recurring']:,.0f})".replace(",", "."))
     if M.get("investor_moic", 0) > 20:
         out.append(f"hợp lý: MOIC nhà đầu tư {M['investor_moic']:.0f}× — quá đẹp để tin, kiểm lại sản lượng và hệ số thoát vốn")
     if M.get("payback_year") and M["payback_year"] <= Y[0]["year"]:
@@ -435,6 +457,12 @@ def cmd_check(slug, as_json=False):
             env.get_template(f"sections/{s.name}").render(**ctx)
         env.get_template("deck.md").render(**ctx)
         errors += issues
+        M = assumptions.get("model", {})
+        for st in M.get("revenue_streams", []):
+            if st.get("kind", "recurring") not in STREAM_KINDS:
+                errors.append(f"model: revenue_streams {st.get('id')}: kind '{st.get('kind')}' không hợp lệ — dùng {' | '.join(STREAM_KINDS)}")
+        if M.get("exit_basis", "ebitda") not in ("ebitda", "recurring_ebitda"):
+            errors.append(f"model: exit_basis '{M.get('exit_basis')}' không hợp lệ — dùng ebitda | recurring_ebitda")
         base = ctx["fin"].get("base")
         if base and base["metrics"]["funding_gap"] > 0:
             errors.append(f"model: kịch bản base âm tiền {base['metrics']['funding_gap']:,.0f} — số vốn gọi không đủ")

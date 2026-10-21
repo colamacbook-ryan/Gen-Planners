@@ -95,7 +95,9 @@ synthesis:
   - file: assumptions.yaml
     note: >-
       fact_* = dữ kiện có nguồn (verified); giả định kinh doanh = estimate kèm note cách ước tính; segments trong model = các tầng hệ sinh thái
-      của founder; kịch bản bear/base/bull + ít nhất một kịch bản "tầng yếu nhất chỉ đạt 60%".
+      của founder; kịch bản bear/base/bull + ít nhất một kịch bản "tầng yếu nhất chỉ đạt 60%". Dòng doanh thu chỉ thu một lần
+      (bán thiết bị/trạm, phí gia nhập, phí lắp đặt) gắn `kind: one_off`; nếu chúng > 20% doanh thu năm cuối thì đặt
+      `exit_basis: recurring_ebitda` và thêm kịch bản bỏ hẳn dòng đó (stream_x: {id: 0}).
   - file: sections/01..12.md + deck.md
     note: Văn bản Jinja, không gõ số tay.
   - file: story.yaml

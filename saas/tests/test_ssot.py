@@ -145,3 +145,35 @@ def test_history_versions_and_restore():
     import pytest
     with pytest.raises(ValueError):
         history.show("hist", "../etc")
+
+
+def test_one_off_revenue_split_and_exit_basis(capsys):
+    """Doanh thu bán một lần (thiết bị, phí gia nhập) tách khỏi định kỳ; định giá có thể chỉ tính EBITDA định kỳ."""
+    import json
+    import gen
+    gen.PROJECTS = WORKSPACE
+    d = proj("rule-oneoff")
+    src = (d / "assumptions.yaml").read_text()
+    one = src.replace("cogs_pct: pet_cogs, core: true}", "cogs_pct: pet_cogs, core: true, kind: one_off}")
+    A0, A1 = yaml.safe_load(src), yaml.safe_load(one)
+    b0, b1 = gen.compute_all(A0)["base"], gen.compute_all(A1)["base"]
+    for y0, y1 in zip(b0["years"], b1["years"]):
+        assert y0["revenue"] == y1["revenue"] and y0["ebitda"] == y1["ebitda"]      # tổng P&L không đổi
+        assert y1["revenue_one_off"] == pytest.approx(y1["streams"]["pet"])
+        assert y1["revenue_recurring"] + y1["revenue_one_off"] == pytest.approx(y1["revenue"])
+        assert y1["ebitda_recurring"] < y1["ebitda"]
+    assert b0["metrics"]["recurring_share"] == 1 and b1["metrics"]["recurring_share"] < 1
+    assert b1["metrics"]["exit_value"] == b0["metrics"]["exit_value"]                  # mặc định vẫn ×EBITDA tổng
+    A1["model"]["exit_basis"] = "recurring_ebitda"
+    b2 = gen.compute_all(A1)["base"]
+    assert b2["metrics"]["exit_ebitda"] == b2["last"]["ebitda_recurring"]
+    assert b2["metrics"]["exit_value"] < b0["metrics"]["exit_value"]
+
+    (d / "assumptions.yaml").write_text(one)                                           # lint nhắc khi một lần > 20% mà vẫn ×EBITDA tổng
+    gen.cmd_check("rule-oneoff", as_json=True)
+    r = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert not r["errors"] and any("exit_basis: recurring_ebitda" in w for w in r["warnings"])
+    (d / "assumptions.yaml").write_text(one.replace("kind: one_off", "kind: once"))
+    assert gen.cmd_check("rule-oneoff", as_json=True) == 1
+    r = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert any("kind 'once' không hợp lệ" in e for e in r["errors"])

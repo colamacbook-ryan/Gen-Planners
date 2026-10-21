@@ -27,6 +27,7 @@ assumptions:
 model:
   revenue_streams:
     - {id: main, name: Sản phẩm chính, price: price_main, volume: volume_main, cogs_pct: cogs_main_pct}
+    # dòng chỉ thu một lần (bán thiết bị, phí gia nhập): thêm `kind: one_off` — tách khỏi doanh thu định kỳ
   opex:
     - {name: Nhân sự, amount: opex_staff}
     - {name: Marketing, amount: opex_marketing}
@@ -37,6 +38,7 @@ model:
   pre_money: pre_money
   discount_rate: discount_rate
   exit_multiple: exit_multiple
+  # exit_basis: recurring_ebitda   # định giá chỉ trên EBITDA định kỳ khi có doanh thu bán một lần đáng kể (mặc định: ebitda)
   scenarios:            # nhân hệ số lên base
     bear: {volume_x: 0.6, price_x: 0.9, opex_x: 1.1}
     base: {}

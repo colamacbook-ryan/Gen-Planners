@@ -103,7 +103,8 @@ def main():
 
     # ---- tài chính
     def yr(y):
-        return {k: round(y[k], 1) for k in ("year", "revenue", "cogs", "gross_profit", "opex", "ebitda", "net_income", "capex", "fcf", "cash_end")}
+        return {k: round(y[k], 1) for k in ("year", "revenue", "revenue_recurring", "revenue_one_off", "cogs", "gross_profit", "opex", "ebitda",
+                                         "ebitda_recurring", "net_income", "capex", "fcf", "cash_end")}
 
     fin = {}
     for k, f in ctx["fin"].items():
@@ -169,8 +170,9 @@ def main():
     project = dict(id=args.slug, name=p["name"], status="done", version=ctx["version"],
                    updated=dt.datetime.now(dt.timezone.utc).isoformat(),
                    idea=(d / "idea.md").read_text(), stages=p.get("stages", {}), unit=A["meta"]["unit_label"],
-                   kpi=dict(revenue_last=b["years"][-1]["revenue"], ebitda_last=b["years"][-1]["ebitda"], year_last=b["years"][-1]["year"],
-                            breakeven=b["metrics"]["breakeven_year"], raise_total=b["metrics"]["raise_amount"],
+                   kpi=dict(revenue_last=b["years"][-1]["revenue"], ebitda_last=b["years"][-1]["ebitda"], ebitda_recurring_last=b["years"][-1]["ebitda_recurring"], year_last=b["years"][-1]["year"],
+                            breakeven=b["metrics"]["breakeven_year"], recurring_share=b["metrics"]["recurring_share"],
+                            exit_basis=b["metrics"]["exit_basis"], raise_total=b["metrics"]["raise_amount"],
                             phase0=AV.get("phase0_budget", {}).get("value"),
                             sources=len(evidence), assumptions=len(assumptions), by_status=st))
     dump(project, out / "project.json")
@@ -252,6 +254,17 @@ def finance_charts(A, AV, base, F, yrs, series):
                         takeaway=f"Năm cuối {round(rest[-1] / base['years'][-1]['revenue'] * 100)}% doanh thu đến từ hệ sinh thái quanh sản phẩm cốt lõi.",
                         categories=[str(y) for y in yrs],
                         series=[dict(name="Hệ sinh thái", values=[round(v / 1000, 2) for v in rest]), dict(name="Sản phẩm cốt lõi", values=[round(v / 1000, 2) for v in a])],
+                        sources=[dict(t="model", u="")]))
+    if base["metrics"]["one_off_revenue_total"]:
+        rec = [y["revenue_recurring"] for y in base["years"]]
+        one = [y["revenue_one_off"] for y in base["years"]]
+        basis = "EBITDA định kỳ" if base["metrics"]["exit_basis"] == "recurring_ebitda" else "toàn bộ EBITDA"
+        out.append(dict(id="f8", group="finance", title="Doanh thu định kỳ so với bán một lần", type="stacked", unit="tỷ đ", status="model",
+                        takeaway=(f"Năm cuối {round(y5['recurring_share'] * 100)}% doanh thu là định kỳ; "
+                                  f"định giá thoát vốn tính trên {basis} ({vnum(base['metrics']['exit_ebitda'] / 1000, 1)} tỷ đ)."),
+                        categories=[str(y) for y in yrs],
+                        series=[dict(name="Định kỳ", values=[round(v / 1000, 2) for v in rec]),
+                                dict(name="Bán một lần", values=[round(v / 1000, 2) for v in one])],
                         sources=[dict(t="model", u="")]))
     return out
 

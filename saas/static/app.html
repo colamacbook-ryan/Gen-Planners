@@ -347,8 +347,8 @@ function kpiStrip(k, before) {
   const d = (a, b) => before && b != null && a !== b ? `<span class="delta ${a > b ? "up" : "down"}">${a > b ? "▲" : "▼"} ${vnum(Math.abs(a - b) / 1000)} tỷ</span>` : "";
   const bs = k.by_status || {};
   return `<div class="grid g4 kpis">
-    <div class="card kpi"><div class="k">Doanh thu ${k.year_last}</div><b>${vnum(k.revenue_last / 1000)} tỷ</b>${d(k.revenue_last, before?.revenue_last)}</div>
-    <div class="card kpi"><div class="k">EBITDA ${k.year_last}</div><b>${vnum(k.ebitda_last / 1000)} tỷ</b>${d(k.ebitda_last, before?.ebitda_last)}</div>
+    <div class="card kpi"><div class="k">Doanh thu ${k.year_last}</div><b>${vnum(k.revenue_last / 1000)} tỷ</b>${d(k.revenue_last, before?.revenue_last)}${k.recurring_share != null && k.recurring_share < 0.999 ? `<span title="Phần còn lại là bán một lần (thiết bị, phí gia nhập…)">${Math.round(k.recurring_share * 100)}% định kỳ</span>` : ""}</div>
+    <div class="card kpi"><div class="k">EBITDA ${k.year_last}</div><b>${vnum(k.ebitda_last / 1000)} tỷ</b>${d(k.ebitda_last, before?.ebitda_last)}${k.recurring_share != null && k.recurring_share < 0.999 ? `<span title="Bỏ lãi gộp từ khoản bán một lần${k.exit_basis === "recurring_ebitda" ? " — định giá thoát vốn tính trên số này" : ""}">định kỳ ${vnum(k.ebitda_recurring_last / 1000)} tỷ${k.exit_basis === "recurring_ebitda" ? " · cơ sở định giá" : ""}</span>` : ""}</div>
     <div class="card kpi"><div class="k">Năm hoà vốn</div><b>${k.breakeven || "chưa"}</b>${before && before.breakeven !== k.breakeven ? `<span class="delta">trước: ${before.breakeven || "chưa"}</span>` : ""}</div>
     <div class="card kpi"><div class="k">Độ tin cậy số liệu</div><b>${bs.verified || 0}<small> / ${(bs.verified || 0) + (bs.estimate || 0) + (bs.placeholder || 0)}</small></b><span>đã kiểm chứng · ${bs.estimate || 0} ước tính · ${bs.placeholder || 0} chưa có</span></div></div>`;
 }
