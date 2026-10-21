@@ -53,9 +53,9 @@ Biến môi trường: `GP_DATA` (mặc định `saas/data/`, đã gitignore), `
 `GP_SESSION_SECRET` / `GP_FERNET_KEY` nếu muốn quản lý khoá ngoài file. **Sao lưu `GP_DATA/fernet.key`** — mất file này là
 mất mọi API key đã lưu.
 
-Kiểm thử: `GP_DATA=$(mktemp -d) python -m pytest saas/tests -q` — 21 test: luồng đầy đủ; quét quyền mọi route (người lạ,
+Kiểm thử: `GP_DATA=$(mktemp -d) python -m pytest saas/tests -q` — 25 test: luồng đầy đủ (kèm lịch sử phiên bản, lint, khôi phục); quét quyền mọi route (người lạ,
 người dùng khác, user→admin, admin→owner); sửa số liệu trên mọi giả định thật; đường ống agent với CLI giả lập (stream-json,
-token, tiến độ, huỷ, hết quota → chuyển tài khoản, khởi động lại); cô lập agent; agent ngoài qua API token; dữ liệu đầu vào lạ.
+token, tiến độ, huỷ, hết quota → chuyển tài khoản, khởi động lại, job chỉ được nhận một lần); cô lập agent; agent ngoài qua API token; dữ liệu đầu vào lạ.
 
 ## Agent ngoài (Claude Code, Antigravity… của người dùng)
 
@@ -72,6 +72,14 @@ Agent làm việc qua HTTP:
 | `POST /api/jobs/{id}/progress` · `/complete` | báo tiến độ · nộp bài → máy chủ build, kiểm link, xuất hồ sơ |
 
 Header: `Authorization: Bearer gp_…`. Token không tạo được token khác, thu hồi là mất quyền ngay; chi phí AI do người dùng tự trả.
+
+## Lịch sử phiên bản & kiểm tra số liệu
+
+- Mỗi dự án là một repo git riêng trong workspace (`saas/server/history.py`). Mỗi mốc — chạy Plan, build lại, sửa số liệu,
+  agent ngoài nộp bài, khôi phục — là một phiên bản; `build/` không vào git. Tab **Số liệu** → *Phiên bản*: xem diff,
+  khôi phục (tạo phiên bản mới, không xoá lịch sử, rồi tự build lại).
+- *Kiểm tra* chạy `gen.py check --json`: lỗi SSOT, schema `datasets.yaml`, `verified` phải có nguồn ngoài, cảnh báo
+  hợp lý (biên EBITDA > 45%, lãi ngay năm 1, tăng trưởng > 4×/năm, MOIC > 20…). Tham chiếu DSL: `pipeline/model-reference.md`.
 
 ## Bảo mật
 
