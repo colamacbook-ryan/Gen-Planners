@@ -9,16 +9,16 @@
   <aside class="side">
     <div class="brand"><b id="site">Gen Planner</b><small>Từ ý tưởng tới hồ sơ khai phá</small></div>
     <nav>
-      <a href="#home" id="navHome">⌂ Bắt đầu <span class="badge" id="obProg"></span></a>
-      <button id="newBtn" type="button">＋ Dự án mới</button>
+      <a href="#home" id="navHome"><span data-ic="home"></span>Bắt đầu <span class="badge" id="obProg"></span></a>
+      <button id="newBtn" type="button"><span data-ic="plus"></span>Dự án mới</button>
       <div class="sec">Dự án của tôi</div>
       <input id="pq" class="side-search" type="search" placeholder="Tìm dự án…" aria-label="Tìm dự án" hidden>
       <div id="plist"></div>
       <div class="sec" id="ssec" hidden>Dự án mẫu</div>
       <div id="slist"></div>
       <div class="sec">Tài khoản</div>
-      <a href="#settings" id="navSettings">⚙ Cài đặt</a>
-      <a href="/admin" id="navAdmin" hidden>◆ Trang quản trị</a>
+      <a href="#settings" id="navSettings"><span data-ic="gear"></span>Cài đặt</a>
+      <a href="/admin" id="navAdmin" hidden><span data-ic="shield"></span>Trang quản trị</a>
     </nav>
     <div class="foot"><div id="who"></div><a href="#" onclick="logout();return false">Đăng xuất</a></div>
   </aside>
@@ -31,6 +31,8 @@ const TABS = [["interview", "Phỏng vấn"], ["brainstorm", "Brainstorm"], ["br
 const EXAMPLE = {name: "Chuỗi cà phê robot pha chế", idea: "Quán cà phê nhỏ (30–40 m²) nơi tay robot pha chế ngay trước mặt khách — vừa uống vừa xem như một màn trình diễn. Khách đặt món qua app, robot làm 60–80 ly/giờ. Có góc trải nghiệm cho trẻ em lập trình robot đơn giản vào cuối tuần, bán gói sinh nhật. Bắt đầu 1 điểm ở TP.HCM trong trung tâm thương mại, sau 2 năm nhượng quyền. Đội ngũ: tôi là kỹ sư tự động hoá, một bạn làm F&B 8 năm. Vốn tự có khoảng 800 triệu."};
 const CAT = {product: "Sản phẩm", customer: "Khách hàng", channel: "Kênh", revenue: "Doanh thu", ops: "Vận hành", team: "Đội ngũ", risk: "Rủi ro", roadmap: "Lộ trình", other: "Khác"};
 
+$$("[data-ic]").forEach(e => e.outerHTML = icon(e.dataset.ic));          // icon SVG chung cho thanh bên
+Object.defineProperty(window, "ME", {get: () => S.me, configurable: true});            // topbar() dùng chung đọc người dùng hiện tại
 function route() {
   clearInterval(S.poll);
   const h = new URLSearchParams(location.hash.slice(1));
@@ -69,7 +71,7 @@ function openSample() { const s = S.samples[0]; api("/me/onboarding", {body: {vi
 function viewHome() {
   S.cur = null; sideList();
   const ob = S.me.onboarding, next = ob.steps.find(x => !x.done && !x.optional), sm = S.samples[0], first = S.me.name || S.me.email.split("@")[0];
-  $("#main").innerHTML = topbar(`Chào ${esc(first)}`) + `</div><div class="body">
+  $("#main").innerHTML = topbar(`Chào ${esc(first)}`, "Từ ý tưởng tới bộ hồ sơ gọi vốn — làm theo từng bước bên dưới") + `<div class="body">
     <div class="grid g2" style="align-items:start">
       <section class="card"><div class="row"><h2 class="grow" style="margin:0">Bắt đầu trong ${ob.total} bước</h2><span class="hint">${ob.done}/${ob.total}</span></div>
         <div class="meter" style="margin:10px 0 6px"><i style="width:${ob.done / ob.total * 100}%"></i></div>
@@ -85,7 +87,7 @@ function viewHome() {
           <a href="/admin#agents"><button type="button">Mở trang Core agent →</button></a></section>` : ""}
         <section class="card"><div class="k">Ý tưởng của bạn</div><h2 style="margin:6px 0">Tạo dự án mới</h2>
           <p class="hint">Chỉ cần tên và vài câu mô tả. Trợ lý sẽ phỏng vấn để hiểu sâu hơn — không cần chuẩn bị gì thêm.</p>
-          <button type="button" id="homeNew">＋ Dự án mới</button></section>
+          <button type="button" id="homeNew">Dự án mới</button></section>
         ${S.me.has_keys || S.me.ai_live ? "" : `<section class="card"><div class="k">Trợ lý AI</div><p class="hint" style="margin:6px 0 10px">Trợ lý phỏng vấn và brainstorm chạy bằng API key AI của bạn (Anthropic, OpenAI, Gemini hoặc OpenRouter). Key được mã hoá và không bao giờ hiện lại.</p><a href="#settings"><button type="button">Thêm API key</button></a></section>`}
       </div></div></div>`;
   $$("[data-step]").forEach(b => b.onclick = () => STEP_GO[b.dataset.step]());
@@ -98,20 +100,17 @@ function keyBanner() {
   return `<div class="banner"><b>Chưa có API key.</b> Trợ lý AI chạy bằng key của chính bạn (Anthropic, OpenAI, Gemini hoặc OpenRouter).
     ${S.me.demo_allowed ? "Hiện đang ở <b>chế độ demo</b> — câu hỏi theo kịch bản, không có AI phản biện." : ""} <a href="#settings">Thêm key →</a></div>`;
 }
-function topbar(title, extra = "") {
-  return `<div class="top">${globalBanner(S.me)}<div class="row"><button class="burger ghost sm" type="button">☰</button><div class="grow"><h1 style="margin:0">${title}</h1></div>${extra}</div>`;
-}
 
 // ---------------------------------------------------------------- new project
 function viewNew() {
   S.cur = null; sideList();
-  $("#main").innerHTML = topbar("Dự án mới") + `</div><div class="body"><div class="grid g2">
+  $("#main").innerHTML = topbar("Dự án mới", "Tên và vài câu mô tả là đủ — trợ lý sẽ phỏng vấn để hiểu sâu hơn") + `<div class="body"><div class="grid g2">
     <form class="card" id="nf">${keyBanner()}
       <label for="nn">Tên dự án</label><input id="nn" required maxlength="120" placeholder="Ví dụ: Hệ sinh thái AI Robot Pet">
       <div class="row" style="margin:10px 0 4px"><label for="ni" class="grow" style="margin:0">Mô tả ý tưởng — viết tự nhiên, càng chi tiết càng tốt</label><button type="button" class="sm ghost" id="fillEx">Điền ví dụ</button></div>
       <textarea id="ni" rows="12" required placeholder="Sản phẩm là gì, cho ai, kiếm tiền thế nào, các mảng xung quanh, nguồn lực đang có…"></textarea>
       <div class="row hint" style="justify-content:space-between"><span id="niHint">Gợi ý: sản phẩm · khách hàng · cách kiếm tiền · nguồn lực</span><span id="niCount">0 ký tự</span></div>
-      <label for="nc">Thị trường mục tiêu</label><input id="nc" value="Việt Nam">
+      <label for="nc">Thị trường mục tiêu</label><input id="nc" list="mkts2" value="${esc(S.me.prefs?.country || "Việt Nam")}"><datalist id="mkts2">${MARKETS.map(x => `<option value="${x}">`).join("")}</datalist>
       <p class="err" id="nmsg"></p><button class="pri">Tạo dự án & bắt đầu phỏng vấn</button>
       <p class="hint">Hạn mức: ${S.me.quota.projects_limit == null ? "không giới hạn" : `${S.me.quota.projects}/${S.me.quota.projects_limit} dự án`}.</p></form>
     <div class="card"><div class="k">Quy trình chuẩn</div>
@@ -156,10 +155,12 @@ const alive = v => v === S.view && $("#tab");
 function renderProject() {
   S.view = (S.view || 0) + 1;
   const p = S.cur, pr = p.progress, pct = Math.round(pr.answered / pr.total * 100);
-  $("#main").innerHTML = topbar(esc(p.name) + (p.archived ? ' <span class="pill">đã lưu trữ</span>' : ""), `${pill(p.status)}<div class="hide-sm" style="width:180px"><div class="hint">Phỏng vấn ${pr.answered}/${pr.total} · ${p.locked} điểm chốt</div><div class="meter"><i style="width:${pct}%"></i></div></div>
-    <button type="button" class="sm ghost" id="pact" aria-haspopup="menu">⋯ Thao tác</button>`) +
-    `<div class="tabs" role="tablist">${TABS.map(([k, l], i) => `<button type="button" role="tab" data-t="${k}" class="${S.tab === k ? "on" : ""}"><span class="n">${i + 1}</span>${l}</button>`).join("")}</div></div>
-    <div class="body">${(n => n ? `<div class="next"><span class="grow">${n[0]}</span>${n[1] && n[1] !== S.tab ? `<button type="button" class="sm pri" data-next="${n[1]}">${n[2]} →</button>` : ""}</div>` : "")(nextStep(p))}<div id="tab"></div></div>`;
+  $("#main").innerHTML = topbar(esc(p.name) + (p.archived ? " " + pill("archived") : ""),
+    `${p.is_sample ? "Dự án mẫu · chỉ đọc" : p.mine ? `Thị trường ${esc(p.country || "—")} · cập nhật ${when(p.updated)}` : "Dự án của người khác · chỉ xem"}`,
+    `${pill(p.status)}<div class="hide-sm" style="width:180px"><div class="hint">Phỏng vấn ${pr.answered}/${pr.total} · ${p.locked} điểm chốt</div><div class="meter"><i style="width:${pct}%"></i></div></div>
+    <button type="button" class="sm ghost" id="pact" aria-haspopup="menu" aria-label="Thao tác dự án">${icon("more")} Thao tác</button>`,
+    `<div class="tabs" role="tablist">${TABS.map(([k, l], i) => `<button type="button" role="tab" aria-selected="${S.tab === k}" data-t="${k}" class="${S.tab === k ? "on" : ""}"><span class="n">${i + 1}</span>${l}</button>`).join("")}</div>`) +
+    `<div class="body">${(n => n ? `<div class="banner info next"><span class="grow">${n[0]}</span>${n[1] && n[1] !== S.tab ? `<button type="button" class="sm pri" data-next="${n[1]}">${n[2]} →</button>` : ""}</div>` : "")(nextStep(p))}<div id="tab">${loading()}</div></div>`;
   $$(".tabs button").forEach(b => b.onclick = () => go(p.slug, b.dataset.t));
   $("#pact").onclick = e => menu(e.currentTarget, projectActions(p));
   $("[data-next]") && ($("[data-next]").onclick = e => go(p.slug, e.target.dataset.next));
@@ -188,7 +189,8 @@ async function chatBox(room, el, sideHtml, after) {
   el.innerHTML = `${keyBanner()}<div class="chatwrap"><div class="chat"><div class="msgs" id="msgs">${msgs.map(bubble).join("") ||
     `<div class="empty">${room === "brainstorm" ? "Đặt câu hỏi hay ném một ý tưởng — ví dụ: <i>“Mảng nào nên làm trước để có dòng tiền?”</i>" : ""}</div>`}</div>
     <form class="composer" id="cf"><textarea id="ct" aria-label="Tin nhắn" placeholder="${room === "interview" ? "Trả lời câu hỏi… (Enter để gửi, Shift+Enter xuống dòng)" : "Brainstorm với AI… (Enter để gửi)"}" ${S.cur.mine ? "" : "disabled"}></textarea>
-    <button class="pri" ${S.cur.mine ? "" : "disabled"}>Gửi</button></form></div><div class="panel" id="sidep">${sideHtml}</div></div>`;
+    <button class="pri" ${S.cur.mine && !S.me.maintenance ? "" : "disabled"}>Gửi</button></form>${S.cur.mine ? (S.me.maintenance ? '<p class="hint" style="margin:6px 12px">Hệ thống đang bảo trì — tạm thời chưa gửi được.</p>' : "")
+      : `<p class="hint" style="margin:6px 12px">${S.cur.is_sample ? "Dự án mẫu chỉ đọc — bấm ⋯ Thao tác → Nhân bản để thử." : "Dự án của người khác — chỉ xem."}</p>`}</div><div class="panel" id="sidep">${sideHtml}</div></div>`;
   const box = $("#msgs"); box.scrollTop = box.scrollHeight;
   const send = async () => { const t = $("#ct").value.trim(); if (!t || $("#cf button").disabled) return; $("#ct").value = "";
     box.insertAdjacentHTML("beforeend", `<div id="pending">${bubble({role: "user", content: t})}</div><div class="msg" id="typing"><span class="hint">Đang suy nghĩ…</span></div>`); box.scrollTop = box.scrollHeight;
@@ -238,7 +240,7 @@ function decisionsPanel() {
     ${x.status !== "rejected" ? '<button class="sm ghost" data-a="rejected" type="button">Loại</button>' : ""}<button class="sm ghost" data-a="edit" type="button">Sửa</button>
     <button class="sm ghost danger" data-a="del" type="button" aria-label="Xoá">✕</button></div>` : ""}</div>`;
   return `<b>Bảng chốt điểm</b><p class="hint" style="margin:4px 0 8px">Điểm đã chốt đi thẳng vào brief — agent phải giữ chúng làm trung tâm.</p>
-    <div class="k">Đã chốt · ${by("locked").length}</div>${by("locked").map(card).join("") || '<p class="hint">Chưa có.</p>'}
+    <div class="k">Đã chốt · ${by("locked").length}</div>${by("locked").map(card).join("") || '<p class="hint">Chưa chốt điểm nào — bấm "Chốt" ở một đề xuất, hoặc thêm điểm bên dưới.</p>'}
     <div class="k" style="margin-top:12px">Đề xuất chờ quyết · ${by("proposed").length}</div>${by("proposed").map(card).join("") || '<p class="hint">AI sẽ đề xuất khi có điểm đáng chốt.</p>'}
     ${S.cur.mine ? `<details style="margin-top:12px"><summary class="hint">＋ Thêm điểm tự viết</summary><form id="df"><label for="dt">Điểm cần chốt</label><input id="dt" required>
     <label for="dd">Chi tiết</label><textarea id="dd" rows="2"></textarea><label for="dc">Nhóm</label><select id="dc">${Object.entries(CAT).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select>
@@ -264,7 +266,7 @@ async function tabBrief() {
   if (!b && S.cur.mine) { b = (await api(`/projects/${S.cur.slug}/brief`, {method: "POST"})).brief_md; }
   if (!alive(v)) return;
   $("#tab").innerHTML = `<div class="row" style="margin-bottom:12px"><p class="hint grow" style="margin:0">Brief tự biên dịch từ phỏng vấn + bảng chốt điểm. Muốn đổi nội dung → sửa câu trả lời hoặc điểm chốt, rồi bấm Tổng hợp lại.</p>
-    ${S.cur.mine ? '<button id="rb" type="button">↻ Tổng hợp lại</button>' : ""}<a href="/api/projects/${S.cur.slug}/brief.md"><button type="button">Tải brief.md</button></a>
+    ${S.cur.mine ? `<button id="rb" type="button">${icon("refresh")}Tổng hợp lại</button>` : ""}<a href="/api/projects/${S.cur.slug}/brief.md"><button type="button">Tải brief.md</button></a>
     ${S.cur.mine ? `<button class="pri" type="button" onclick="go('${S.cur.slug}','run')">Sang Chạy Plan →</button>` : ""}</div>
     <article class="card prose">${md(b || "Chưa có brief.")}</article>`;
   const rb = $("#rb"); if (rb) rb.onclick = async () => { await api(`/projects/${S.cur.slug}/brief`, {method: "POST"}); await refresh(); tabBrief(); toast("Đã tổng hợp lại brief"); };
@@ -289,13 +291,13 @@ async function tabRun() {
     <div id="opts">${opts.map(([v, t, d, dis]) => `<label class="opt ${dis ? "dis" : ""}"><input type="radio" name="bill" value="${v}" ${dis ? "disabled" : ""} ${v === opts.find(o => !o[3])?.[0] ? "checked" : ""}><span><b>${t}</b><br><span class="hint">${d}</span></span></label>`).join("")}</div>
     <div id="keyRow" hidden><label for="rk">Key dùng để chạy</label><select id="rk">${planKeys.map(k => `<option value="${k.id}">${esc(k.label)} · ${esc(k.key_hint)} · ${esc(k.model)}</option>`).join("")}</select></div>
     <label for="rm">Model (tuỳ chọn — để trống dùng mặc định)</label><input id="rm" placeholder="mặc định">
-    <div class="row" style="margin-top:14px"><button class="pri" id="go" ${running || !p.mine ? "disabled" : ""}>▶ Chạy Plan</button>
+    <div class="row" style="margin-top:14px"><button class="pri" id="go" ${running || !p.mine ? "disabled" : ""}>${icon("play")}Chạy Plan</button>
     ${miss.length ? '<label class="row hint" style="margin:0"><input type="checkbox" id="force" style="width:auto"> chạy dù còn thiếu</label>' : ""}</div><p class="err" id="rmsg"></p></div>
     <div class="card"><div class="row"><h2 class="grow" style="margin:0">Tiến trình</h2><span id="jst"></span><button class="sm danger" id="cancel" hidden type="button">Huỷ</button></div>
     <div id="jprog" hidden style="margin-top:10px"><div class="row hint"><span class="grow">Tiến độ stage</span><span id="jprogT"></span></div><div class="meter"><i id="jprogB" style="width:0"></i></div></div>
     <div id="handoff" hidden style="margin-top:10px"></div>
-    <pre class="log" id="jlog" style="margin-top:10px">${running ? "Đang tải…" : "Chưa có job đang chạy."}</pre>
-    <div class="k" style="margin-top:14px">Lịch sử</div><table class="t"><tbody>${p.jobs.map(j => `<tr><td>#${j.id}</td><td>${pill(j.status)}</td><td>${esc(JOBKIND[j.kind] || "Plan")}<div class="hint">${esc(ENGINE[j.engine] || j.engine)}${BILL[j.billing] ? " · " + BILL[j.billing] : ""}</div></td><td class="hint">${ago(j.created)}</td><td><a href="#" data-j="${j.id}">log</a></td></tr>`).join("") || '<tr><td class="hint">Chưa chạy lần nào.</td></tr>'}</tbody></table></div></div>`;
+    <pre class="log" id="jlog" style="margin-top:10px">${running ? "Đang tải…" : "Chưa có lượt chạy nào đang diễn ra."}</pre>
+    <div class="k" style="margin-top:14px">Lịch sử</div><table class="t"><tbody>${p.jobs.map(j => `<tr><td>#${j.id}</td><td>${pill(j.status)}</td><td>${esc(JOBKIND[j.kind] || "Plan")}<div class="hint">${esc(ENGINE[j.engine] || j.engine)}${BILL[j.billing] ? " · " + BILL[j.billing] : ""}</div></td><td class="hint">${when(j.created)}</td><td><a href="#" data-j="${j.id}">log</a></td></tr>`).join("") || emptyRow(5, "Chưa chạy lần nào — chọn cách chạy bên trái rồi bấm Chạy Plan.")}</tbody></table></div></div>`;
   const sync = () => { const v = $("input[name=bill]:checked")?.value; $("#keyRow").hidden = v !== "user_key"; $$(".opt").forEach(o => o.classList.toggle("on", o.querySelector("input").checked)); };
   $$("input[name=bill]").forEach(r => r.onchange = sync); sync();
   $("#go").onclick = async () => { $("#rmsg").textContent = "";
@@ -316,8 +318,6 @@ async function showHandoff(id) {
     $("#htok").innerHTML = `<p class="hint" style="margin:8px 0 0">Token (chỉ hiện một lần): <code>${esc(t.token)}</code> <button type="button" class="sm" id="tcopy">Sao chép</button></p>`;
     $("#tcopy").onclick = () => copy(t.token); });
 }
-const ENGINE = {agy: "Antigravity", claude: "Claude Code", external: "agent ngoài", demo: "demo", local: "máy chủ"};
-const BILL = {owner: "tài khoản hệ thống", user_key: "key của bạn", external: "chi phí của bạn"};
 const JOBKIND = {plan: "Chạy Plan", rebuild: "Build lại sau khi sửa số liệu", linkcheck: "Kiểm tra link nguồn"};
 function watch(id, once) {
   clearInterval(S.poll);
@@ -342,11 +342,11 @@ function tabDossier() {
   if (!p.exported) { $("#tab").innerHTML = `<div class="card empty">Chưa có hồ sơ. Hoàn tất phỏng vấn, chốt điểm, rồi <a href="#p=${p.slug}&t=run">Chạy Plan</a>.</div>`; return; }
   const L = p.links;
   $("#tab").innerHTML = `<div class="toolbar">
-      <button type="button" id="zip">⬇ Tải trọn bộ .zip</button>
-      ${p.mine && !p.is_sample ? `<button type="button" id="shareBtn" class="${p.shares.length ? "" : "pri"}">↗ Chia sẻ cho nhà đầu tư${p.shares.length ? ` · ${p.shares.length}` : ""}</button>` : ""}
+      <button type="button" id="zip">${icon("download")}Tải trọn bộ .zip</button>
+      ${p.mine && !p.is_sample ? `<button type="button" id="shareBtn" class="${p.shares.length ? "" : "pri"}">${icon("share")}Chia sẻ cho nhà đầu tư${p.shares.length ? ` · ${p.shares.length}` : ""}</button>` : ""}
       <span class="linkstat ${L && L.broken.length ? "warn" : ""}">${L ? `Nguồn: <b>${L.ok}/${L.checked}</b> link mở được${L.blocked ? ` · ${L.blocked} chặn bot` : ""}${L.broken.length ? ` · <a href="#" id="showBroken">${L.broken.length} hỏng</a>` : " ✓"}` : "Chưa kiểm tra link nguồn"}</span>
       ${p.mine || ["owner", "admin"].includes(S.me.role) ? '<button type="button" class="sm ghost" id="chk">Kiểm tra link</button>' : ""}
-      <span class="grow"></span><a href="/viewer/${p.slug}" target="_blank" rel="noopener"><button type="button">Toàn màn hình ↗</button></a></div>
+      <span class="grow"></span><a href="/viewer/${p.slug}" target="_blank" rel="noopener"><button type="button">${icon("external")}Toàn màn hình</button></a></div>
     <section class="card" id="sharePanel" hidden></section>
     <section class="card" id="brokenPanel" hidden><div class="row"><h3 class="grow" style="margin:0">Link nguồn không mở được</h3><button type="button" class="sm ghost" data-close="brokenPanel">Đóng</button></div>
       <p class="hint">Agent phải thay nguồn khác hoặc hạ giả định về "ước tính". Link "chặn bot" thường vẫn mở được trên trình duyệt.</p>
@@ -365,8 +365,8 @@ function sharePanel() {
     ${p.jobs.find(j => j.kind === "plan" && j.status === "done")?.engine === "demo" ? '<div class="banner warn">Hồ sơ này dựng bằng <b>chế độ demo</b> (chỉ là khung mẫu, chưa có nghiên cứu thật). Chạy Plan bằng agent trước khi gửi cho nhà đầu tư.</div>' : ""}
     <form class="row" id="sf"><input id="sl" class="grow" placeholder="Gửi cho ai? Ví dụ: Anh Minh — quỹ ABC" maxlength="80"><button class="pri">Tạo link</button></form>
     <table class="t" style="margin-top:10px"><tbody>${p.shares.map(x => `<tr><td><b>${esc(x.label || "Không tên")}</b><div class="hint mono">${esc(full(x.url))}</div></td>
-      <td class="hint">${x.views} lượt xem${x.last_view ? " · " + ago(x.last_view) : ""}</td>
-      <td class="row" style="flex-wrap:nowrap"><button type="button" class="sm" data-copy="${esc(full(x.url))}">Sao chép</button><button type="button" class="sm ghost danger" data-revoke="${x.id}">Thu hồi</button></td></tr>`).join("") || '<tr><td class="hint">Chưa có link nào.</td></tr>'}</tbody></table>`;
+      <td class="hint">${x.views} lượt xem${x.last_view ? " · " + when(x.last_view) : ""}</td>
+      <td class="actions"><button type="button" class="sm" data-copy="${esc(full(x.url))}">Sao chép</button><button type="button" class="sm ghost danger" data-revoke="${x.id}">Thu hồi</button></td></tr>`).join("") || emptyRow(3, "Chưa có link nào — gõ tên người nhận ở trên rồi bấm Tạo link.")}</tbody></table>`;
   $$("[data-close]", sp).forEach(b => b.onclick = () => sp.hidden = true);
   $("#sf").onsubmit = async e => { e.preventDefault(); try { const r = await api(`/projects/${p.slug}/shares`, {body: {label: $("#sl").value}}); await refresh(); copy(full(r.url)); renderProject(); setTimeout(() => { $("#sharePanel").hidden = false; sharePanel(); }, 0); } catch (x) { toast(x.message); } };
   $$("[data-copy]", sp).forEach(b => b.onclick = () => copy(b.dataset.copy));
@@ -408,13 +408,13 @@ async function tabNumbers() {
   const draw = () => {
     const rows = A.assumptions.filter(a => (F.facts || !a.id.startsWith("fact_")) && (!F.st || a.status === F.st) && (!F.q || (a.label + a.id).toLowerCase().includes(F.q)));
     $("#nrows").innerHTML = rows.map(a => { const v = a.id in edits ? edits[a.id] : a.value, ro = !p.mine || p.is_sample || A.readonly || typeof (Array.isArray(a.value) ? a.value[0] : a.value) !== "number";
-      const inp = (val, i) => `<input class="nv" data-id="${a.id}" ${i != null ? `data-i="${i}" title="${y0 + i}"` : ""} value="${esc(val)}" inputmode="decimal" ${ro ? "readonly" : ""}>`;
+      const inp = (val, i) => `<input class="nv" data-id="${a.id}" ${i != null ? `data-i="${i}" title="${y0 + i}"` : ""} value="${esc(typeof val === "number" ? String(val).replace(".", ",") : val)}" inputmode="decimal" ${ro ? "readonly" : ""}>`;
       return `<tr class="${a.id in edits ? "edited" : ""}"><td><b>${esc(a.label)}</b><div class="hint mono">${esc(a.id)}</div></td>
         <td><div class="vals">${Array.isArray(a.value) ? v.map((x, i) => inp(x, i)).join("") : inp(v)}</div></td><td class="hint">${esc(a.unit || "")}</td>
         <td><span class="chip c-${esc(a.status)}">${STAT[a.status] || esc(a.status || "")}</span></td>
-        <td class="hint">${a.source.filter(x => x !== "ev-000").map(x => `<code>${esc(x)}</code>`).join(" ")} ${esc(a.note || "")}</td></tr>`; }).join("") || '<tr><td colspan="5" class="hint">Không có giả định khớp bộ lọc.</td></tr>';
+        <td class="hint">${a.source.filter(x => x !== "ev-000").map(x => `<code>${esc(x)}</code>`).join(" ")} ${esc(a.note || "")}</td></tr>`; }).join("") || emptyRow(5, "Không có giả định khớp bộ lọc.");
     $$(".nv").forEach(el => el.onchange = () => { const a = A.assumptions.find(x => x.id === el.dataset.id), n = Number(String(el.value).replace(",", "."));
-      if (isNaN(n)) { toast("Cần nhập số"); el.value = a.value; return; }
+      if (isNaN(n) || String(el.value).trim() === "") { toast("Cần nhập một số (dùng dấu phẩy cho phần thập phân, ví dụ 0,35)"); draw(); return; }
       if (Array.isArray(a.value)) { const cur = [...(edits[a.id] || a.value)]; cur[+el.dataset.i] = n; edits[a.id] = cur; } else edits[a.id] = n;
       if (JSON.stringify(edits[a.id]) === JSON.stringify(a.value)) delete edits[a.id];
       bar(); el.closest("tr").classList.toggle("edited", a.id in edits); });
@@ -444,8 +444,8 @@ async function loadVersions(p) {
   let vs; try { vs = await api(`/projects/${p.slug}/history`); } catch (x) { $("#versions").innerHTML = `<h3>Phiên bản hồ sơ</h3><p class="hint">${esc(x.message)}</p>`; return; }
   const canRestore = p.mine && !p.is_sample;
   $("#versions").innerHTML = `<h3>Phiên bản hồ sơ</h3><p class="hint">Mỗi lần chạy Plan, sửa số liệu hay agent nộp bài là một phiên bản. Khôi phục tạo phiên bản mới — không mất lịch sử.</p>
-    <table class="t"><tbody>${vs.map((v, i) => `<tr><td><code>${esc(v.rev)}</code></td><td>${esc(v.message)}<div class="hint">${esc(v.who || "hệ thống")} · ${ago(v.date)}${v.stat ? " · " + esc(v.stat) : ""}</div></td>
-      <td class="row" style="flex-wrap:nowrap"><button type="button" class="sm ghost" data-vview="${esc(v.rev)}">Xem</button>${canRestore && i > 0 ? `<button type="button" class="sm ghost" data-vrestore="${esc(v.rev)}">Khôi phục</button>` : ""}</td></tr>`).join("") || '<tr><td class="hint">Chưa có phiên bản.</td></tr>'}</tbody></table>`;
+    <table class="t"><tbody>${vs.map((v, i) => `<tr><td><code>${esc(v.rev)}</code></td><td>${esc(v.message)}<div class="hint">${esc(v.who || "hệ thống")} · ${when(v.date)}${v.stat ? " · " + esc(v.stat) : ""}</div></td>
+      <td class="actions"><button type="button" class="sm ghost" data-vview="${esc(v.rev)}">Xem</button>${canRestore && i > 0 ? `<button type="button" class="sm ghost" data-vrestore="${esc(v.rev)}">Khôi phục</button>` : ""}</td></tr>`).join("") || emptyRow(4, "Chưa có phiên bản nào.")}</tbody></table>`;
   $$("[data-vview]").forEach(b => b.onclick = () => showVersion(p, b.dataset.vview));
   $$("[data-vrestore]").forEach(b => b.onclick = async () => {
     if (!await ask(`Khôi phục bộ số liệu về phiên bản ${b.dataset.vrestore}? Hồ sơ sẽ được dựng lại theo phiên bản đó (phiên bản hiện tại vẫn còn trong lịch sử).`, "Khôi phục", false)) return;
@@ -465,13 +465,14 @@ async function showVersion(p, rev) {
 }
 
 // ---------------------------------------------------------------- settings
+const ROLE_VI = {owner: "Owner — chủ hệ thống", admin: "Admin", user: "Người dùng"};
 const SETTINGS_SECTIONS = [["profile", "Hồ sơ & bảo mật"], ["prefs", "Giao diện & mặc định"], ["keys", "AI & API key"], ["tokens", "API token"],
   ["usage", "Mức dùng"], ["data", "Dữ liệu của tôi"]];
 const MARKETS = ["Việt Nam", "Singapore", "Thái Lan", "Indonesia", "Malaysia", "Philippines", "Nhật Bản", "Hàn Quốc", "Trung Quốc", "Hoa Kỳ", "Úc", "Châu Âu"];
 async function viewSettings() {
   S.cur = null; sideList();
   const sec = (location.hash.split("/")[1] || "profile"), v = S.view = (S.view || 0) + 1;
-  $("#main").innerHTML = topbar("Cài đặt") + `</div><div class="body"><div class="settings">
+  $("#main").innerHTML = topbar("Cài đặt", "Tài khoản, giao diện, AI và dữ liệu của bạn") + `<div class="body"><div class="settings">
     <nav class="subnav" aria-label="Mục cài đặt">${SETTINGS_SECTIONS.map(([k, l]) => `<a href="#settings/${k}" class="${k === sec ? "on" : ""}">${l}</a>`).join("")}</nav>
     <div id="sbody" class="grid" style="gap:14px;align-content:start"><div class="card"><span class="spinner"></span></div></div></div></div>`;
   await ({profile: setProfile, prefs: setPrefs, keys: setKeys, tokens: setTokens, usage: setUsage, data: setData}[sec] || setProfile)(v);
@@ -481,14 +482,13 @@ const sbody = (v, html) => { if (v !== S.view || !$("#sbody")) return false; $("
 function setProfile(v) {
   const m = S.me;
   if (!sbody(v, `<section class="card"><h2>Hồ sơ</h2>
-      <form id="nf2" class="grid g2" style="gap:0 14px;align-items:end"><div><label for="pnm">Tên hiển thị</label><input id="pnm" maxlength="80" value="${esc(m.name || "")}" placeholder="Ví dụ: Ryan Nguyễn"></div>
-        <div><label>Email đăng nhập</label><input value="${esc(m.email)}" readonly></div><div><button class="pri">Lưu</button></div></form>
-      <p class="hint" style="margin:10px 0 0">Vai trò: ${pill(m.role === "user" ? "active" : m.role)} · tham gia ${ago(m.created)}${m.google ? " · có đăng nhập Google" : ""}</p></section>
+      <form id="nf2"><div class="grid g2" style="gap:0 14px"><div><label for="pnm">Tên hiển thị</label><input id="pnm" maxlength="80" value="${esc(m.name || "")}" placeholder="Ví dụ: Ryan Nguyễn"></div>
+        <div><label for="pem">Email đăng nhập</label><input id="pem" value="${esc(m.email)}" readonly></div></div><div class="form-actions"><button class="pri">Lưu hồ sơ</button></div></form>
+      <p class="hint" style="margin:10px 0 0">Vai trò: <b>${ROLE_VI[m.role] || m.role}</b> · tham gia ${when(m.created)}${m.google ? " · có đăng nhập Google" : ""}</p></section>
     <section class="card"><h2>${m.has_password ? "Đổi mật khẩu" : "Đặt mật khẩu"}</h2>${m.has_password ? "" : '<p class="hint">Bạn đang đăng nhập bằng Google — đặt mật khẩu để đăng nhập bằng email khi cần.</p>'}
-      <form id="pf" class="grid g2" style="gap:0 14px;align-items:end">${m.has_password ? '<div><label for="po">Mật khẩu hiện tại</label><input id="po" type="password" autocomplete="current-password" required></div>' : ""}
-        <div><label for="pn">Mật khẩu mới (≥ 8 ký tự)</label><input id="pn" type="password" minlength="8" required autocomplete="new-password"></div>
-        <div><button class="pri">${m.has_password ? "Đổi mật khẩu" : "Đặt mật khẩu"}</button></div></form><p class="err" id="pmsg"></p>
-      <p class="hint" style="margin:0">Đổi mật khẩu sẽ đăng xuất mọi thiết bị khác.</p></section>
+      <form id="pf"><div class="grid g2" style="gap:0 14px">${m.has_password ? '<div><label for="po">Mật khẩu hiện tại</label><input id="po" type="password" autocomplete="current-password" required></div>' : ""}
+        <div><label for="pn">Mật khẩu mới (≥ 8 ký tự)</label><input id="pn" type="password" minlength="8" required autocomplete="new-password"></div></div>
+        <p class="err" id="pmsg"></p><div class="form-actions"><button class="pri">${m.has_password ? "Đổi mật khẩu" : "Đặt mật khẩu"}</button><span class="hint">Mọi thiết bị khác sẽ bị đăng xuất.</span></div></form></section>
     <section class="card"><h2>Phiên đăng nhập</h2><p class="hint">Quên đăng xuất trên máy khác, hoặc nghi ngờ ai đó đang dùng tài khoản? Đăng xuất mọi phiên trừ phiên này.</p>
       <button type="button" id="lo2">Đăng xuất mọi thiết bị khác</button></section>`)) return;
   $("#nf2").onsubmit = async e => { e.preventDefault(); try { S.me = await api("/me", {method: "PATCH", body: {name: $("#pnm").value}}); toast("Đã lưu hồ sơ"); sideList(); } catch (x) { toast(x.message); } };
@@ -502,9 +502,10 @@ function setPrefs(v) {
   if (!sbody(v, `<section class="card"><h2>Giao diện</h2><div class="seg" role="radiogroup" aria-label="Giao diện">
       ${[["system", "Theo hệ thống"], ["light", "Sáng"], ["dark", "Tối"]].map(([k, l]) => `<label class="${p.theme === k ? "on" : ""}"><input type="radio" name="th" value="${k}" ${p.theme === k ? "checked" : ""}>${l}</label>`).join("")}</div>
       <p class="hint" style="margin:10px 0 0">Áp dụng cho ứng dụng, trang quản trị và trình xem hồ sơ trên thiết bị này và các thiết bị khác của bạn.</p></section>
-    <section class="card"><h2>Mặc định cho dự án mới</h2><form id="mf" class="grid g2" style="gap:0 14px;align-items:end">
-      <div><label for="pc">Thị trường mặc định</label><input id="pc" list="mkts" value="${esc(p.country)}"><datalist id="mkts">${MARKETS.map(x => `<option value="${x}">`).join("")}</datalist></div>
-      <div><button class="pri">Lưu</button></div></form><p class="hint" style="margin:10px 0 0">Agent nghiên cứu số liệu, luật và đối thủ theo thị trường này. Đổi được riêng cho từng dự án khi tạo.</p></section>`)) return;
+    <section class="card"><h2>Mặc định cho dự án mới</h2><form id="mf"><div class="grid g2" style="gap:0 14px">
+      <div><label for="pc">Thị trường mặc định</label><input id="pc" list="mkts" value="${esc(p.country)}"><datalist id="mkts">${MARKETS.map(x => `<option value="${x}">`).join("")}</datalist>
+      <div class="hint">Agent nghiên cứu số liệu, luật và đối thủ theo thị trường này. Đổi được riêng cho từng dự án.</div></div></div>
+      <div class="form-actions"><button class="pri">Lưu</button></div></form></section>`)) return;
   $$("input[name=th]").forEach(r => r.onchange = async () => { S.me = await api("/me", {method: "PATCH", body: {prefs: {theme: r.value}}}); applyTheme(r.value); setPrefs(S.view); toast("Đã đổi giao diện"); });
   $("#mf").onsubmit = async e => { e.preventDefault(); S.me = await api("/me", {method: "PATCH", body: {prefs: {country: $("#pc").value}}}); toast("Đã lưu thị trường mặc định"); };
 }
@@ -515,7 +516,7 @@ async function setKeys(v) {
     <div class="scroll-x"><table class="t"><thead><tr><th>Nhà cung cấp</th><th>Key</th><th>Model</th><th>Kiểm tra</th><th></th></tr></thead><tbody>${S.keys.map(k => `<tr data-k="${k.id}">
       <td>${esc(k.label)}${k.is_default ? ' <span class="pill core">mặc định</span>' : ""}<div class="hint">${k.plan_engine ? "chat + chạy Plan" : "chỉ chat"}</div></td><td class="mono">${esc(k.key_hint)}</td>
       <td><input class="km" aria-label="Model của key" value="${esc(k.model)}" list="kml${k.id}" style="min-width:170px" title="Bấm để chọn trong danh sách model key này dùng được"><datalist id="kml${k.id}"></datalist></td><td>${k.last_test ? (k.last_test_ok ? pill("ok") : pill("error")) : '<span class="hint">—</span>'}</td>
-      <td><div class="row" style="flex-wrap:nowrap"><button class="sm" data-a="test" type="button">Thử</button>${k.is_default ? "" : '<button class="sm ghost" data-a="def" type="button">Đặt mặc định</button>'}<button class="sm ghost danger" data-a="del" type="button">Xoá</button></div></td></tr>`).join("") || '<tr><td colspan="5"><div class="empty">Chưa có key — thêm key bên dưới để có trợ lý AI thật.</div></td></tr>'}</tbody></table></div></section>
+      <td class="actions"><button class="sm" data-a="test" type="button">Thử</button>${k.is_default ? "" : '<button class="sm ghost" data-a="def" type="button">Đặt mặc định</button>'}<button class="sm ghost danger" data-a="del" type="button">Xoá</button></td></tr>`).join("") || emptyRow(5, "Chưa có key — thêm key bên dưới để có trợ lý AI thật.")}</tbody></table></div></section>
     <section class="card"><h2>Thêm key</h2><form id="kf"><div class="grid g2" style="gap:0 12px">
       <div><label for="kp">Nhà cung cấp</label><select id="kp">${Object.entries(S.providers).map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`).join("")}</select></div>
       <div><label for="kmo">Model</label><input id="kmo" list="kml" required><datalist id="kml"></datalist></div></div>
@@ -546,7 +547,7 @@ function setTokens(v) {
     <div class="scroll-x"><table class="t"><thead><tr><th>Tên</th><th>Lần dùng gần nhất</th><th></th></tr></thead><tbody id="tokRows"><tr><td colspan="3"><span class="spinner"></span></td></tr></tbody></table></div>
     <form class="row" id="tokF" style="margin-top:12px"><input id="tokN" aria-label="Tên token" class="grow" placeholder="Tên token, ví dụ: Claude Code trên MacBook"><button class="pri">Tạo token</button></form><div id="tokOut"></div></section>`)) return;
   const drawTok = async () => { const ts = await api("/tokens"); if (!$("#tokRows")) return;
-    $("#tokRows").innerHTML = ts.map(t => `<tr><td><b>${esc(t.name)}</b><div class="hint mono">${esc(t.prefix)}…</div></td><td class="hint">${t.last_used ? ago(t.last_used) : "chưa dùng"}</td><td class="actions"><button type="button" class="sm ghost danger" data-tok="${t.id}">Thu hồi</button></td></tr>`).join("") || '<tr><td colspan="3"><div class="empty">Chưa có token.</div></td></tr>';
+    $("#tokRows").innerHTML = ts.map(t => `<tr><td><b>${esc(t.name)}</b><div class="hint mono">${esc(t.prefix)}…</div></td><td class="hint">${t.last_used ? when(t.last_used) : "chưa dùng"}</td><td class="actions"><button type="button" class="sm ghost danger" data-tok="${t.id}">Thu hồi</button></td></tr>`).join("") || emptyRow(3, "Chưa có token.");
     $$("[data-tok]").forEach(b => b.onclick = async () => { if (!await ask("Thu hồi token này? Agent đang dùng nó sẽ mất quyền ngay.", "Thu hồi")) return; await api("/tokens/" + b.dataset.tok, {method: "DELETE"}); toast("Đã thu hồi token"); drawTok(); }); };
   drawTok();
   $("#tokF").onsubmit = async e => { e.preventDefault(); const t = await api("/tokens", {body: {name: $("#tokN").value}}); e.target.reset();
@@ -555,7 +556,7 @@ function setTokens(v) {
 }
 
 async function setUsage(v) {
-  const u = await api("/me/usage"), q = u.quota, BILLN = {owner: "tài khoản hệ thống", user_key: "key của bạn", external: "agent ngoài", demo: "demo"};
+  const u = await api("/me/usage"), q = u.quota, BILLN = {...BILL, user_key: "key của bạn"};
   const lim = (n, l, unit) => l == null ? `<b>${n}</b> <span class="hint">${unit} · không giới hạn</span>` : `<b>${n}</b><small> / ${l}</small> <span class="hint">${unit}</span><div class="meter" style="margin-top:6px"><i style="width:${Math.min(100, n / l * 100)}%"></i></div>`;
   sbody(v, `<div class="grid g2"><section class="card kpi"><div class="k">Dự án</div>${lim(q.projects, q.projects_limit, "dự án")}</section>
       <section class="card kpi"><div class="k">Chạy Plan bằng tài khoản hệ thống · tháng này</div>${lim(q.owner_jobs_month, q.owner_jobs_limit, "lần")}</section></div>
@@ -563,13 +564,13 @@ async function setUsage(v) {
     <div class="scroll-x"><table class="t"><thead><tr><th>Tháng</th><th class="num">Token vào</th><th class="num">Token ra</th><th class="num">Chi phí ước tính</th><th>Lần chạy Plan</th></tr></thead><tbody>
     ${u.months.map(m => `<tr><td>${m.month.slice(5)}/${m.month.slice(0, 4)}</td><td class="num">${fmtInt(m.input_tokens)}</td><td class="num">${fmtInt(m.output_tokens)}</td>
       <td class="num">${m.cost_usd ? "$" + m.cost_usd.toLocaleString("vi-VN", {maximumFractionDigits: 2}) : "—"}</td>
-      <td>${Object.entries(m.runs).map(([b, n]) => `${n} · ${BILLN[b] || b}`).join("<br>") || '<span class="hint">—</span>'}</td></tr>`).join("") || '<tr><td colspan="5"><div class="empty">Chưa có hoạt động nào.</div></td></tr>'}</tbody></table></div></section>`);
+      <td>${Object.entries(m.runs).map(([b, n]) => `${n} · ${BILLN[b] || b}`).join("<br>") || '<span class="hint">—</span>'}</td></tr>`).join("") || emptyRow(5, "Chưa có hoạt động nào.")}</tbody></table></div></section>`);
 }
 
 function setData(v) {
   const owner = S.me.role === "owner";
   if (!sbody(v, `<section class="card"><h2>Tải toàn bộ dữ liệu</h2><p class="hint">Một file .zip: thông tin tài khoản, mọi dự án (câu trả lời phỏng vấn, điểm chốt, hội thoại, bộ số liệu SSOT, hồ sơ Word/PowerPoint/Excel đã dựng). Không chứa API key.</p>
-      <a href="/api/me/export"><button type="button">⬇ Tải dữ liệu (.zip)</button></a></section>
+      <a href="/api/me/export"><button type="button">${icon("download")}Tải dữ liệu (.zip)</button></a></section>
     <section class="card danger-zone"><h2>Xoá tài khoản</h2><p class="hint">Xoá vĩnh viễn tài khoản, mọi dự án, key, token và link chia sẻ. Không khôi phục được — nên tải dữ liệu trước.</p>
       ${owner ? '<div class="banner">Bạn là owner hệ thống — trao quyền owner cho người khác ở Quản trị → Người dùng trước khi xoá tài khoản.</div>' : `<form id="df">
       <div class="grid g2" style="gap:0 14px"><div><label for="dce">Gõ email của bạn để xác nhận</label><input id="dce" autocomplete="off" placeholder="${esc(S.me.email)}"></div>

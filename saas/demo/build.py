@@ -52,8 +52,10 @@ def build():
     ab = sub(ab, '<a href="/admin" id="navAdmin" hidden>', '<a href="#" onclick="GPDEMO.nav(\'admin\');return false" id="navAdmin" hidden>')
     aj = sub(aj, '<a href="/api/projects/${S.cur.slug}/brief.md"><button type="button">Tải brief.md</button></a>',
              '<button type="button" onclick="GPDEMO.saveBrief(\'${S.cur.slug}\')">Tải brief.md</button>')
-    aj = sub(aj, '<a href="/viewer/${p.slug}" target="_blank" rel="noopener"><button type="button">Toàn màn hình ↗</button></a>',
-             '<button type="button" onclick="document.querySelector(\'iframe.viewer\').requestFullscreen?.()">Toàn màn hình ⛶</button>')
+    aj = sub(aj, '<a href="/viewer/${p.slug}" target="_blank" rel="noopener"><button type="button">${icon("external")}Toàn màn hình</button></a>',
+             '<button type="button" onclick="document.querySelector(\'iframe.viewer\').requestFullscreen?.()">${icon("external")}Toàn màn hình</button>')
+    aj = sub(aj, '<a href="/api/me/export"><button type="button">${icon("download")}Tải dữ liệu (.zip)</button></a>',
+             '<button type="button" onclick="toast(\'Bản demo: dữ liệu chỉ nằm trong trình duyệt này — tải trọn bộ .zip có trên bản máy chủ.\')">${icon("download")}Tải dữ liệu (.zip)</button>')
     aj = sub(aj, 'src="/viewer/${p.slug}"', 'src="viewer.html#${encodeURIComponent(p.slug)}|${encodeURIComponent(p.name)}"')
     aj = sub(aj, 'location.href = `/api/projects/${p.slug}/bundle.zip`; toast("Đang tạo gói .zip…");',
              'toast("Bản demo: tải từng file ở tab Tải về của trình xem. Gói .zip trọn bộ có trên bản máy chủ.");')
@@ -61,7 +63,9 @@ def build():
     aj += "\nwindow.go = go;"
     ds, db, dj = pages["admin"]
     db = sub(db, '<a href="/app">← Về ứng dụng</a>', '<a href="#" onclick="GPDEMO.nav(\'app\');return false">← Về ứng dụng</a>')
-    dj = sub(dj, '<a href="/viewer/${esc(p.slug)}" target="_blank" rel="noopener">Xem hồ sơ ↗</a>',
+    dj = re.sub(r'location\.href = "/api/admin/export/\w+\.csv"', 'toast("Bản demo: xuất CSV có trên bản máy chủ")', dj)
+    dj = sub(dj, 'location.href = "/api/admin/backup";', 'toast("Bản demo: sao lưu có trên bản máy chủ"); return;')
+    dj = sub(dj, '<a href="/viewer/${esc(p.slug)}" target="_blank" rel="noopener">Xem hồ sơ</a>',
              '<a href="#" onclick="GPDEMO.nav(\'app\',\'p=${esc(p.slug)}&t=dossier\');return false">Xem hồ sơ</a>')
     dj = sub(dj, '<a href="/viewer/${esc(p.slug)}" target="_blank" rel="noopener">Hồ sơ ↗</a>',
              '<a href="#" onclick="closeDrawer();GPDEMO.nav(\'app\',\'p=${esc(p.slug)}&t=dossier\');return false">Hồ sơ</a>')

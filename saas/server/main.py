@@ -1422,7 +1422,7 @@ def metrics(days: int = 30, a=Depends(need_admin)):
                  "by_engine": {e: sum(j["engine"] == e for j in jobs) for e in sorted({j["engine"] or "?" for j in jobs})},
                  "reasons": sorted(([k, n] for k, n in reasons.items()), key=lambda x: -x[1])[:8]},
         "tokens": {"owner": tok["owner_t"], "users": tok["user_t"], "owner_cost_usd": round(tok["owner_c"], 2), "cost_usd": round(tok["all_c"], 2)},
-        "series": [{"d": d, **v} for d, v in sorted(series.items())],
+        "series": [{"d": d, **series.get(d, {})} for d in ((now - dt.timedelta(days=i)).date().isoformat() for i in range(days - 1, -1, -1))],
         "storage": {**sizes, "disk_total": disk.total, "disk_free": disk.free},
         "health": {"version": GIT_REV, "sandbox": sb["enabled"], "sandbox_hint": sb["hint"], "pandoc": bool(shutil.which("pandoc")),
                    "queue": c("SELECT COUNT(*) n FROM jobs WHERE status='queued'"), "running": c("SELECT COUNT(*) n FROM jobs WHERE status IN ('running','starting')"),

@@ -20,7 +20,8 @@ const SAMPLE_SLUG = "ai-robot-pet-mau";
 const KEY = "gp-demo-v1";
 const DEFAULT_SETTINGS = {site_name: "Gen Planner", allow_signup: "1", plan_billing: "either", default_quota_projects: "5",
   default_quota_jobs_month: "3", job_timeout_min: "120", max_concurrent_jobs: "1", auto_failover: "1", allow_demo_engine: "1",
-  google_client_id: "", public_base_url: ""};
+  google_client_id: "", public_base_url: "", signup_domains: "", support_email: "", default_country: "Việt Nam", announcement: "",
+  announcement_level: "info", maintenance: "0", log_retention_days: "0"};
 
 // ------------------------------------------------------------------ storage
 let D;
@@ -58,7 +59,8 @@ const me = () => { const u = D.users.find(u => u.id === D.session); return u && 
 function need() { const u = me(); if (!u) fail(401, "Chưa đăng nhập"); return u; }
 function needAdmin() { const u = need(); if (!["owner", "admin"].includes(u.role)) fail(403, "Cần quyền admin"); return u; }
 function needOwner() { const u = need(); if (u.role !== "owner") fail(403, "Chỉ owner hệ thống"); return u; }
-const pub = u => ({id: u.id, email: u.email, name: u.name, role: u.role, status: u.status, created: u.created, last_login: u.last_login});
+const pub = u => ({id: u.id, email: u.email, name: u.name, role: u.role, status: u.status, created: u.created, last_login: u.last_login,
+  prefs: {theme: u.prefs?.theme || "system", country: u.prefs?.country || S("default_country") || "Việt Nam"}, has_password: true, google: false});
 function quota(u) {
   const used = D.jobs.filter(j => j.user_id === u.id && j.billing === "owner" && j.engine !== "demo" && j.created >= month() && ["queued", "starting", "running", "done"].includes(j.status)).length;
   const projects = D.projects.filter(p => p.user_id === u.id).length;
@@ -275,7 +277,36 @@ R("POST", "/auth/login", (b) => {
   D.session = u.id; u.last_login = now(); audit(u.id, "login", u.email); return {ok: true, role: u.role};
 });
 R("POST", "/auth/logout", () => { D.session = null; return {ok: true}; });
-R("GET", "/me", () => { const u = need(); return {...pub(u), has_keys: D.keys.some(k => k.user_id === u.id), site_name: S("site_name"), plan_billing: S("plan_billing"), quota: quota(u), demo_allowed: S("allow_demo_engine") === "1", ai_live: !aiOff, core_ready: true, onboarding: onboarding(u)}; });
+R("GET", "/me", () => meOf(need()));
+const meOf = u => ({...pub(u), has_keys: D.keys.some(k => k.user_id === u.id), site_name: S("site_name"), plan_billing: S("plan_billing"), quota: quota(u), demo_allowed: S("allow_demo_engine") === "1", ai_live: !aiOff, core_ready: true, onboarding: onboarding(u),
+  announcement: S("announcement"), announcement_level: S("announcement_level"), maintenance: S("maintenance") === "1", support_email: S("support_email")});
+R("PATCH", "/me", (b) => { const u = need(); if ("name" in b) u.name = String(b.name || "").trim().slice(0, 80) || null;
+  if (b.prefs) { u.prefs ??= {}; if (b.prefs.theme) { if (!["system", "light", "dark"].includes(b.prefs.theme)) fail(400, "Giao diện: system | light | dark"); u.prefs.theme = b.prefs.theme; }
+    if ("country" in b.prefs) u.prefs.country = String(b.prefs.country || "").trim() || null; }
+  return meOf(u); });
+R("POST", "/me/logout-others", () => (need(), {ok: true}));
+R("GET", "/me/usage", () => { const u = need(), months = {};
+  for (const x of D.usage.filter(x => x.user_id === u.id)) { const k = x.created.slice(0, 7); months[k] ??= {month: k, input_tokens: 0, output_tokens: 0, cost_usd: 0, runs: {}}; months[k].input_tokens += x.input_tokens; months[k].output_tokens += x.output_tokens; }
+  for (const j of D.jobs.filter(j => j.user_id === u.id && j.kind === "plan")) { const k = j.created.slice(0, 7); months[k] ??= {month: k, input_tokens: 0, output_tokens: 0, cost_usd: 0, runs: {}}; months[k].runs[j.billing] = (months[k].runs[j.billing] || 0) + 1; }
+  return {quota: quota(u), months: Object.values(months).sort((a, b) => b.month.localeCompare(a.month))}; });
+R("POST", "/me/delete", () => fail(400, "Bản demo: dữ liệu chỉ nằm trong trình duyệt — dùng nút “Làm mới bản demo” để xoá."));
+R("POST", "/projects/([\\w-]+)/duplicate", () => fail(400, "Bản demo: nhân bản dự án (chép bộ số liệu + lịch sử) có trên bản máy chủ."));
+R("GET", "/admin/metrics", (b, m, q) => { needAdmin(); const days = [7, 30, 90].includes(+q.get("days")) ? +q.get("days") : 30, since = new Date(Date.now() - days * 864e5).toISOString();
+  const recent = t => t && Date.now() - new Date(t) < 864e5 * 7, jobs = D.jobs.filter(j => j.kind === "plan" && j.created >= since), done = jobs.filter(j => j.status === "done"), failed = jobs.filter(j => j.status === "failed");
+  const series = []; for (let i = days - 1; i >= 0; i--) { const d = new Date(Date.now() - i * 864e5).toISOString().slice(0, 10);
+    series.push({d, done: jobs.filter(j => j.created.startsWith(d) && j.status === "done").length, failed: jobs.filter(j => j.created.startsWith(d) && j.status === "failed").length,
+      tokens: D.usage.filter(x => x.created.startsWith(d)).reduce((s, x) => s + x.input_tokens + x.output_tokens, 0), signups: D.users.filter(u => u.created.startsWith(d)).length}); }
+  const wau = D.users.filter(u => recent(u.last_login)).length, mau = D.users.filter(u => u.last_login && Date.now() - new Date(u.last_login) < 30 * 864e5).length;
+  return {days, users: {total: D.users.length, new: D.users.filter(u => u.created >= since).length, active: mau, wau, mau, stickiness: mau ? wau / mau : null, locked: D.users.filter(u => u.status !== "active").length},
+    projects: {total: D.projects.filter(p => !p.is_sample).length, new: D.projects.filter(p => !p.is_sample && p.created >= since).length, with_dossier: D.projects.filter(p => !p.is_sample && p.status === "done").length,
+      shares: D.shares.filter(s => !s.revoked).length, share_views: 0},
+    jobs: {total: jobs.length, done: done.length, failed: failed.length, system_failed: 0, cancelled: jobs.filter(j => j.status === "cancelled").length,
+      success_rate: done.length + failed.length ? done.length / (done.length + failed.length) : null, duration_p50: done.length ? 95 * 60 : null, duration_p90: done.length ? 140 * 60 : null, wait_p50: done.length ? 20 : null,
+      by_engine: {}, reasons: Object.entries(failed.reduce((a, j) => (a[j.error || "không rõ"] = (a[j.error || "không rõ"] || 0) + 1, a), {}))},
+    tokens: {owner: D.usage.filter(x => x.profile_id && x.created >= since).reduce((s, x) => s + x.input_tokens + x.output_tokens, 0), users: D.usage.filter(x => !x.profile_id && x.created >= since).reduce((s, x) => s + x.input_tokens + x.output_tokens, 0), owner_cost_usd: 0, cost_usd: 0},
+    series, storage: {db: 2e5, workspace: 3e6, history: 1e6, agents: 5e4, jobs_tmp: 0, disk_total: 5e10, disk_free: 3.5e10},
+    health: {version: "demo", sandbox: true, sandbox_hint: "Bản demo — agent mô phỏng", pandoc: true, queue: D.jobs.filter(j => j.status === "queued").length, running: D.jobs.filter(j => j.status === "running").length,
+      oldest_queued_s: null, core_agent: !!activeProfile(), maintenance: S("maintenance") === "1", uptime_s: 3600, python: "trình duyệt"}}; });
 R("POST", "/me/onboarding", (b) => { const u = need(); u.onboarding ??= {}; for (const k of ["viewed_sample", "dismissed"]) if (k in b) u.onboarding[k] = !!b[k]; return {ok: true}; });
 R("POST", "/me/password", (b) => { const u = need(); if (u.pw !== hashish(b.old || "")) fail(400, "Mật khẩu cũ không đúng"); if (String(b.new || "").length < 8) fail(400, "Mật khẩu mới tối thiểu 8 ký tự"); u.pw = hashish(b.new); audit(u.id, "password_change", u.email); return {ok: true}; });
 

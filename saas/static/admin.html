@@ -3,7 +3,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,600&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/static/gp.css">
 <style>
-.term{background:#05090e;color:#cfe3f0;border-radius:10px;padding:12px;font:12px/1.45 var(--f-mono);white-space:pre-wrap;height:320px;overflow-y:auto;margin:0}
+.term{background:var(--term-bg);color:var(--term-fg);border-radius:10px;padding:12px;font:12px/1.45 var(--f-mono);white-space:pre-wrap;height:320px;overflow-y:auto;margin:0}
 .prof{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--surface)} .prof.act{border-color:var(--core);box-shadow:0 0 0 1px var(--core)}
 .prof h3{margin:0;font-size:15px} .kv{display:grid;grid-template-columns:110px 1fr;gap:4px 10px;font-size:12.5px;margin:10px 0} .kv span:nth-child(odd){color:var(--muted)}
 .bars{display:flex;align-items:flex-end;gap:3px;height:130px;padding-top:8px;border-bottom:1px solid var(--line)}
@@ -24,15 +24,17 @@
 <script src="/static/gp.js"></script>
 <script>
 const A = {me: null, poll: null};
-const PAGES = [["overview", "◷ Tổng quan"], ["users", "👤 Người dùng"], ["projects", "▤ Dự án"], ["jobs", "⚙ Jobs"],
-  ["agents", "◆ Core agent", true], ["usage", "▦ Quota & usage"], ["settings", "☰ Cài đặt", true], ["audit", "✎ Nhật ký"]];
+const PAGES = [["overview", "Tổng quan", false, "gauge"], ["users", "Người dùng", false, "users"], ["projects", "Dự án", false, "folder"], ["jobs", "Lượt chạy", false, "list"],
+  ["agents", "Core agent", true, "cpu"], ["usage", "Mức dùng AI", false, "chart"], ["settings", "Cài đặt hệ thống", true, "sliders"], ["audit", "Nhật ký thao tác", false, "log"]];
 const page = () => location.hash.slice(1) || "overview";
 window.onhashchange = render;
-function nav() { $("#nav").innerHTML = PAGES.filter(p => !p[2] || A.me.role === "owner").map(([k, l]) => `<a href="#${k}" class="${page() === k ? "on" : ""}">${l}</a>`).join(""); }
-function topbar(t, sub = "", extra = "") { return `<div class="top">${globalBanner(A.me)}<div class="row"><button class="burger ghost sm" type="button">☰</button><div class="grow"><h1 style="margin:0">${t}</h1>${sub ? `<div class="hint">${sub}</div>` : ""}</div>${extra}</div></div>`; }
-async function render() { clearInterval(A.poll); nav(); const f = {overview, users, projects, jobs, agents, usage, settings, audit}[page()] || overview;
-  try { await f(); } catch (x) { $("#main").innerHTML = topbar("Lỗi") + `<div class="body"><p class="err">${esc(x.message)}</p></div>`; } }
-const tok = n => n >= 1e6 ? (n / 1e6).toFixed(2).replace(".", ",") + " tr" : n >= 1e3 ? Math.round(n / 1e3) + " k" : fmt(n);
+function nav() { $("#nav").innerHTML = PAGES.filter(p => !p[2] || A.me.role === "owner").map(([k, l, , ic]) => `<a href="#${k}" class="${page() === k ? "on" : ""}">${icon(ic)}${l}</a>`).join(""); }
+Object.defineProperty(window, "ME", {get: () => A.me, configurable: true});
+async function render() { clearInterval(A.poll); closeOverlays(); nav(); const k = page(), f = {overview, users, projects, jobs, agents, usage, settings, audit}[k] || overview;
+  const t = setTimeout(() => { $("#main").innerHTML = topbar(PAGES.find(p => p[0] === k)?.[1] || "") + `<div class="body">${loading()}</div>`; }, 150);   // chỉ hiện khi tải lâu
+  try { await f(); } catch (x) { $("#main").innerHTML = topbar(PAGES.find(p => p[0] === k)?.[1] || "Quản trị") + `<div class="body">${loadError("Không tải được trang: " + x.message, "render()")}</div>`; }
+  finally { clearTimeout(t); } }
+const tok = fmtCompact;
 
 // ---------------------------------------------------------------- overview
 const dur = s => s == null ? "—" : s < 90 ? Math.round(s) + " giây" : s < 5400 ? Math.round(s / 60) + " phút" : (s / 3600).toLocaleString("vi-VN", {maximumFractionDigits: 1}) + " giờ";
@@ -51,20 +53,20 @@ async function overview() {
   const ser = m.series, maxJ = Math.max(1, ...ser.map(d => (d.done || 0) + (d.failed || 0))), maxT = Math.max(1, ...ser.map(d => d.tokens || 0));
   const kpi = (l, v, s) => `<div class="card kpi"><div class="k">${l}</div><b>${v}</b><span>${s}</span></div>`;
   $("#main").innerHTML = topbar("Tổng quan", `Chỉ số ${A.days} ngày gần nhất`, `<div class="seg" role="radiogroup" aria-label="Khoảng thời gian">${[7, 30, 90].map(d => `<label class="${A.days === d ? "on" : ""}"><input type="radio" name="rng" value="${d}" ${A.days === d ? "checked" : ""}>${d} ngày</label>`).join("")}</div>
-    <button type="button" class="sm" id="csv">⬇ Xuất CSV</button>`) + `<div class="body">
+    <button type="button" class="sm" id="csv">${icon("download")}Xuất CSV</button>`) + `<div class="body">
   ${alerts.map(([lv, t]) => `<div class="banner ${lv}">${t}</div>`).join("")}
-  <div class="grid g4">
+  <div class="grid kgrid">
     ${kpi("Người dùng", fmtInt(m.users.total), `+${m.users.new} mới · WAU ${m.users.wau} / MAU ${m.users.mau}${m.users.stickiness != null ? ` · độ dính ${pct(m.users.stickiness)}` : ""}`)}
     ${kpi("Dự án", fmtInt(m.projects.total), `+${m.projects.new} mới · ${m.projects.with_dossier} có hồ sơ · ${m.projects.shares} link chia sẻ, ${fmtInt(m.projects.share_views)} lượt xem`)}
     ${kpi("Job thành công", pct(J.success_rate), `${J.done} xong · ${J.failed} lỗi (${J.system_failed} do hệ thống) · ${J.cancelled} huỷ`)}
     ${kpi("Thời gian chạy Plan", dur(J.duration_p50), `p90 ${dur(J.duration_p90)} · chờ hàng đợi ${dur(J.wait_p50)}`)}
     ${kpi("Token tài khoản hệ thống", tok(m.tokens.owner), `${m.tokens.owner_cost_usd ? "≈ $" + m.tokens.owner_cost_usd.toLocaleString("vi-VN") + " · " : ""}người dùng tự trả ${tok(m.tokens.users)} token`)}
-    ${kpi("Hàng đợi", `${H.running} <small>đang chạy</small> · ${H.queue} <small>chờ</small>`, H.oldest_queued_s ? `job chờ lâu nhất ${dur(H.oldest_queued_s)}` : "không có job chờ")}
+    ${kpi("Hàng đợi · đang chạy / chờ", `${H.running} / ${H.queue}`, H.oldest_queued_s ? `job chờ lâu nhất ${dur(H.oldest_queued_s)}` : "không có job chờ")}
     ${kpi("Lời mời đang mở", fmtInt(o.invites_open), `<a href="#users">Quản lý người dùng & lời mời →</a>`)}
     ${kpi("Ổ đĩa còn trống", bytes(st.disk_free), `${pct(st.disk_free / st.disk_total)} của ${bytes(st.disk_total)}`)}</div>
   <div class="grid g2" style="margin-top:14px">
     <section class="card"><div class="row"><div class="k grow">Job Plan theo ngày</div><span class="legend"><i style="background:var(--ok)"></i>xong <i style="background:var(--bad)"></i>lỗi</span></div>
-      ${ser.some(d => d.done || d.failed) ? `<div class="bars">${ser.map(d => `<span class="stack" title="${d.d}: ${d.done || 0} xong · ${d.failed || 0} lỗi"><i style="height:${(d.failed || 0) / maxJ * 100}%;background:var(--bad)"></i><i style="height:${(d.done || 0) / maxJ * 100}%;background:var(--ok)"></i></span>`).join("")}</div>
+      ${ser.some(d => d.done || d.failed) ? `<div class="bars" role="img" aria-label="Job Plan theo ngày">${ser.map(d => `<span class="stack" title="${d.d}: ${d.done || 0} xong · ${d.failed || 0} lỗi"><i style="height:${(d.failed || 0) / maxJ * 100}%;background:var(--bad)"></i><i style="height:${(d.done || 0) / maxJ * 100}%;background:var(--ok)"></i></span>`).join("")}</div>
       <div class="axis"><span>${ser[0].d}</span><span>${ser.at(-1).d}</span></div>` : '<div class="empty">Chưa có job trong khoảng này.</div>'}</section>
     <section class="card"><div class="k">Token theo ngày</div>${ser.some(d => d.tokens) ? `<div class="bars">${ser.map(d => `<i style="height:${(d.tokens || 0) / maxT * 100}%" title="${d.d}: ${fmtInt(d.tokens || 0)} token${d.signups ? ` · ${d.signups} đăng ký` : ""}"></i>`).join("")}</div>
       <div class="axis"><span>${ser[0].d}</span><span>${ser.at(-1).d}</span></div>` : '<div class="empty">Chưa có lượt dùng AI trong khoảng này.</div>'}</section></div>
@@ -92,14 +94,13 @@ function funnelView(f) {
     <p class="hint" style="margin:8px 0 0">Bước rơi nhiều nhất là nơi cần cải thiện trải nghiệm.</p>`;
 }
 function jobTable(rows, actions) {
-  return `<div class="scroll-x"><table class="t"><thead><tr><th>#</th><th>Trạng thái</th><th>Dự án</th><th>Người dùng</th><th>Engine</th><th>Tính phí</th><th>Tạo</th>${actions ? "<th></th>" : ""}</tr></thead><tbody>
+  return `<div class="scroll-x"><table class="t"><thead><tr><th>#</th><th>Trạng thái</th><th>Dự án</th><th>Người dùng</th><th>Agent</th><th>Chi phí do</th><th>Tạo lúc</th>${actions ? "<th></th>" : ""}</tr></thead><tbody>
   ${rows.map(j => `<tr><td>${j.id}</td><td>${pill(j.status)}${j.error ? `<div class="hint err">${esc(j.error)}</div>` : ""}</td><td>${j.kind === "install" ? `<i>cài ${esc(j.engine)}</i>` : esc(j.name || "—")}<div class="hint">${esc(j.slug || "")}</div></td>
-  <td>${esc(j.email || "")}</td><td>${esc(j.engine)}${j.profile ? `<div class="hint">${esc(j.profile)}</div>` : ""}</td><td>${esc({owner: "hệ thống", user_key: "key user", demo: "demo"}[j.billing] || "—")}</td><td class="hint">${ago(j.created)}</td>
-  ${actions ? `<td><div class="row" style="flex-wrap:nowrap"><button class="sm" data-log="${j.id}" type="button">Log</button>${["queued", "starting", "running", "waiting"].includes(j.status) ? `<button class="sm danger" data-cancel="${j.id}" type="button">Huỷ</button>` : j.kind === "plan" ? `<button class="sm ghost" data-retry="${j.id}" type="button">Chạy lại</button>` : ""}</td>` : ""}</tr>`).join("") || '<tr><td colspan="8" class="hint">Chưa có job.</td></tr>'}</tbody></table></div>`;
+  <td>${esc(j.email || "")}</td><td>${esc(ENGINE[j.engine] || j.engine || "—")}${j.profile ? `<div class="hint">${esc(j.profile)}</div>` : ""}</td><td>${esc(BILL[j.billing] || "—")}</td><td class="hint">${when(j.created)}</td>
+  ${actions ? `<td class="actions"><button class="sm" data-log="${j.id}" type="button">Xem log</button>${["queued", "starting", "running", "waiting"].includes(j.status) ? `<button class="sm ghost danger" data-cancel="${j.id}" type="button">Huỷ</button>` : j.kind === "plan" ? `<button class="sm ghost" data-retry="${j.id}" type="button">Chạy lại</button>` : ""}</td>` : ""}</tr>`).join("") || emptyRow(8, "Chưa có lượt chạy nào.")}</tbody></table></div>`;
 }
 
 // ---------------------------------------------------------------- users
-const ROLE = {owner: "Owner", admin: "Admin", user: "Người dùng"};
 async function users() {
   const [us, inv] = await Promise.all([api("/admin/users"), api("/admin/invites")]), owner = A.me.role === "owner";
   A.uf ??= {q: "", role: "", status: ""};
@@ -115,9 +116,9 @@ async function users() {
     ${pending.length || inv.length ? `<div class="card scroll-x" style="margin-top:14px"><h2>Lời mời</h2><table class="t"><thead><tr><th>Gửi cho</th><th>Vai trò</th><th>Trạng thái</th><th>Hết hạn</th><th></th></tr></thead><tbody>
     ${inv.slice(0, 30).map(i => { const st = i.used_by ? "used" : i.revoked ? "revoked" : i.expires < new Date().toISOString() ? "expired" : "open";
       return `<tr><td>${esc(i.email || "Link mở (ai có link đều đăng ký được)")}${i.note ? `<div class="hint">${esc(i.note)}</div>` : ""}</td><td>${ROLE[i.role]}</td>
-      <td>${{used: `<span class="pill ok">đã dùng</span> <span class="hint">${esc(i.used_email || "")}</span>`, revoked: '<span class="pill bad">đã thu hồi</span>', expired: '<span class="pill">hết hạn</span>', open: '<span class="pill warn">đang chờ</span>'}[st]}</td>
+      <td>${pill(st)}${st === "used" ? ` <span class="hint">${esc(i.used_email || "")}</span>` : ""}</td>
       <td class="hint">${i.expires ? new Date(i.expires).toLocaleDateString("vi-VN") : "—"}</td>
-      <td class="row" style="flex-wrap:nowrap">${st === "open" ? `<button class="sm" data-icopy="${esc(i.token)}" type="button">Sao chép link</button><button class="sm ghost danger" data-irev="${i.id}" type="button">Thu hồi</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>` : ""}</div>`;
+      <td class="actions">${st === "open" ? `<button class="sm" data-icopy="${esc(i.token)}" type="button">Sao chép link</button><button class="sm ghost danger" data-irev="${i.id}" type="button">Thu hồi</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>` : ""}</div>`;
   const draw = () => { const f = A.uf, q = f.q.toLowerCase();
     const rows = us.filter(u => (!q || (u.name + " " + u.email).toLowerCase().includes(q)) && (!f.role || u.role === f.role) && (!f.status || u.status === f.status));
     $("#urows").innerHTML = rows.map(u => `<tr class="click" data-u="${u.id}"><td><b>${esc(u.name)}</b><div class="hint">${esc(u.email)}${u.google ? " · Google" : ""}</div></td>
@@ -125,7 +126,7 @@ async function users() {
       <td>${u.onboarding ? `<div class="meter" style="width:80px" title="${u.onboarding.done}/${u.onboarding.total} bước bắt đầu"><i style="width:${u.onboarding.done / u.onboarding.total * 100}%"></i></div><span class="hint">${u.onboarding.done}/${u.onboarding.total}</span>` : ""}</td>
       <td class="num">${u.quota.projects}${u.quota.projects_limit != null ? ` / ${u.quota.projects_limit}` : ""}</td>
       <td class="num">${u.quota.owner_jobs_month}${u.quota.owner_jobs_limit != null ? ` / ${u.quota.owner_jobs_limit}` : ""}</td>
-      <td class="num">${tok(u.tokens_month)}</td><td class="hint">${ago(u.last_login)}</td></tr>`).join("") || '<tr><td colspan="8" class="hint">Không có người dùng khớp bộ lọc.</td></tr>';
+      <td class="num">${tok(u.tokens_month)}</td><td class="hint">${when(u.last_login)}</td></tr>`).join("") || emptyRow(8, "Không có người dùng khớp bộ lọc.");
     $$("tr[data-u]").forEach(tr => tr.onclick = () => userDrawer(+tr.dataset.u)); };
   $("#uq").oninput = e => { A.uf.q = e.target.value; draw(); };
   $("#ur2").onchange = e => { A.uf.role = e.target.value; draw(); };
@@ -159,8 +160,8 @@ async function userDrawer(uid) {
   closeDrawer(); const u = await api("/admin/users/" + uid), owner = A.me.role === "owner", self = u.id === A.me.id, ob = u.onboarding;
   const bg = document.createElement("div"); bg.className = "drawer-bg"; bg.onclick = closeDrawer;
   const d = document.createElement("aside"); d.className = "drawer"; d.setAttribute("aria-label", "Chi tiết người dùng");
-  d.innerHTML = `<div class="row"><div class="grow"><h2 style="margin:0">${esc(u.name)}</h2><div class="hint">${esc(u.email)} · tham gia ${ago(u.created)}${u.invited_by ? ` · mời bởi ${esc(u.invited_by)}` : ""}</div></div><button class="sm ghost" type="button" id="dx">Đóng ✕</button></div>
-    <div class="row" style="margin:12px 0">${pill(u.status)} <span class="pill core">${ROLE[u.role]}</span> <span class="hint">Đăng nhập ${ago(u.last_login)}</span></div>
+  d.innerHTML = `<div class="row"><div class="grow"><h2 style="margin:0">${esc(u.name)}</h2><div class="hint">${esc(u.email)} · tham gia ${when(u.created)}${u.invited_by ? ` · mời bởi ${esc(u.invited_by)}` : ""}</div></div><button class="sm ghost" type="button" id="dx">Đóng ✕</button></div>
+    <div class="row" style="margin:12px 0">${pill(u.status)} <span class="pill core">${ROLE[u.role]}</span> <span class="hint">Đăng nhập ${when(u.last_login)}</span></div>
     <div class="card"><div class="row"><b class="grow">Bắt đầu</b><span class="hint">${ob.done}/${ob.total}</span></div><div class="meter" style="margin:8px 0"><i style="width:${ob.done / ob.total * 100}%"></i></div>
       <ul class="plain">${ob.steps.map(x => `<li>${x.done ? '<span class="ok">✓</span>' : '<span class="hint">○</span>'} ${esc(x.title)}</li>`).join("")}</ul></div>
     <div class="card" style="margin-top:12px"><b>Hạn mức & quyền</b><div class="grid g2" style="gap:0 12px">
@@ -169,10 +170,10 @@ async function userDrawer(uid) {
       ${owner && !self ? `<div><label for="drole">Vai trò</label><select id="drole">${Object.entries(ROLE).map(([k, v]) => `<option value="${k}" ${u.role === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>` : ""}</div>
       <div class="row" style="margin-top:10px"><button class="pri sm" type="button" id="dsave">Lưu hạn mức</button>
       ${!self && (owner || u.role !== "owner") ? `<button class="sm ghost" type="button" id="dpw">Đặt mật khẩu mới</button><button class="sm ${u.status === "active" ? "danger" : ""}" type="button" id="dlock">${u.status === "active" ? "Khoá tài khoản" : "Mở khoá"}</button>` : ""}</div></div>
-    <div class="card" style="margin-top:12px"><b>Dự án · ${u.projects.length}</b><table class="t"><tbody>${u.projects.map(p => `<tr><td>${esc(p.name)}<div class="hint">${p.progress.answered}/${p.progress.total} câu · ${p.locked} điểm chốt</div></td><td>${pill(p.status)}</td><td class="hint">${ago(p.updated)}</td><td>${p.exported ? `<a href="/viewer/${esc(p.slug)}" target="_blank" rel="noopener">Hồ sơ ↗</a>` : ""}</td></tr>`).join("") || '<tr><td class="hint">Chưa có dự án.</td></tr>'}</tbody></table></div>
+    <div class="card" style="margin-top:12px"><b>Dự án · ${u.projects.length}</b><table class="t"><tbody>${u.projects.map(p => `<tr><td>${esc(p.name)}<div class="hint">${p.progress.answered}/${p.progress.total} câu · ${p.locked} điểm chốt</div></td><td>${pill(p.status)}</td><td class="hint">${when(p.updated)}</td><td>${p.exported ? `<a href="/viewer/${esc(p.slug)}" target="_blank" rel="noopener">Hồ sơ ↗</a>` : ""}</td></tr>`).join("") || emptyRow(3, "Chưa có dự án.")}</tbody></table></div>
     <div class="card" style="margin-top:12px"><b>Sử dụng tháng này</b><p class="hint" style="margin:4px 0">${tok(u.usage.i + u.usage.o)} token · ${u.usage.n} lượt · ${u.keys.length} API key${u.keys.length ? ": " + u.keys.map(k => `${esc(k.provider)} ${esc(k.key_hint)}`).join(", ") : ""}</p>
-      <table class="t"><tbody>${u.jobs.map(j => `<tr><td>#${j.id}</td><td>${esc(j.name || j.kind)}</td><td>${pill(j.status)}</td><td class="hint">${ago(j.created)}</td></tr>`).join("") || '<tr><td class="hint">Chưa có job.</td></tr>'}</tbody></table></div>
-    <div class="card" style="margin-top:12px"><b>Hoạt động gần đây</b><ul class="plain">${u.activity.map(a => `<li><code>${esc(a.action)}</code> ${esc(a.target)} <span class="hint">${ago(a.created)}</span></li>`).join("") || '<li class="hint">—</li>'}</ul></div>`;
+      <table class="t"><tbody>${u.jobs.map(j => `<tr><td>#${j.id}</td><td>${esc(j.name || j.kind)}</td><td>${pill(j.status)}</td><td class="hint">${when(j.created)}</td></tr>`).join("") || emptyRow(4, "Chưa có lượt chạy.")}</tbody></table></div>
+    <div class="card" style="margin-top:12px"><b>Hoạt động gần đây</b><ul class="plain">${u.activity.map(a => `<li><code>${esc(a.action)}</code> ${esc(a.target)} <span class="hint">${when(a.created)}</span></li>`).join("") || '<li class="hint">—</li>'}</ul></div>`;
   document.body.append(bg, d);
   const done = async m => { toast(m); await users(); userDrawer(uid); };
   $("#dx").onclick = closeDrawer;
@@ -195,8 +196,8 @@ async function projects() {
   `<div class="body"><div class="card scroll-x"><table class="t"><thead><tr><th>Dự án</th><th>Chủ</th><th>Trạng thái</th><th>Phỏng vấn</th><th class="num">Điểm chốt</th><th>Job gần nhất</th><th>Cập nhật</th><th></th></tr></thead><tbody>
   ${ps.map(p => `<tr><td><b>${esc(p.name)}</b><div class="hint">${esc(p.slug)}</div></td><td>${esc(p.email)}</td><td>${pill(p.status)}</td>
   <td>${p.progress.answered}/${p.progress.total}${p.progress.required_missing.length ? ` <span class="hint">(thiếu ${p.progress.required_missing.length} bắt buộc)</span>` : ""}</td><td class="num">${p.locked}</td>
-  <td>${p.last_job ? `#${p.last_job.id} ${pill(p.last_job.status)}` : "—"}</td><td class="hint">${ago(p.updated)}</td>
-  <td>${p.exported ? `<a href="/viewer/${esc(p.slug)}" target="_blank" rel="noopener">Xem hồ sơ ↗</a>` : ""} <a href="/app#p=${esc(p.slug)}&t=interview">Mở</a></td></tr>`).join("") || '<tr><td colspan="8" class="hint">Chưa có dự án.</td></tr>'}</tbody></table></div></div>`;
+  <td>${p.last_job ? `#${p.last_job.id} ${pill(p.last_job.status)}` : "—"}</td><td class="hint">${when(p.updated)}</td>
+  <td>${p.exported ? `<a href="/viewer/${esc(p.slug)}" target="_blank" rel="noopener">Xem hồ sơ</a>` : ""} <a href="/app#p=${esc(p.slug)}&t=interview">Mở</a></td></tr>`).join("") || emptyRow(8, "Chưa có dự án.")}</tbody></table></div></div>`;
   const s = $("#seed"); if (s) s.onclick = async () => { s.disabled = true; s.textContent = "Đang build…"; try { await api("/admin/seed-sample", {method: "POST"}); toast("Đã nạp mẫu"); } catch (x) { toast(x.message); } projects(); };
 }
 
@@ -204,7 +205,7 @@ async function projects() {
 async function jobs() {
   const st = new URLSearchParams(location.search).get("s") || "";
   const js = await api("/admin/jobs" + (A.filter ? "?status=" + A.filter : ""));
-  $("#main").innerHTML = topbar("Jobs", "Hàng đợi chạy core agent", `<select id="jf" style="width:auto">${["", "queued", "starting", "running", "waiting", "done", "failed", "cancelled"].map(s => `<option value="${s}" ${A.filter === s ? "selected" : ""}>${s ? STATUS[s] : "tất cả"}</option>`).join("")}</select>`) +
+  $("#main").innerHTML = topbar("Lượt chạy", "Hàng đợi của core agent — Plan, dựng lại hồ sơ, kiểm link", `<select id="jf" style="width:auto">${["", "queued", "starting", "running", "waiting", "done", "failed", "cancelled"].map(s => `<option value="${s}" ${A.filter === s ? "selected" : ""}>${s ? STATUS[s] : "tất cả"}</option>`).join("")}</select>`) +
   `<div class="body"><div class="card">${jobTable(js, true)}</div><div class="card" style="margin-top:14px" id="logc" hidden><div class="row"><h2 class="grow" id="lt" style="margin:0"></h2><button class="sm ghost" id="lx" type="button">Đóng</button></div><pre class="log" id="lg" style="margin-top:10px"></pre></div></div>`;
   $("#jf").onchange = e => { A.filter = e.target.value; jobs(); };
   $$("[data-log]").forEach(b => b.onclick = () => showLog(+b.dataset.log));
@@ -220,30 +221,30 @@ function showLog(id) { clearInterval(A.poll); $("#logc").hidden = false; $("#lx"
 async function agents() {
   const {profiles, engines, sandbox} = await api("/admin/agents"); A.sandbox = sandbox;
   const eng = Object.entries(engines).filter(([k]) => k !== "demo");
-  $("#main").innerHTML = topbar("Core agent", "Agent lõi chạy Plan trên tài khoản của owner · mỗi profile = một tài khoản đăng nhập riêng (HOME riêng)") + `<div class="body">
-  <div class="grid g2">${eng.map(([k, e]) => `<div class="card"><div class="row"><b class="grow">${esc(e.label)}</b>${pill(e.installed ? "ok" : "not_installed").replace(/>[^<]*</, e.installed ? ">đã cài<" : ">chưa cài<")}</div>
+  $("#main").innerHTML = topbar("Core agent", "Agent lõi chạy Plan trên tài khoản của chủ hệ thống · mỗi tài khoản agent là một lần đăng nhập riêng (HOME riêng)") + `<div class="body">
+  <div class="grid g2">${eng.map(([k, e]) => `<div class="card"><div class="row"><b class="grow">${esc(e.label)}</b>${e.installed ? '<span class="pill ok">đã cài</span>' : pill("not_installed")}</div>
     <p class="hint" style="margin:6px 0">Lệnh cài: <code>${esc(e.install)}</code></p><button class="sm" data-install="${k}" type="button">${e.installed ? "Cài lại / cập nhật" : "Cài đặt CLI"}</button></div>`).join("")}</div>
   ${A.sandbox && !A.sandbox.enabled ? `<div class="banner" style="margin-top:14px"><b>Agent chưa được cô lập.</b> ${esc(A.sandbox.hint)}</div>` : A.sandbox ? `<p class="hint" style="margin-top:14px">🔒 ${esc(A.sandbox.hint)}</p>` : ""}
-  <div class="row" style="margin:20px 0 10px"><h2 class="grow" style="margin:0">Tài khoản agent</h2><span class="hint">Job chạy trên profile <b>đang dùng</b>; nếu bật tự chuyển, hết quota sẽ chuyển sang profile kế tiếp theo ưu tiên.</span></div>
-  <div class="grid g2">${profiles.map(profCard).join("") || '<div class="card hint">Chưa có profile. Tạo profile đầu tiên bên dưới — mặc định là Antigravity CLI.</div>'}</div>
+  <div class="row" style="margin:20px 0 10px"><h2 class="grow" style="margin:0">Tài khoản agent</h2><span class="hint">Lượt chạy dùng tài khoản <b>đang dùng</b>; nếu bật tự chuyển, hết quota sẽ chuyển sang profile kế tiếp theo ưu tiên.</span></div>
+  <div class="grid g2">${profiles.map(profCard).join("") || '<div class="card empty">Chưa có tài khoản agent nào. Thêm tài khoản đầu tiên ở form bên dưới — mặc định là Antigravity CLI.</div>'}</div>
   <div class="card" id="termc" style="margin-top:14px" hidden><div class="row"><h2 class="grow" style="margin:0" id="tt">Terminal</h2><button class="sm danger" id="tstop" type="button">Đóng terminal</button></div>
     <p class="hint">Mở link đăng nhập bên dưới trên trình duyệt của bạn, đăng nhập tài khoản Google/Anthropic, rồi dán mã xác nhận (nếu CLI yêu cầu) vào ô nhập. Với Claude: sau khi xong, CLI in ra token dài hạn → bấm <b>Lưu token</b> trên thẻ profile.</p>
     <div class="urls" id="turls"></div><pre class="term" id="tout"></pre>
     <form class="row" id="tin" style="margin-top:8px"><input id="ttext" class="grow" placeholder="Gõ vào terminal (mã xác nhận, /usage, /logout…)" autocomplete="off"><button class="pri">Gửi ⏎</button>
     <button class="ghost" type="button" data-key="\\u001b[B">↓</button><button class="ghost" type="button" data-key="\\u001b[A">↑</button><button class="ghost" type="button" data-key="\\r">Enter</button><button class="ghost" type="button" data-key="\\u0003">Ctrl+C</button></form></div>
   <form class="card" id="af" style="margin-top:14px;max-width:760px"><h2>Thêm tài khoản agent</h2><div class="grid g2" style="gap:0 12px">
-    <div><label for="an">Tên profile</label><input id="an" required placeholder="Ví dụ: Google Ryan chính"></div>
-    <div><label for="ae">Engine</label><select id="ae">${Object.entries(engines).map(([k, e]) => `<option value="${k}">${esc(e.label)}</option>`).join("")}</select></div>
+    <div><label for="an">Tên tài khoản agent</label><input id="an" required placeholder="Ví dụ: Google Ryan chính"></div>
+    <div><label for="ae">Loại agent</label><select id="ae">${Object.entries(engines).map(([k, e]) => `<option value="${k}">${esc(e.label)}</option>`).join("")}</select></div>
     <div><label for="am">Cách xác thực</label><select id="am"><option value="account">Đăng nhập tài khoản (OAuth trong terminal)</option><option value="api_key">API key</option></select></div>
     <div><label for="al">Nhãn tài khoản (email)</label><input id="al" placeholder="để nhận ra tài khoản nào"></div>
     <div id="akr" hidden><label for="ak" id="akl">API key</label><input id="ak" type="password" autocomplete="off"></div>
     <div><label for="amo">Model (tuỳ chọn)</label><input id="amo" placeholder="lấy danh sách sau khi đăng nhập"></div>
     <div><label for="ap">Ưu tiên (số nhỏ chạy trước)</label><input id="ap" type="number" value="100"></div></div>
-    <p class="err" id="amsg"></p><button class="pri">Tạo profile</button></form></div>`;
+    <p class="err" id="amsg"></p><button class="pri">Thêm tài khoản agent</button></form></div>`;
   const syncMode = () => { $("#akr").hidden = $("#am").value !== "api_key"; $("#akl").textContent = engines[$("#ae").value]?.key_label || "API key"; };
   $("#am").onchange = $("#ae").onchange = syncMode; syncMode();
   $("#af").onsubmit = async e => { e.preventDefault(); try { await api("/admin/agents", {body: {name: $("#an").value, engine: $("#ae").value, auth_mode: $("#am").value,
-    key: $("#ak").value, model: $("#amo").value, account_label: $("#al").value, priority: $("#ap").value}}); toast("Đã tạo profile"); agents(); } catch (x) { $("#amsg").textContent = x.message; } };
+    key: $("#ak").value, model: $("#amo").value, account_label: $("#al").value, priority: $("#ap").value}}); toast("Đã thêm tài khoản agent"); agents(); } catch (x) { $("#amsg").textContent = x.message; } };
   $$("[data-install]").forEach(b => b.onclick = async () => { if (!await ask(`Chạy lệnh cài ${b.dataset.install} trên máy chủ?`, "Cài đặt", false)) return; const r = await api("/admin/agents/install", {body: {engine: b.dataset.install}}); toast("Đang cài — xem log ở Jobs #" + r.job_id); location.hash = "jobs"; });
   $$(".prof").forEach(card => { const id = +card.dataset.p, p = profiles.find(x => x.id === id);
     card.querySelectorAll("[data-a]").forEach(b => b.onclick = () => profAction(p, b.dataset.a, b));
@@ -256,13 +257,13 @@ function profCard(p) {
   const pct = p.budget_tokens_month ? Math.min(100, p.tokens_month / p.budget_tokens_month * 100) : null;
   const models = [...new Set([p.model, ...p.models].filter(Boolean))];
   return `<div class="prof ${p.is_active ? "act" : ""}" data-p="${p.id}"><div class="row"><h3 class="grow">${esc(p.name)}</h3>${p.is_active ? '<span class="pill core">đang dùng</span>' : ""}${p.enabled ? pill(p.status || "new") : '<span class="pill">đã tắt</span>'}</div>
-  <div class="kv"><span>Engine</span><span>${esc(p.engine)} ${p.installed ? "" : '<span class="err">· chưa cài CLI</span>'}</span><span>Xác thực</span><span>${p.auth_mode === "api_key" ? `API key ${esc(p.key_hint || "(chưa có)")}` : "đăng nhập tài khoản"}${p.account_label ? " · " + esc(p.account_label) : ""}</span>
+  <div class="kv"><span>Loại agent</span><span>${esc(ENGINE[p.engine] || p.engine)} ${p.installed ? "" : '<span class="err">· chưa cài CLI</span>'}</span><span>Xác thực</span><span>${p.auth_mode === "api_key" ? `API key ${esc(p.key_hint || "(chưa có)")}` : "đăng nhập tài khoản"}${p.account_label ? " · " + esc(p.account_label) : ""}</span>
   <span>Phiên bản</span><span>${esc(p.version || "—")}</span><span>Model</span><span><select class="msel" aria-label="Model của tài khoản agent" style="padding:4px 8px"><option value="">mặc định</option>${models.map(m => `<option ${m === p.model ? "selected" : ""}>${esc(m)}</option>`).join("")}</select></span>
   <span>Tháng này</span><span>${tok(p.tokens_month)} token · ${p.jobs_month} lượt</span>
   <span>Ưu tiên</span><span><input class="prio" type="number" min="0" aria-label="Ưu tiên (số nhỏ chạy trước)" value="${p.priority ?? 100}" style="padding:4px 8px;width:110px"> <span class="hint">số nhỏ dùng trước</span></span>
   <span>Ngân sách</span><span><input class="budget" type="number" aria-label="Ngân sách token mỗi tháng" value="${p.budget_tokens_month ?? ""}" placeholder="token/tháng (tuỳ chọn)" style="padding:4px 8px"></span></div>
   ${pct != null ? `<div class="meter" title="${Math.round(pct)}% ngân sách"><i style="width:${pct}%;background:${pct > 85 ? "var(--bad)" : "var(--core)"}"></i></div>` : ""}
-  ${p.quota_text ? `<details style="margin-top:8px"><summary class="hint">Quota đọc lúc ${ago(p.quota_checked)}</summary><pre class="log" style="max-height:200px">${esc(p.quota_text.slice(-2500))}</pre></details>` : ""}
+  ${p.quota_text ? `<details style="margin-top:8px"><summary class="hint">Quota đọc lúc ${when(p.quota_checked)}</summary><pre class="log" style="max-height:200px">${esc(p.quota_text.slice(-2500))}</pre></details>` : ""}
   <div class="row" style="margin-top:10px">${p.is_active ? "" : '<button class="sm pri" data-a="activate" type="button">Dùng tài khoản này</button>'}
   <button class="sm" data-a="check" type="button">Kiểm tra</button>${p.engine !== "demo" ? `${p.auth_mode === "account" ? '<button class="sm" data-a="login" type="button">Đăng nhập</button>' : ""}
   <button class="sm" data-a="usage" type="button">Xem quota</button><button class="sm" data-a="models" type="button">Lấy model</button>
@@ -281,7 +282,7 @@ async function profAction(p, a, btn) {
     if (a === "key") { const k = await askText(p.auth_mode === "account" ? "Dán token mà `claude setup-token` in ra sau khi đăng nhập" : "API key mới", "", "password"); if (!k) return; await api(P, {method: "PATCH", body: {key: k}}); }
     if (a === "reset") await api(P, {method: "PATCH", body: {reset_status: true}});
     if (a === "toggle") { await api(P, {method: "PATCH", body: {enabled: !p.enabled}}); toast(p.enabled ? `Đã tắt ${p.name}${p.is_active ? " — job mới chuyển sang tài khoản kế tiếp" : ""}` : `Đã bật ${p.name}`); }
-    if (a === "del") { if (!await ask(`Xoá profile ${p.name}? Phiên đăng nhập lưu trong profile cũng bị xoá.`, "Xoá")) return; await api(P, {method: "DELETE"}); }
+    if (a === "del") { if (!await ask(`Xoá tài khoản agent ${p.name}? Phiên đăng nhập lưu trong đó cũng bị xoá.`, "Xoá")) return; await api(P, {method: "DELETE"}); }
   } catch (x) { toast(x.message); }
   agents();
 }
@@ -302,11 +303,11 @@ function openTerm(p, action) {
 async function usage() {
   const u = await api("/admin/usage");
   const tbl = (rows, cols) => `<table class="t"><thead><tr>${cols.map(c => `<th class="${c[2] || ""}">${c[0]}</th>`).join("")}</tr></thead><tbody>${rows.map(r => `<tr>${cols.map(c => `<td class="${c[2] || ""}">${c[1](r)}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${cols.length}" class="hint">Chưa có dữ liệu.</td></tr>`}</tbody></table>`;
-  $("#main").innerHTML = topbar("Quota & usage", "Tháng này · token đọc từ phản hồi của API / CLI") + `<div class="body"><div class="grid g2">
-  <div class="card"><h2>Tài khoản hệ thống (core agent)</h2>${tbl(u.by_profile, [["Profile", r => esc(r.name) + `<div class="hint">${esc(r.engine)}</div>`], ["Vào", r => tok(r.i), "num"], ["Ra", r => tok(r.o), "num"], ["Chi phí ước", r => r.c ? "$" + r.c.toFixed(2) : "—", "num"], ["Lượt", r => r.n, "num"]])}
+  $("#main").innerHTML = topbar("Mức dùng AI", "Tháng này · token đọc từ phản hồi của API / CLI") + `<div class="body"><div class="grid g2">
+  <div class="card"><h2>Tài khoản hệ thống (core agent)</h2>${tbl(u.by_profile, [["Tài khoản agent", r => esc(r.name) + `<div class="hint">${esc(ENGINE[r.engine] || r.engine)}</div>`], ["Vào", r => tok(r.i), "num"], ["Ra", r => tok(r.o), "num"], ["Chi phí ước", r => r.c ? "$" + r.c.toFixed(2) : "—", "num"], ["Lượt", r => r.n, "num"]])}
   <p class="hint">Quota thật của tài khoản (gói, tín dụng còn lại) chỉ đọc được trong TUI: vào <a href="#agents">Core agent</a> → <b>Xem quota</b>.</p></div>
   <div class="card"><h2>Theo người dùng</h2>${tbl(u.by_user, [["Người dùng", r => esc(r.email)], ["Loại", r => r.source === "chat" ? "chat (key user)" : "job"], ["Vào", r => tok(r.i), "num"], ["Ra", r => tok(r.o), "num"], ["Lượt", r => r.n, "num"]])}</div>
-  <div class="card"><h2>Theo provider / model</h2>${tbl(u.by_provider, [["Provider", r => esc(r.provider)], ["Model", r => esc(r.model || "—")], ["Vào", r => tok(r.i), "num"], ["Ra", r => tok(r.o), "num"], ["Lượt", r => r.n, "num"]])}</div></div></div>`;
+  <div class="card"><h2>Theo nhà cung cấp / model</h2>${tbl(u.by_provider, [["Nhà cung cấp", r => esc(r.provider)], ["Model", r => esc(r.model || "—")], ["Vào", r => tok(r.i), "num"], ["Ra", r => tok(r.o), "num"], ["Lượt", r => r.n, "num"]])}</div></div></div>`;
 }
 
 // ---------------------------------------------------------------- settings (owner)
@@ -315,28 +316,30 @@ async function settings() {
   const f = (k, l, t = "text", h = "", ph = "") => `<div><label for="s_${k}">${l}</label><input id="s_${k}" data-k="${k}" type="${t}" value="${esc(s[k])}" placeholder="${esc(ph)}">${h ? `<div class="hint">${h}</div>` : ""}</div>`;
   const sel = (k, l, opts, h = "") => `<div><label for="s_${k}">${l}</label><select id="s_${k}" data-k="${k}">${opts.map(([v, t]) => `<option value="${v}" ${s[k] === v ? "selected" : ""}>${t}</option>`).join("")}</select>${h ? `<div class="hint">${h}</div>` : ""}</div>`;
   const yn = [["1", "Bật"], ["0", "Tắt"]];
-  $("#main").innerHTML = topbar("Cài đặt hệ thống", "Thay đổi có hiệu lực ngay cho mọi người dùng") + `<div class="body"><form id="sf" class="grid" style="max-width:960px">
-  <section class="card"><h2>Chung</h2><div class="grid g2" style="gap:0 14px">${f("site_name", "Tên hệ thống")}${f("support_email", "Email hỗ trợ", "email", "Hiện cho người dùng khi gặp lỗi hoặc cần trợ giúp", "hotro@congty.vn")}
+  $("#main").innerHTML = topbar("Cài đặt hệ thống", "Thay đổi có hiệu lực ngay cho mọi người dùng") + `<div class="body"><div class="settings"><nav class="subnav" aria-label="Mục cài đặt">${[["s-general", "Chung"], ["s-access", "Đăng ký & truy cập"], ["s-plan", "Chạy Plan & hạn mức"], ["s-ops", "Vận hành"], ["s-backup", "Sao lưu"]]
+    .map(([id, l], i) => `<button type="button" data-jump="${id}" class="${i ? "" : "on"}">${l}</button>`).join("")}</nav><div><form id="sf" class="grid">
+  <section class="card" id="s-general"><h2>Chung</h2><div class="grid g2" style="gap:0 14px">${f("site_name", "Tên hệ thống")}${f("support_email", "Email hỗ trợ", "email", "Hiện cho người dùng khi gặp lỗi hoặc cần trợ giúp", "hotro@congty.vn")}
     ${f("public_base_url", "URL công khai", "url", "Dùng cho Google OAuth và link chia sẻ, ví dụ https://plan.afi.io")}${f("default_country", "Thị trường mặc định", "text", "Cho dự án mới khi người dùng chưa chọn")}</div></section>
-  <section class="card"><h2>Đăng ký & truy cập</h2><div class="grid g2" style="gap:0 14px">${sel("allow_signup", "Tự đăng ký", [["1", "Mở — ai có link cũng đăng ký được"], ["0", "Chỉ qua lời mời"]])}
+  <section class="card" id="s-access"><h2>Đăng ký & truy cập</h2><div class="grid g2" style="gap:0 14px">${sel("allow_signup", "Tự đăng ký", [["1", "Mở — ai có link cũng đăng ký được"], ["0", "Chỉ qua lời mời"]])}
     ${f("signup_domains", "Chỉ cho tên miền email", "text", "Bỏ trống = mọi email. Ví dụ: afi.io, congty.vn — người ngoài vẫn vào được bằng lời mời", "afi.io, congty.vn")}</div>
     <h3 style="margin:16px 0 4px">Đăng nhập Google (tuỳ chọn)</h3><p class="hint">Tạo OAuth Client (Web) ở Google Cloud Console, redirect URI: <code>${esc((s.public_base_url || location.origin) + "/api/auth/google/callback")}</code></p>
     <div class="grid g2" style="gap:0 14px">${f("google_client_id", "Client ID")}<div><label for="gcs">Client secret</label><input id="gcs" type="password" placeholder="${s.google_client_secret_set ? "đã lưu — nhập để thay" : ""}" autocomplete="off">
       ${s.google_client_secret_set ? '<label class="row hint" style="margin-top:6px"><input type="checkbox" id="gcsClear" style="width:auto"> Xoá secret đã lưu (tắt đăng nhập Google)</label>' : ""}</div></div></section>
-  <section class="card"><h2>Chạy Plan & hạn mức</h2><div class="grid g2" style="gap:0 14px">
+  <section class="card" id="s-plan"><h2>Chạy Plan & hạn mức</h2><div class="grid g2" style="gap:0 14px">
     ${sel("plan_billing", "Ai trả chi phí chạy Plan", [["either", "Người dùng chọn: tài khoản hệ thống hoặc key riêng"], ["owner", "Chỉ tài khoản hệ thống (core agent)"], ["user_key", "Chỉ API key của người dùng"]])}
     ${f("default_quota_jobs_month", "Lần chạy bằng tài khoản hệ thống / người dùng / tháng", "number")}${f("default_quota_projects", "Số dự án tối đa / người dùng", "number")}
     ${f("job_timeout_min", "Thời gian tối đa mỗi job (phút)", "number")}${f("max_concurrent_jobs", "Số job chạy song song", "number", "1–16; mỗi job là một core agent đang chạy")}
     ${sel("auto_failover", "Tự chuyển tài khoản agent khi hết quota", yn)}${sel("allow_demo_engine", "Chế độ demo (không cần key)", yn, "Cho người mới thử luồng; hồ sơ demo có cảnh báo khi chia sẻ")}</div></section>
-  <section class="card"><h2>Vận hành</h2><div class="grid g2" style="gap:0 14px">
+  <section class="card" id="s-ops"><h2>Vận hành</h2><div class="grid g2" style="gap:0 14px">
     ${sel("maintenance", "Chế độ bảo trì", [["0", "Tắt"], ["1", "Bật — người dùng chỉ xem, không tạo/chạy/sửa"]], "Admin vẫn thao tác bình thường; job đang chạy không bị dừng")}
     ${f("log_retention_days", "Giữ log job (ngày)", "number", "0 = giữ mãi. Log cũ bị xoá nội dung, thống kê vẫn giữ")}
     <div style="grid-column:1/-1"><label for="s_announcement">Thông báo cho mọi người dùng</label><textarea id="s_announcement" data-k="announcement" rows="2" maxlength="500" placeholder="Ví dụ: Tối 25/10 bảo trì 22:00–23:00. Bỏ trống = không hiện.">${esc(s.announcement)}</textarea></div>
     ${sel("announcement_level", "Mức thông báo", [["info", "Thông tin"], ["warn", "Cảnh báo"]])}</div></section>
-  <div class="savebar-static"><button class="pri">Lưu cài đặt</button> <span class="hint" id="smsg"></span></div></form>
-  <section class="card" style="max-width:960px;margin-top:14px"><h2>Sao lưu dữ liệu</h2><p class="hint">Một file .zip gồm cơ sở dữ liệu, khoá mã hoá API key, mọi dự án và lịch sử phiên bản — đủ để dựng lại hệ thống trên máy khác (xem RESTORE.txt trong file).
+  <div class="savebar-static sticky-save"><button class="pri">Lưu cài đặt</button> <span class="hint" id="smsg">Thay đổi chưa lưu sẽ mất khi rời trang.</span></div></form>
+  <section class="card" id="s-backup" style="margin-top:14px"><h2>Sao lưu dữ liệu</h2><p class="hint">Một file .zip gồm cơ sở dữ liệu, khoá mã hoá API key, mọi dự án và lịch sử phiên bản — đủ để dựng lại hệ thống trên máy khác (xem RESTORE.txt trong file).
     <b>File chứa khoá giải mã API key của người dùng — cất như mật khẩu.</b> Tài khoản core agent cần đăng nhập lại sau khi khôi phục.</p>
-    <button type="button" id="bk">⬇ Tải bản sao lưu</button></section></div>`;
+    <button type="button" id="bk">${icon("download")}Tải bản sao lưu</button></section></div></div></div>`;
+  $$("[data-jump]").forEach(b => b.onclick = () => { $$("[data-jump]").forEach(x => x.classList.toggle("on", x === b)); $("#" + b.dataset.jump).scrollIntoView({behavior: "smooth", block: "start"}); });
   $("#sf").onsubmit = async e => { e.preventDefault(); const b = {}; $$("[data-k]").forEach(i => b[i.dataset.k] = i.value); if ($("#gcs").value) b.google_client_secret = $("#gcs").value;
     if ($("#gcsClear")?.checked) b.clear_google_client_secret = true;
     try { await api("/admin/settings", {method: "PUT", body: b}); toast("Đã lưu cài đặt"); settings(); }
@@ -349,7 +352,7 @@ async function settings() {
 async function audit() {
   const rows = await api("/admin/audit");
   $("#main").innerHTML = topbar("Nhật ký", "300 thao tác gần nhất") + `<div class="body"><div class="card scroll-x"><table class="t"><thead><tr><th>Lúc</th><th>Người</th><th>Thao tác</th><th>Đối tượng</th><th>Chi tiết</th></tr></thead><tbody>
-  ${rows.map(r => `<tr><td class="hint" title="${esc(r.created)}">${ago(r.created)}</td><td>${esc(r.email || "—")}</td><td><code>${esc(r.action)}</code></td><td>${esc(r.target)}</td><td class="hint mono">${esc(r.detail || "")}</td></tr>`).join("")}</tbody></table></div></div>`;
+  ${rows.map(r => `<tr><td class="hint">${when(r.created)}</td><td>${esc(r.email || "—")}</td><td><code>${esc(r.action)}</code></td><td>${esc(r.target)}</td><td class="hint mono">${esc(r.detail || "")}</td></tr>`).join("") || emptyRow(5, "Chưa có thao tác nào.")}</tbody></table></div></div>`;
 }
 
 (async () => { A.me = await api("/me"); applyTheme(A.me.prefs?.theme); $("#site").textContent = A.me.site_name; $("#who").textContent = A.me.email; render(); })();

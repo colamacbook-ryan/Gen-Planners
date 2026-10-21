@@ -57,7 +57,7 @@ Biến môi trường: `GP_DATA` (mặc định `saas/data/`, đã gitignore), `
 `GP_SESSION_SECRET` / `GP_FERNET_KEY` nếu muốn quản lý khoá ngoài file. **Sao lưu `GP_DATA/fernet.key`** — mất file này là
 mất mọi API key đã lưu.
 
-Kiểm thử: `GP_DATA=$(mktemp -d) python -m pytest saas/tests -q` — 363 test (gồm 300 model ngẫu nhiên): luồng đầy đủ (kèm lịch sử phiên bản, lint, khôi phục); quét quyền mọi route (người lạ,
+Kiểm thử: `GP_DATA=$(mktemp -d) python -m pytest saas/tests -q` — 369 test (gồm 300 model ngẫu nhiên): luồng đầy đủ (kèm lịch sử phiên bản, lint, khôi phục); quét quyền mọi route (người lạ,
 người dùng khác, user→admin, admin→owner); sửa số liệu trên mọi giả định thật; tách doanh thu định kỳ/một lần; đường ống agent với CLI giả lập (stream-json,
 token, tiến độ, huỷ, hết quota → chuyển tài khoản, khởi động lại, job chỉ được nhận một lần); cô lập agent; agent ngoài qua API token; dữ liệu đầu vào lạ.
 
@@ -76,6 +76,17 @@ Agent làm việc qua HTTP:
 | `POST /api/jobs/{id}/progress` · `/complete` | báo tiến độ · nộp bài → máy chủ build, kiểm link, xuất hồ sơ |
 
 Header: `Authorization: Bearer gp_…`. Token không tạo được token khác, thu hồi là mất quyền ngay; chi phí AI do người dùng tự trả.
+
+## Người dùng & owner
+
+| | Có gì |
+|---|---|
+| **Cài đặt người dùng** | Hồ sơ & bảo mật (tên, mật khẩu, đăng xuất thiết bị khác) · Giao diện sáng/tối/hệ thống, thị trường mặc định · AI & API key · API token · Mức dùng theo tháng · Dữ liệu của tôi (tải .zip, xoá tài khoản) |
+| **Dự án** | Đổi tên, sửa ý tưởng & thị trường, nhân bản (kèm bộ số liệu + lịch sử), lưu trữ, xoá; tìm dự án ở thanh bên |
+| **Tổng quan owner** | Khoảng 7/30/90 ngày: người dùng mới, hoạt động tuần/tháng, tỉ lệ job thành công (tách lỗi hệ thống), thời gian chạy p50/p90, chờ hàng đợi, lý do lỗi hay gặp, token & chi phí, dung lượng từng phần + ổ đĩa, sức khoẻ hệ thống, cảnh báo cần xử lý; xuất CSV |
+| **Cài đặt hệ thống** | Chung (tên, email hỗ trợ, URL công khai, thị trường mặc định) · Đăng ký & truy cập (mở/chỉ mời, giới hạn tên miền email, Google) · Chạy Plan & hạn mức · Vận hành (bảo trì chỉ-xem, thông báo toàn hệ thống, giữ log N ngày) · Sao lưu (.zip nhất quán) |
+
+Quy tắc giao diện (token màu, khung trang, trạng thái, thuật ngữ): `saas/static/DESIGN.md`.
 
 ## Lịch sử phiên bản & kiểm tra số liệu
 

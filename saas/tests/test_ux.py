@@ -56,9 +56,11 @@ def test_page_scripts_parse(tmp_path):
     node = shutil.which("node")
     if not node:
         pytest.skip("không có node")
+    shared = (main.SAAS / "static" / "gp.js").read_text()
     for name in ("login.html", "app.html", "admin.html", "gp.js"):
         src = (main.SAAS / "static" / name).read_text()
-        js = src if name.endswith(".js") else "\n".join(re.findall(r"<script>(.*?)</script>", src, re.S))
+        # trang chạy SAU gp.js trong cùng phạm vi toàn cục: ghép lại để bắt cả khai báo trùng (vd `const ROLE` ở cả hai)
+        js = src if name.endswith(".js") else shared + "\n" + "\n".join(re.findall(r"<script>(.*?)</script>", src, re.S))
         f = tmp_path / (name + ".js")
         f.write_text(js)
         r = subprocess.run([node, "--check", str(f)], capture_output=True, text=True)
