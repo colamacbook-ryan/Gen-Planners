@@ -138,6 +138,14 @@ def audit(user_id, action, target="", detail=None):
            detail=json.dumps(detail, ensure_ascii=False) if detail is not None else None, created=now())
 
 
+def claim(job_id):
+    """queued → starting trong MỘT câu lệnh: nhiều worker (nhiều tiến trình uvicorn) không thể cùng nhận một job."""
+    with _lock:
+        cur = _conn.execute("UPDATE jobs SET status='starting' WHERE id=? AND status='queued'", (job_id,))
+        _conn.commit()
+        return cur.rowcount == 1
+
+
 def append_log(job_id, text):
     with _lock:
         _conn.execute("UPDATE jobs SET log = substr(log || ?, -200000) WHERE id=?", (text, job_id))

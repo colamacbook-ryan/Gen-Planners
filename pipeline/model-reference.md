@@ -56,3 +56,12 @@ model:
 - Nguồn: `{{ cite('ev-jll-q2') }}` → "(JLL, 2026)"; danh mục đầy đủ có URL nằm ở Excel và trình xem.
 - Partials: `{% include "partials/pnl.md.j2" %}`, `segments.md.j2`, `draft.md.j2`
 - `gen.py check` báo ERROR khi thấy số tiền/% gõ tay trong văn bản, nguồn không tồn tại, `verified` thiếu nguồn, kịch bản base âm tiền.
+
+## Số trong story.yaml / datasets.yaml / products.yaml
+- Dữ kiện có nguồn (giá đối thủ, quy mô thị trường…) ghi thẳng, kèm `src`/`sources`.
+- Kết quả **model** (doanh thu, hoà vốn, biên…) viết bằng Jinja để tự cập nhật khi đổi giả định:
+  `takeaway: "Doanh thu {{ fin.base.last.year }} đạt {{ fin.base.last.revenue|ty }}"`, `value: "{{ fin.base.metrics.breakeven_year }}"`.
+  `tools/export.py` render các chuỗi này; `gen.py check` báo lỗi nếu biểu thức sai và nhắc những chỗ số tiền/% gõ tay.
+- `gen.py check` còn có **cảnh báo độ hợp lý**: biên EBITDA > 45%, có lãi ngay năm đầu, doanh thu tăng > 4×/năm, MOIC > 20×,
+  kịch bản xấu thiếu tiền. Không chặn build — nhưng nhà đầu tư sẽ hỏi đúng những chỗ đó.
+- `verified` phải có ít nhất một nguồn **bên ngoài**: nguồn `type: founder | interview | internal | estimate` hay `ev-000` không đủ.

@@ -134,3 +134,4 @@ ul.plain{list-style:none;padding:0;margin:8px 0 0;display:grid;gap:6px;font-size
 .funnel .fb{height:18px;border-radius:5px;background:var(--c1);min-width:2px}
 .toolbar input,.toolbar select{width:auto}
 tr.click{cursor:pointer}
+.diff .add{color:#7ee2a8} .diff .del{color:#ff9b8f}

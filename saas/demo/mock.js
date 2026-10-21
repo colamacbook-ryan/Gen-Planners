@@ -280,6 +280,9 @@ R("POST", "/me/onboarding", (b) => { const u = need(); u.onboarding ??= {}; for 
 R("POST", "/me/password", (b) => { const u = need(); if (u.pw !== hashish(b.old || "")) fail(400, "Mật khẩu cũ không đúng"); if (String(b.new || "").length < 8) fail(400, "Mật khẩu mới tối thiểu 8 ký tự"); u.pw = hashish(b.new); audit(u.id, "password_change", u.email); return {ok: true}; });
 
 R("GET", "/tokens", () => (need(), []));
+R("GET", "/projects/([\\w-]+)/history", (b, [slug]) => { getProject(slug, need()); return []; });
+R("GET", "/projects/([\\w-]+)/lint", (b, [slug]) => { getProject(slug, need());
+  return {errors: [], warnings: ["Bản demo không chạy được bộ kiểm tra độ hợp lý (cần Python trên máy chủ). Trên bản máy chủ, mục này liệt kê lỗi và chỗ nhà đầu tư sẽ hỏi."]}; });
 R("POST", "/tokens", () => fail(400, "API token cho agent ngoài chỉ có trên bản máy chủ."));
 R("GET", "/keys/(\\d+)/models", () => fail(400, "Bản demo không gọi được nhà cung cấp AI để lấy danh sách model."));
 R("GET", "/providers", () => (need(), PROVIDERS));

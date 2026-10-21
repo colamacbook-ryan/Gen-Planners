@@ -142,3 +142,15 @@ def test_agent_sandbox_cannot_read_server_secrets(monkeypatch):
         assert len(r["denied"]) >= 4 and r["env"] == [], r
         assert (main.WORKSPACE / slug / "own.txt").exists()           # nhưng vẫn làm việc được trong dự án của mình
         assert (main.WORKSPACE / slug).stat().st_uid == 0             # quyền được thu lại sau job
+
+
+def test_job_claimed_once():
+    """Nhiều vòng worker / nhiều tiến trình: một job chỉ được nhận một lần."""
+    jid = db.insert("jobs", kind="plan", status="queued", engine="demo", billing="demo", created=db.now())
+    import concurrent.futures as cf
+    with cf.ThreadPoolExecutor(8) as ex:
+        wins = list(ex.map(lambda _: db.claim(jid), range(8)))
+    assert wins.count(True) == 1
+    worker.start(); worker.start()
+    import threading
+    assert sum(1 for t in threading.enumerate() if t.name == "gp-worker") == 1

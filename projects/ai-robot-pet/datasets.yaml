@@ -28,10 +28,12 @@ kpis:
   value: 28–129 USD
   note: 3 phân khúc thiết bị
   status: estimate
+  source: [ev-alibaba-aipets, ev-hs-9503]
 - label: Chi phí AI / pet / tháng
   value: 0,5–8 USD
   note: tự vận hành ↔ API cao cấp
   status: estimate
+  source: [ev-xiaozhi, ev-deepseek-pricing, ev-openai-pricing]
 - label: Thuế nhập khẩu (form E)
   value: 0%
   note: MFN đồ chơi 20% nếu mất form E

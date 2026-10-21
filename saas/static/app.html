@@ -364,7 +364,8 @@ async function tabNumbers() {
       <select id="nst" style="width:auto"><option value="">Mọi trạng thái</option>${Object.entries(STAT).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select>
       <label class="row hint" style="margin:0"><input type="checkbox" id="nfact" style="width:auto"> hiện dữ kiện thị trường</label></div>
       <div class="scroll-x"><table class="t num-table"><thead><tr><th>Giả định</th><th>Giá trị${A.assumptions.some(a => Array.isArray(a.value)) ? ` <span class="hint">(theo năm ${y0}→)</span>` : ""}</th><th>Đơn vị</th><th>Trạng thái</th><th>Nguồn / ghi chú</th></tr></thead><tbody id="nrows"></tbody></table></div></div>
-    ${p.changes.length ? `<div class="card" style="margin-top:14px"><h3>Lịch sử thay đổi</h3><table class="t"><tbody>${p.changes.map(c => `<tr><td>${esc(c.label)}</td><td class="mono hint">${esc(c.old)} → <b>${esc(c.new)}</b></td><td class="hint">${ago(c.created)}</td></tr>`).join("")}</tbody></table></div>` : ""}
+    <div class="grid g2" style="margin-top:14px;align-items:start"><div class="card" id="lint"><h3>Kiểm tra độ hợp lý</h3><p class="hint">Đang kiểm tra…</p></div>
+    <div class="card" id="versions"><h3>Phiên bản hồ sơ</h3><p class="hint">Đang tải…</p></div></div>
     <div class="savebar" id="savebar" hidden><span class="grow" id="saveN"></span><button type="button" class="ghost" id="undo">Huỷ thay đổi</button><button type="button" class="pri" id="save">Lưu & build lại</button></div>`;
   const draw = () => {
     const rows = A.assumptions.filter(a => (F.facts || !a.id.startsWith("fact_")) && (!F.st || a.status === F.st) && (!F.q || (a.label + a.id).toLowerCase().includes(F.q)));
@@ -392,6 +393,35 @@ async function tabNumbers() {
       await refresh(); toast("Đã cập nhật toàn bộ hồ sơ"); S.numbersBefore = A.kpi; renderProject();
     } catch (x) { toast(x.message); b.disabled = false; b.textContent = "Lưu & build lại"; } };
   draw();
+  loadLint(p); loadVersions(p);
+}
+async function loadLint(p) {
+  try { const r = await api(`/projects/${p.slug}/lint`);
+    const items = [...r.errors.map(t => ["bad", t]), ...r.warnings.filter(w => !/PLACEHOLDER|thiếu url|TODO/.test(w)).map(t => ["warn", t])];
+    $("#lint").innerHTML = `<h3>Kiểm tra độ hợp lý</h3>${items.length ? `<ul class="plain">${items.map(([k, t]) => `<li><span class="pill ${k}">${k === "bad" ? "lỗi" : "lưu ý"}</span> ${esc(t)}</li>`).join("")}</ul>`
+      : '<p class="ok">✓ Không có lỗi hay điểm bất thường.</p>'}<p class="hint" style="margin-top:8px">Nhà đầu tư sẽ hỏi đúng những chỗ này — sửa giả định hoặc nêu rõ lý do trong hồ sơ.</p>`;
+  } catch (x) { $("#lint").innerHTML = `<h3>Kiểm tra độ hợp lý</h3><p class="hint">${esc(x.message)}</p>`; }
+}
+async function loadVersions(p) {
+  let vs; try { vs = await api(`/projects/${p.slug}/history`); } catch (x) { $("#versions").innerHTML = `<h3>Phiên bản hồ sơ</h3><p class="hint">${esc(x.message)}</p>`; return; }
+  const canRestore = p.mine && !p.is_sample;
+  $("#versions").innerHTML = `<h3>Phiên bản hồ sơ</h3><p class="hint">Mỗi lần chạy Plan, sửa số liệu hay agent nộp bài là một phiên bản. Khôi phục tạo phiên bản mới — không mất lịch sử.</p>
+    <table class="t"><tbody>${vs.map((v, i) => `<tr><td><code>${esc(v.rev)}</code></td><td>${esc(v.message)}<div class="hint">${esc(v.who || "hệ thống")} · ${ago(v.date)}${v.stat ? " · " + esc(v.stat) : ""}</div></td>
+      <td class="row" style="flex-wrap:nowrap"><button type="button" class="sm ghost" data-vview="${esc(v.rev)}">Xem</button>${canRestore && i > 0 ? `<button type="button" class="sm ghost" data-vrestore="${esc(v.rev)}">Khôi phục</button>` : ""}</td></tr>`).join("") || '<tr><td class="hint">Chưa có phiên bản.</td></tr>'}</tbody></table>`;
+  $$("[data-vview]").forEach(b => b.onclick = () => showVersion(p, b.dataset.vview));
+  $$("[data-vrestore]").forEach(b => b.onclick = async () => {
+    if (!await ask(`Khôi phục bộ số liệu về phiên bản ${b.dataset.vrestore}? Hồ sơ sẽ được dựng lại theo phiên bản đó (phiên bản hiện tại vẫn còn trong lịch sử).`, "Khôi phục", false)) return;
+    try { const r = await api(`/projects/${p.slug}/history/${b.dataset.vrestore}/restore`, {method: "POST"}); toast("Đang dựng lại hồ sơ theo phiên bản cũ…");
+      await waitJob(r.job_id); await refresh(); toast("Đã khôi phục"); renderProject(); } catch (x) { toast(x.message); } });
+}
+async function showVersion(p, rev) {
+  const v = await api(`/projects/${p.slug}/history/${rev}`), KIND = {M: "sửa", A: "thêm", D: "xoá", R: "đổi tên"};
+  const w = document.createElement("div"); w.className = "modal";
+  w.innerHTML = `<div class="card" role="dialog" aria-modal="true" style="max-width:900px;width:100%;max-height:85vh;overflow:auto"><div class="row"><h2 class="grow" style="margin:0">Phiên bản <code>${esc(rev)}</code></h2><button type="button" class="sm ghost" data-x>Đóng</button></div>
+    <ul class="plain">${v.files.map(([k, f]) => `<li><span class="pill">${KIND[k[0]] || esc(k)}</span> <code>${esc(f)}</code></li>`).join("")}</ul>
+    <pre class="log diff" style="max-height:55vh;margin-top:10px">${esc(v.patch).split("\n").map(l => l.startsWith("+") && !l.startsWith("+++") ? `<span class="add">${l}</span>` : l.startsWith("-") && !l.startsWith("---") ? `<span class="del">${l}</span>` : l).join("\n")}${v.truncated ? "\n… (cắt bớt)" : ""}</pre></div>`;
+  const close = () => w.remove(); w.onclick = e => { if (e.target === w || e.target.dataset.x !== undefined) close(); };
+  document.body.append(w);
 }
 
 // ---------------------------------------------------------------- settings

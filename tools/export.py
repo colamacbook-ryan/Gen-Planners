@@ -45,6 +45,16 @@ def main():
 
     ctx, A, E = gen.context(d)
     env = gen.make_env(d, A, E, [])
+
+    def jinja(x):
+        """Chuỗi có {{ … }} trong story/datasets/products được render theo model — số tự cập nhật khi đổi giả định."""
+        if isinstance(x, dict):
+            return {k: jinja(v) for k, v in x.items()}
+        if isinstance(x, list):
+            return [jinja(v) for v in x]
+        if isinstance(x, str) and ("{{" in x or "{%" in x):
+            return env.from_string(x).render(**ctx)
+        return x
     AV = A["assumptions"]
     n = A["meta"]["years"]
 
@@ -113,7 +123,7 @@ def main():
     # ---- story (console)
     story = None
     if (d / "story.yaml").exists():
-        story = yaml.safe_load(open(d / "story.yaml"))
+        story = jinja(yaml.safe_load(open(d / "story.yaml")))
         for h in story.get("headline", []):
             if "fin" in h:
                 sc, _, key = h["fin"].split(".")
@@ -137,11 +147,11 @@ def main():
     # ---- dashboard
     dash = None
     if (d / "datasets.yaml").exists():
-        dash = yaml.safe_load(open(d / "datasets.yaml"))
+        dash = jinja(yaml.safe_load(open(d / "datasets.yaml")))
         dash["charts"] = dash.get("charts", []) + finance_charts(A, AV, base, ctx["fin"], yrs, series)
 
     # ---- sản phẩm
-    products = yaml.safe_load(open(d / "products.yaml")) if (d / "products.yaml").exists() else []
+    products = jinja(yaml.safe_load(open(d / "products.yaml"))) if (d / "products.yaml").exists() else []
     for p in products:
         if p.get("image"):
             p["image_url"] = media(p.pop("image"))

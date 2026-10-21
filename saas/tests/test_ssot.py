@@ -111,3 +111,37 @@ charts:
     assert any("m1" in e and "items" in e for e in errs) and not any("m2" in e for e in errs)
     assert any("m3" in e and "2 giá trị" in e for e in errs) and any("m4" in e and "không hỗ trợ" in e for e in errs)
     assert gen.check_datasets(ROOT / "projects" / "ai-robot-pet") == []          # dự án mẫu đúng chuẩn
+
+
+def test_verified_needs_external_source_and_sanity_warnings(tmp_path, capsys):
+    import gen
+    d = proj("rule-verified")
+    ev = (d / "evidence.yaml").read_text() + '\nev-founder-brief: {title: Lời founder trong brief, type: founder}\n'
+    (d / "evidence.yaml").write_text(ev)
+    a = (d / "assumptions.yaml").read_text().replace("source: [ev-caixin-aitoy]}", "source: [ev-founder-brief]}", 1)
+    (d / "assumptions.yaml").write_text(a)
+    gen.PROJECTS = WORKSPACE
+    assert gen.cmd_check("rule-verified", as_json=True) == 1
+    out = capsys.readouterr().out.strip().splitlines()[-1]
+    r = __import__("json").loads(out)
+    assert any("nguồn nội bộ/lời founder" in e for e in r["errors"])
+    assert any("bear" in w for w in r["warnings"])                         # kịch bản xấu thiếu tiền được nhắc
+
+
+def test_history_versions_and_restore():
+    from saas.server import history
+    d = proj("hist")
+    history.ensure("hist")
+    p = d / "assumptions.yaml"
+    p.write_text(p.read_text().replace("value: 3.49", "value: 3.99", 1))
+    rev = history.commit("hist", "Đổi giá", "a@x.io")
+    assert rev and history.commit("hist", "không đổi gì") is None
+    (d / "sections" / "02-market.md").unlink()
+    history.commit("hist", "Xoá nhầm")
+    history.restore("hist", rev, "a@x.io")
+    assert (d / "sections" / "02-market.md").exists() and "3.99" in p.read_text()
+    msgs = [v["message"] for v in history.log("hist")]
+    assert msgs[:3] == [f"Khôi phục về phiên bản {rev}", "Xoá nhầm", "Đổi giá"] and history.log("hist")[2]["who"] == "a@x.io"
+    import pytest
+    with pytest.raises(ValueError):
+        history.show("hist", "../etc")

@@ -136,6 +136,17 @@ def test_growth_features():
         assert d["kpi"]["revenue_last"] > rev0 and d["changes"][0]["key"] == "price_main"
         assert "# SINGLE SOURCE OF TRUTH" in (main.WORKSPACE / slug / "assumptions.yaml").read_text()   # comment được giữ
 
+        # lịch sử phiên bản: khởi tạo → chạy Plan → đổi giá; khôi phục dựng lại hồ sơ theo phiên bản cũ
+        vs = user.get(f"/api/projects/{slug}/history").json()
+        assert vs[0]["message"].startswith("Đổi Giá bán") and any(v["message"].startswith("Chạy Plan") for v in vs), vs
+        assert "assumptions.yaml" in str(user.get(f"/api/projects/{slug}/history/{vs[0]['rev']}").json()["files"])
+        plan_rev = next(v["rev"] for v in vs if v["message"].startswith("Chạy Plan"))
+        r = user.post(f"/api/projects/{slug}/history/{plan_rev}/restore").json()
+        assert wait_job(user, r["job_id"])["status"] == "done"
+        assert user.get(f"/api/projects/{slug}").json()["kpi"]["revenue_last"] == rev0                # số quay về như trước khi sửa
+        assert anon.get(f"/api/projects/{slug}/history").status_code == 401
+        lint = user.get(f"/api/projects/{slug}/lint").json()
+        assert lint["errors"] == [] and isinstance(lint["warnings"], list)
         # gói zip + link chia sẻ công khai
         z = user.get(f"/api/projects/{slug}/bundle.zip")
         assert z.status_code == 200 and z.content[:2] == b"PK"

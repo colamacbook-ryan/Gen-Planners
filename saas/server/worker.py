@@ -13,7 +13,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import agents, db, interview, sandbox, ssot
+from . import agents, db, history, interview, sandbox, ssot
 from .config import JOBS_HOME, ROOT, WORKSPACE, which
 from .security import dec
 
@@ -53,6 +53,7 @@ def ensure_project(job_id, p):
     d = WORKSPACE / p["slug"]
     if not d.exists():
         sh(job_id, [*GEN, "new", p["slug"], "--name", p["name"]])
+        history.ensure(p["slug"])
     (d / "idea.md").write_text("# Ý tưởng gốc\n\n" + (p["idea"] or "") + "\n")
     (d / "brief.md").write_text(p.get("brief_md") or interview.build_brief(p))
     return d
@@ -145,8 +146,23 @@ def watch_progress(jid, slug, proc):
         time.sleep(5)
 
 
+def save_version(jid, p):
+    """Lưu phiên bản SSOT TRƯỚC khi build — mã phiên bản in trên hồ sơ khớp đúng phiên bản này."""
+    j = db.one("SELECT j.kind, j.engine, u.email FROM jobs j LEFT JOIN users u ON u.id=j.user_id WHERE j.id=?", (jid,))
+    msg = j and VERSION_MSG.get(j["kind"])
+    if not msg:
+        return
+    try:
+        rev = history.commit(p["slug"], ("Agent ngoài nộp bài" if j["engine"] == "external" else msg.format(engine=j["engine"])) + f" — job #{jid}", j["email"])
+        if rev:
+            log(jid, f"Đã lưu phiên bản {rev}")
+    except Exception as e:  # noqa: BLE001 — lịch sử lỗi không làm hỏng job
+        log(jid, scrub(f"(không lưu được phiên bản: {e})"))
+
+
 def post_build(jid, p, link_check=True):
     """build + check + export (+ kiểm link nguồn). Trả (ok, số lỗi check)."""
+    save_version(jid, p)
     bcode, _ = sh(jid, [*GEN, "build", p["slug"]])
     ccode, cout = sh(jid, [*GEN, "check", p["slug"]])
     ecode, _ = sh(jid, [*EXPORT, p["slug"], "--media-base", f"/api/projects/{p['slug']}/media"])
@@ -293,9 +309,13 @@ def finalize_external(jid, summary=""):
         finish(jid, "failed", str(e)[:500], p)
 
 
+VERSION_MSG = {"plan": "Chạy Plan ({engine})", "rebuild": "Build lại sau khi sửa số liệu", "linkcheck": None}
+
+
 def finish(jid, status, error=None, p=None):
     if status != "cancelled" and db.one("SELECT status FROM jobs WHERE id=?", (jid,))["status"] == "cancelled":
         status, error = "cancelled", "Đã huỷ"                       # người dùng huỷ trong lúc build — không ghi đè
+
     db.update("jobs", jid, status=status, error=error, finished=db.now(), pid=None)
     log(jid, f"— kết thúc: {status}" + (f" ({error})" if error else ""))
     if p:
@@ -328,13 +348,21 @@ def loop():
             active.pop(k)
         if len(active) < max(1, db.setting_int("max_concurrent_jobs", 1)):
             j = db.one("SELECT * FROM jobs WHERE status='queued' ORDER BY id LIMIT 1")
-            if j:
-                db.update("jobs", j["id"], status="starting")
+            if j and db.claim(j["id"]):                                  # nhận job nguyên tử — không bao giờ chạy trùng
                 t = threading.Thread(target=run_job, args=(j,), daemon=True)
                 active[j["id"]] = t
                 t.start()
         time.sleep(1)
 
 
+_started = threading.Lock()
+_started_flag = []
+
+
 def start():
+    """Chỉ một vòng worker mỗi tiến trình (startup có thể chạy lại nhiều lần, ví dụ trong test)."""
+    with _started:
+        if _started_flag:
+            return
+        _started_flag.append(True)
     threading.Thread(target=loop, daemon=True, name="gp-worker").start()

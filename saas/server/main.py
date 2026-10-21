@@ -18,7 +18,7 @@ import datetime as dt
 import hashlib
 import threading
 
-from . import agents, db, interview, llm, sandbox, ssot, worker
+from . import agents, db, history, interview, llm, sandbox, ssot, worker
 from .config import COOKIE_SECURE, ROOT, SAAS, WORKSPACE
 from .security import check_pw, dec, enc, hash_pw, hint, sign, unsign
 
@@ -781,6 +781,7 @@ async def set_assumption(slug: str, key: str, request: Request, u=Depends(need_u
               new=json.dumps(r["value"]), created=db.now())
     db.update("projects", p["id"], updated=db.now())
     db.audit(u["id"], "assumption_set", slug, {"key": key, "old": r["old"], "new": r["value"]})
+    history.commit(slug, f"Đổi {r['label']}: {json.dumps(r['old'], ensure_ascii=False)} → {json.dumps(r['value'], ensure_ascii=False)}", u["email"])
     return r
 
 
@@ -806,6 +807,46 @@ def bundle(slug: str, u=Depends(need_user)):
     need_workspace(slug)
     return Response(ssot.bundle(slug), media_type="application/zip",
                     headers={"Content-Disposition": f'attachment; filename="{slug}-ho-so.zip"'})
+
+
+@app.get("/api/projects/{slug}/lint")
+def project_lint(slug: str, u=Depends(need_user)):
+    """Lỗi + cảnh báo của gen.py check (kể cả kiểm tra độ hợp lý) cho tab Số liệu."""
+    get_project(slug, u)
+    need_workspace(slug)
+    r = subprocess.run([sys.executable, str(ROOT / "gen.py"), "check", slug, "--json"], env=worker.base_env(), cwd=ROOT,
+                       capture_output=True, text=True, timeout=300)
+    try:
+        return json.loads(r.stdout.strip().splitlines()[-1])
+    except (IndexError, json.JSONDecodeError):
+        return {"errors": [worker.scrub((r.stderr or r.stdout)[-500:]) or "check lỗi"], "warnings": []}
+
+
+@app.get("/api/projects/{slug}/history")
+def project_history(slug: str, u=Depends(need_user)):
+    get_project(slug, u)
+    return history.log(slug)
+
+
+@app.get("/api/projects/{slug}/history/{rev}")
+def project_version(slug: str, rev: str, u=Depends(need_user)):
+    get_project(slug, u)
+    try:
+        return history.show(slug, rev)
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(404, f"Không có phiên bản {rev}") from e
+
+
+@app.post("/api/projects/{slug}/history/{rev}/restore")
+def project_restore(slug: str, rev: str, u=Depends(need_user)):
+    p = get_project(slug, u, True)
+    can_edit_ssot(p)
+    try:
+        new = history.restore(slug, rev, u["email"])
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(404, f"Không khôi phục được phiên bản {rev}: {e}") from e
+    db.audit(u["id"], "version_restore", slug, {"rev": rev, "new": new})
+    return {"rev": new, "job_id": queue_job(p, u, "rebuild")}               # dựng lại hồ sơ theo phiên bản cũ
 
 
 # ------------------------------------------------------------------ link chia sẻ cho nhà đầu tư (chỉ đọc, không cần đăng nhập)
@@ -996,6 +1037,7 @@ async def ssot_write(slug: str, path: str, request: Request, u=Depends(need_user
         db.update("jobs", j["id"], progress=json.dumps(pr))
     if not j:
         db.insert("changes", project_id=p["id"], user_id=u["id"], key=path, label=f"Sửa file {path}", old="", new=f"{len(data)} byte", created=db.now())
+        history.commit(slug, f"Sửa {path}", u["email"])
     return {"ok": True, "path": path, "size": len(data),
             "next": "Đang có job chờ: POST /check rồi /complete." if j else f"Không có job chờ: POST /check, rồi POST /api/projects/{slug}/rebuild để cập nhật hồ sơ."}
 
@@ -1395,6 +1437,7 @@ def ensure_sample(owner_id):
     env = worker.base_env()
     for cmd in (["gen.py", "build", SAMPLE_SLUG], ["tools/export.py", SAMPLE_SLUG, "--media-base", f"/api/projects/{SAMPLE_SLUG}/media"]):
         subprocess.run([sys.executable, str(ROOT / cmd[0]), *cmd[1:]], env=env, cwd=ROOT, capture_output=True, timeout=600)
+    history.ensure(SAMPLE_SLUG)
     db.update("projects", pid, status="done", updated=db.now())
     return True
 

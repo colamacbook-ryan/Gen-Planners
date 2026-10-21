@@ -16,6 +16,7 @@ Lệnh:
 """
 import argparse
 import datetime as dt
+import json
 import os
 import re
 import shutil
@@ -217,14 +218,15 @@ def context(d: Path):
         unverified=unverified,
         draft=bool(unverified),
         today=dt.date.today().isoformat(),
-        version=f'{project.get("version", "0.1")}+{git_rev()}',
+        version=f'{project.get("version", "0.1")}+{git_rev(d if (d / ".git").exists() else ROOT)}',
     )
     return ctx, assumptions, evidence
 
 
-def git_rev():
+def git_rev(where=ROOT):
+    """Mã phiên bản: commit của repo dự án (SaaS) hoặc của repo chuẩn."""
     try:
-        return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT,
+        return subprocess.check_output(["git", "-c", "safe.directory=*", "rev-parse", "--short", "HEAD"], cwd=where,
                                        stderr=subprocess.DEVNULL, text=True).strip()
     except Exception:
         return "nogit"
@@ -349,11 +351,58 @@ def check_datasets(d):
     return errs
 
 
-def cmd_check(slug):
+INTERNAL_EVIDENCE = {"internal", "founder", "interview", "estimate"}
+
+
+def sanity(fin):
+    """Cảnh báo số liệu khó tin — nhà đầu tư sẽ hỏi ngay; không chặn build, chỉ nhắc kiểm lại giả định."""
+    out, base = [], fin.get("base")
+    if not base:
+        return out
+    Y, M = base["years"], base["metrics"]
+    last = Y[-1]
+    if last["revenue"] and last["ebitda"] / last["revenue"] > 0.45:
+        out.append(f"hợp lý: biên EBITDA năm {last['year']} = {last['ebitda'] / last['revenue']:.0%} — rất cao so với phần lớn ngành, kiểm lại giá vốn/chi phí")
+    if Y[0]["ebitda"] > 0 and Y[0]["revenue"]:
+        out.append(f"hợp lý: có lãi EBITDA ngay năm đầu {Y[0]['year']} — hiếm gặp với dự án mới, kiểm lại chi phí khởi động")
+    for a, b in zip(Y[1:], Y[2:]):
+        if a["revenue"] > 0 and b["revenue"] / a["revenue"] > 4:
+            out.append(f"hợp lý: doanh thu {b['year']} gấp {b['revenue'] / a['revenue']:.1f} lần {a['year']} — tăng trưởng rất nóng, cần lý do cụ thể")
+    if M.get("investor_moic", 0) > 20:
+        out.append(f"hợp lý: MOIC nhà đầu tư {M['investor_moic']:.0f}× — quá đẹp để tin, kiểm lại sản lượng và hệ số thoát vốn")
+    if M.get("payback_year") and M["payback_year"] <= Y[0]["year"]:
+        out.append("hợp lý: hoàn vốn ngay trong năm đầu — kiểm lại")
+    for name, f in fin.items():
+        if name != "base" and f["metrics"]["funding_gap"] > 0:
+            out.append(f"kịch bản {name}: thiếu tiền {f['metrics']['funding_gap']:,.0f} — nêu rõ trong mục rủi ro và phương án dự phòng".replace(",", "."))
+    return out
+
+
+def strings(x, path="", parent=None):
+    """Duyệt mọi chuỗi trong YAML (story/datasets/products) kèm đường dẫn và dict chứa nó."""
+    if isinstance(x, dict):
+        for k, v in x.items():
+            yield from strings(v, f"{path}.{k}" if path else str(k), x)
+    elif isinstance(x, list):
+        for i, v in enumerate(x):
+            yield from strings(v, f"{path}[{i}]", parent)
+    elif isinstance(x, str):
+        yield path, x, parent or {}
+
+
+SOURCED = ("src", "source", "sources", "url")
+
+
+def cmd_check(slug, as_json=False):
     d = project_dir(slug)
     errors, warns = [], []
     assumptions, evidence = load(d / "assumptions.yaml"), load(d / "evidence.yaml")
     errors += check_datasets(d)
+    ds = load(d / "datasets.yaml") if (d / "datasets.yaml").exists() else {}
+    for i, k in enumerate(ds.get("kpis") or []):
+        for sid in (k.get("source") or []) if isinstance(k, dict) and isinstance(k.get("source"), list) else []:
+            if sid not in evidence:
+                errors.append(f"datasets.yaml kpis[{i}]: source '{sid}' không có trong evidence.yaml")
 
     for k, v in assumptions["assumptions"].items():
         src = v.get("source") or []
@@ -362,6 +411,8 @@ def cmd_check(slug):
                 errors.append(f"assumption {k}: source '{s}' không tồn tại trong evidence.yaml")
         if v.get("status") == "verified" and not src:
             errors.append(f"assumption {k}: verified nhưng không có source")
+        elif v.get("status") == "verified" and all(s == "ev-000" or (evidence.get(s) or {}).get("type") in INTERNAL_EVIDENCE for s in src):
+            errors.append(f"assumption {k}: verified nhưng chỉ dựa trên nguồn nội bộ/lời founder ({', '.join(src)}) — để 'estimate' tới khi có nguồn ngoài")
         if v.get("status") in (None, "placeholder"):
             warns.append(f"assumption {k}: PLACEHOLDER — cần nghiên cứu")
     for k, v in evidence.items():
@@ -387,9 +438,30 @@ def cmd_check(slug):
         base = ctx["fin"].get("base")
         if base and base["metrics"]["funding_gap"] > 0:
             errors.append(f"model: kịch bản base âm tiền {base['metrics']['funding_gap']:,.0f} — số vốn gọi không đủ")
+        warns += sanity(ctx["fin"])
+        # story/datasets/products: chuỗi có {{ … }} được render theo model khi xuất — lỗi phải lộ ra ở đây
+        hand = []
+        for name in ("story.yaml", "datasets.yaml", "products.yaml"):
+            if not (d / name).exists():
+                continue
+            for path, text, parent in strings(load(d / name)):
+                if "{{" in text or "{%" in text:
+                    try:
+                        env.from_string(text).render(**ctx)
+                    except Exception as e:  # noqa: BLE001
+                        errors.append(f"{name} {path}: biểu thức Jinja lỗi: {e}")
+                elif (name != "products.yaml" and re.search(r"(takeaway|headline|thesis|sub|value)$", path) and HARDCODED.search(text)
+                      and parent.get("status") != "actual" and not any(parent.get(k) for k in SOURCED)):   # dữ kiện thực tế có nguồn: được gõ
+                    hand.append(f"{name} {path}")
+        if hand:
+            warns.append(f"{len(hand)} chỗ trong story/datasets gõ tay số tiền/% (ví dụ {', '.join(hand[:3])}) — nếu là kết quả model, "
+                         "dùng {{ fin.base.last.revenue|ty }}… để tự cập nhật; nếu là dữ kiện có nguồn thì giữ nguyên")
     except Exception as e:  # noqa: BLE001
         errors.append(f"render/model lỗi: {type(e).__name__}: {e}")
 
+    if as_json:
+        print(json.dumps({"errors": errors, "warnings": warns}, ensure_ascii=False))
+        return 1 if errors else 0
     for w in warns:
         print("  warn ", w)
     for e in errors:
@@ -437,8 +509,10 @@ def main():
     n.add_argument("slug")
     n.add_argument("--name", required=True)
     n.add_argument("--idea-file")
-    for c in ("build", "check"):
-        sub.add_parser(c).add_argument("slug")
+    sub.add_parser("build").add_argument("slug")
+    ck = sub.add_parser("check")
+    ck.add_argument("slug")
+    ck.add_argument("--json", action="store_true", help="in lỗi/cảnh báo dạng JSON (cho SaaS)")
     sub.add_parser("status").add_argument("slug", nargs="?")
     a = ap.parse_args()
     if a.cmd == "new":
@@ -446,7 +520,7 @@ def main():
     elif a.cmd == "build":
         cmd_build(a.slug)
     elif a.cmd == "check":
-        sys.exit(cmd_check(a.slug))
+        sys.exit(cmd_check(a.slug, a.json))
     else:
         cmd_status(a.slug)
 
