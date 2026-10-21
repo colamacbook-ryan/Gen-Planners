@@ -18,7 +18,7 @@ def test_external_agent_flow():
         tok = web.post("/api/tokens", json={"name": "Claude Code"}).json()["token"]
         A = {"Authorization": f"Bearer {tok}"}
         assert agent.post("/api/tokens", headers=A, json={}).status_code == 403          # token không tự đẻ token
-        assert agent.put(f"/api/projects/{slug}/ssot/idea.md", headers=A, content=b"x").status_code == 409   # chưa có job chờ
+        assert agent.put(f"/api/projects/{slug}/ssot/idea.md", headers=A, content=b"x").status_code == 404   # chưa có workspace
         jid = web.post(f"/api/projects/{slug}/run", json={"billing": "external", "force": True}).json()["job_id"]
         for _ in range(40):
             if web.get(f"/api/jobs/{jid}").json()["status"] == "waiting":
@@ -59,6 +59,22 @@ def test_external_agent_flow():
             time.sleep(0.5)
         assert j["status"] == "done" and "Agent nộp bài" in j["log"], j["log"][-800:]
         assert web.get(f"/api/projects/{slug}").json()["exported"]
+        # sửa sau khi nộp: ngày tháng YAML không ngoặc kép (lỗi agent thật gặp) vẫn xuất được; build lại cập nhật hồ sơ
+        ev = agent.get(f"/api/projects/{slug}/ssot/evidence.yaml", headers=A).text
+        ev += "\n  ev-test: {title: Nguồn thử, publisher: Thử nghiệm, date: 2026-03-19, url: 'https://example.org', type: web}\n" if "ev-" in ev else ""
+        if ev:
+            assert agent.put(f"/api/projects/{slug}/ssot/evidence.yaml", headers=A, content=ev.encode()).status_code == 200
+        chk = agent.post(f"/api/projects/{slug}/check", headers=A).json()
+        assert chk["errors"] == 0, chk["output"][-1500:]
+        assert agent.get(f"/api/projects/{slug}/files/deck.md", headers=A).status_code == 200
+        rj = agent.post(f"/api/projects/{slug}/rebuild", headers=A).json()["job_id"]
+        for _ in range(120):
+            if web.get(f"/api/jobs/{rj}").json()["status"] in ("done", "failed"):
+                break
+            time.sleep(0.5)
+        assert web.get(f"/api/jobs/{rj}").json()["status"] == "done"
+        log = web.get(f"/api/jobs/{rj}").json()["log"]
+        assert str(main.WORKSPACE) not in log and "/home/" not in log                    # log không lộ đường dẫn máy chủ
         # thu hồi token → mất quyền ngay
         tid = web.get("/api/tokens").json()[0]["id"]
         web.delete(f"/api/tokens/{tid}")

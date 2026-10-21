@@ -6,13 +6,18 @@ Mọi lệnh gửi header:  Authorization: Bearer <API_TOKEN>     (token do foun
 
 Lệnh:
   GET  {base}/api/jobs/{job}/handoff                     → bản giao việc này + danh sách file chuẩn cần đọc
-  GET  {base}/api/standard/<file>                        → AGENTS.md, pipeline/playbook.yaml, pipeline/stages.yaml, templates/project/story.yaml, datasets.yaml
+  GET  {base}/api/standard/<file>                        → AGENTS.md, pipeline/model-reference.md (cú pháp model + Jinja), pipeline/playbook.yaml,
+                                                           pipeline/stages.yaml, templates/project/{{story,datasets,products,assumptions}}.yaml
+  GET  {base}/api/samples                                → dự án mẫu hoàn chỉnh — đọc SSOT của nó (GET .../ssot/<path>) để làm theo
   GET  {base}/api/projects/{slug}/ssot                   → danh sách file SSOT của dự án
   GET  {base}/api/projects/{slug}/ssot/<path>            → nội dung một file (idea.md, brief.md, assumptions.yaml, …)
   PUT  {base}/api/projects/{slug}/ssot/<path>            → ghi một file (body = nội dung thô; ảnh media/*.jpg ≤ 2 MB)
-  POST {base}/api/projects/{slug}/check                  → build + check, trả lỗi để bạn sửa tới 0 ERROR
+  POST {base}/api/projects/{slug}/check                  → build + check + xuất console như lúc nộp bài; sửa tới errors = 0
+  GET  {base}/api/projects/{slug}/export/dossier         → sau check: kết quả model (fin) mọi kịch bản, để đối chiếu takeaway
+  GET  {base}/api/projects/{slug}/files/<f>              → bản đã dựng: business-plan.md, deck.md, .docx, .pptx, .xlsx
   POST {base}/api/jobs/{job}/progress   {{"message": …}} → ghi một dòng tiến độ cho founder xem
-  POST {base}/api/jobs/{job}/complete   {{"summary": …}} → nộp bài: máy chủ build, kiểm link nguồn, xuất hồ sơ
+  POST {base}/api/jobs/{job}/complete   {{"summary": …}} → nộp bài: máy chủ build, kiểm link nguồn, xuất hồ sơ (poll GET /api/jobs/{job})
+  Sửa sau khi nộp: PUT .../ssot/<path> rồi POST {base}/api/projects/{slug}/rebuild.  Không cần git commit — máy chủ giữ lịch sử.
 
 Đường dẫn ghi được: idea.md, project.yaml, assumptions.yaml, evidence.yaml, story.yaml, datasets.yaml, products.yaml, deck.md,
 sections/*.md, research/*.md, partials/*.md, media/*.(jpg|png|webp).

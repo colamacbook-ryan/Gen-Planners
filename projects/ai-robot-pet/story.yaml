@@ -683,6 +683,8 @@ images:
   v_bab: v_mP4WoOUyh7Q.jpg
   v_labubu: v_YAnS6vMRX-o.jpg
 econ:
+  unit_name: pet
+  ratio_label: "Lãi mỗi pet / chi phí có khách"
   core_stream: pet
   unit:
     price: pet_price

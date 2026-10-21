@@ -21,6 +21,14 @@ import gen  # noqa: E402
 import yaml  # noqa: E402
 
 
+def dump(obj, path):
+    """Ghi JSON nguyên tử (file tạm → đổi tên): lỗi giữa chừng không bao giờ để lại file cụt.
+    YAML tự đọc `date: 2026-03-19` thành kiểu ngày — chuyển thành chuỗi ISO."""
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(obj, ensure_ascii=False, default=lambda o: o.isoformat() if hasattr(o, "isoformat") else str(o)))
+    tmp.replace(path)
+
+
 def vnum(x, d=0):
     return f"{x:,.{d}f}".replace(",", "_").replace(".", ",").replace("_", ".")
 
@@ -155,10 +163,9 @@ def main():
                             breakeven=b["metrics"]["breakeven_year"], raise_total=b["metrics"]["raise_amount"],
                             phase0=AV.get("phase0_budget", {}).get("value"),
                             sources=len(evidence), assumptions=len(assumptions), by_status=st))
-    json.dump(project, open(out / "project.json", "w"), ensure_ascii=False)
-    json.dump(dict(dash=dash, story=story, fin=fin, assumptions=assumptions, evidence=evidence, products=products),
-              open(out / "dossier.json", "w"), ensure_ascii=False)
-    json.dump(dict(sections=sections, deck=deck), open(out / "documents.json", "w"), ensure_ascii=False)
+    dump(project, out / "project.json")
+    dump(dict(dash=dash, story=story, fin=fin, assumptions=assumptions, evidence=evidence, products=products), out / "dossier.json")
+    dump(dict(sections=sections, deck=deck), out / "documents.json")
     for f in sorted(out.iterdir()):
         print(f.name, f.stat().st_size)
 
@@ -180,7 +187,7 @@ def economics(spec, AV, base, F, series):
     ltv = unit + yearly * life
     core = spec.get("core_stream")
     nonpet = sum(val for k, val in Y[-1]["streams"].items() if k != core) / Y[-1]["revenue"]
-    return dict(cac=round(cac * 1000), dev=round(unit * 1000), eco_year=round(yearly * 1000), life_years=life, ltv=round(ltv * 1000),
+    return dict(unit_name=spec.get("unit_name", "đơn vị"), ratio_label=spec.get("ratio_label"), cac=round(cac * 1000), dev=round(unit * 1000), eco_year=round(yearly * 1000), life_years=life, ltv=round(ltv * 1000),
                 ratio=round(ltv / cac, 1), nonpet=round(nonpet * 100), gross=round(Y[-1]["gross_profit"] / Y[-1]["revenue"] * 100),
                 year=Y[-1]["year"], rev_last=round(Y[-1]["revenue"] / 1000, 1), ebitda_last=round(Y[-1]["ebitda"] / 1000, 1),
                 breakeven=base["metrics"]["breakeven_year"],

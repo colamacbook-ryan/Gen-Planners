@@ -34,12 +34,19 @@ def base_env():
 
 
 def sh(job_id, cmd, env=None, cwd=None, timeout=600):
-    log(job_id, "$ " + " ".join(str(c) for c in cmd[:6]) + (" …" if len(cmd) > 6 else ""))
+    log(job_id, scrub("$ " + " ".join(str(c) for c in cmd[:6]) + (" …" if len(cmd) > 6 else "")))
     r = subprocess.run(cmd, env=env or base_env(), cwd=cwd or ROOT, capture_output=True, text=True, timeout=timeout)
-    out = (r.stdout + r.stderr).strip()
+    out = scrub((r.stdout + r.stderr).strip())
     if out:
         log(job_id, out[-6000:])
     return r.returncode, out
+
+
+def scrub(text):
+    """Không lộ đường dẫn máy chủ trong log người dùng đọc."""
+    for path, label in ((str(WORKSPACE) + "/", ""), (str(ROOT) + "/", ""), (sys.executable, "python")):
+        text = text.replace(path, label)
+    return text
 
 
 def ensure_project(job_id, p):
@@ -142,7 +149,10 @@ def post_build(jid, p, link_check=True):
     """build + check + export (+ kiểm link nguồn). Trả (ok, số lỗi check)."""
     bcode, _ = sh(jid, [*GEN, "build", p["slug"]])
     ccode, cout = sh(jid, [*GEN, "check", p["slug"]])
-    sh(jid, [*EXPORT, p["slug"], "--media-base", f"/api/projects/{p['slug']}/media"])
+    ecode, _ = sh(jid, [*EXPORT, p["slug"], "--media-base", f"/api/projects/{p['slug']}/media"])
+    if ecode != 0:
+        log(jid, "✗ Xuất dữ liệu console lỗi — xem dòng lỗi phía trên (thường do YAML sai kiểu)")
+        return False, cout.count("ERROR")
     if link_check and bcode == 0:
         log(jid, "Kiểm tra link nguồn…")
         try:
@@ -151,6 +161,17 @@ def post_build(jid, p, link_check=True):
         except Exception as e:  # noqa: BLE001 — kiểm link lỗi không làm hỏng job
             log(jid, f"(bỏ qua kiểm link: {e})")
     return bcode == 0, cout.count("ERROR")
+
+
+def export_check(slug):
+    """build + check + export như lúc nộp bài — để agent ngoài thấy mọi lỗi TRƯỚC khi nộp."""
+    out, errors = [], 0
+    for cmd in ([*GEN, "build", slug], [*GEN, "check", slug], [*EXPORT, slug, "--media-base", f"/api/projects/{slug}/media"]):
+        r = subprocess.run(cmd, env=base_env(), cwd=ROOT, capture_output=True, text=True, timeout=300)
+        text = scrub((r.stdout + r.stderr).strip())
+        out.append(text)
+        errors += text.count("ERROR") + (1 if r.returncode != 0 and "ERROR" not in text else 0)
+    return {"errors": errors, "output": "\n".join(out)[-8000:]}
 
 
 # ------------------------------------------------------------------ main job

@@ -111,7 +111,8 @@ def compute(assumptions: dict, scenario: dict) -> dict:
     tax_rate = val(M["tax_rate"])
     capex = val(M["capex"])
     raise_amt = A[M["funding"]]["value"]
-    cash, loss_cf, cum_fcf = raise_amt, 0.0, -raise_amt
+    founder = A[M["founder_capital"]]["value"] if M.get("founder_capital") else 0   # vốn founder tự góp (tuỳ chọn)
+    cash, loss_cf, cum_fcf = raise_amt + founder, 0.0, -raise_amt - founder
     for i, y in enumerate(years):
         y["gross_profit"] = y["revenue"] - y["cogs"]
         y["gross_margin"] = y["gross_profit"] / y["revenue"] if y["revenue"] else 0
@@ -134,6 +135,7 @@ def compute(assumptions: dict, scenario: dict) -> dict:
     first = lambda cond: next((y["year"] for y in years if cond(y)), None)
     metrics = dict(
         raise_amount=raise_amt,
+        founder_capital=founder,
         pre_money=pre,
         post_money=pre + raise_amt,
         investor_stake=stake,
@@ -159,24 +161,39 @@ def compute_all(assumptions: dict) -> dict:
 def make_env(d: Path, assumptions: dict, evidence: dict, issues: list):
     unit = assumptions["meta"].get("unit_label", "")
 
-    def money(x, digits=1):
-        return f"{x:,.{digits}f} {unit}".replace(",", "_").replace(".", ",").replace("_", ".").strip()
+    def auto(x, digits):
+        """Không chỉ định số lẻ: số lớn hoặc số tròn thì bỏ phần lẻ (1.500 thay vì 1.500,0)."""
+        if digits is not None:
+            return digits
+        return 0 if abs(x) >= 100 or float(x).is_integer() else 1
+
+    def money(x, digits=None):
+        return f"{x:,.{auto(x, digits)}f} {unit}".replace(",", "_").replace(".", ",").replace("_", ".").strip()
 
     def num(x, digits=0):
         return f"{x:,.{digits}f}".replace(",", "_").replace(".", ",").replace("_", ".")
 
-    def ty(x, digits=1):
+    def ty(x, digits=None):
         """triệu đ → tỷ đ."""
-        return num(x / 1000, digits) + " tỷ đ"
+        return num(x / 1000, auto(x / 1000, digits)) + " tỷ đ"
 
     def pct(x, digits=0):
         return f"{x * 100:.{digits}f}%".replace(".", ",")
 
     def cite(*ids):
+        """Trích kiểu tác giả–năm cho người đọc: (Momentum Works, 2025; JLL, 2026). Danh mục đầy đủ có URL ở phụ lục/Excel."""
+        out = []
         for i in ids:
-            if i not in evidence:
+            e = evidence.get(i)
+            if e is None:
                 issues.append(f"cite('{i}') không có trong evidence.yaml")
-        return "[" + ", ".join(ids) + "]"
+                out.append(i)
+                continue
+            who = str(e.get("publisher") or e.get("title") or i).split(" — ")[0].strip()
+            who = who if len(who) <= 40 else who[:38].rstrip() + "…"
+            year = str(e.get("date") or "")[:4]
+            out.append(f"{who}, {year}" if year.isdigit() else who)
+        return "(" + "; ".join(out) + ")"
 
     env = Environment(loader=FileSystemLoader(str(d)), undefined=StrictUndefined,
                       trim_blocks=True, lstrip_blocks=True)
@@ -290,10 +307,53 @@ def write_excel(path, ctx, assumptions, evidence):
 HARDCODED = re.compile(r"\d[\d.,]*\s*(%|tỷ|triệu|nghìn|USD|VND|VNĐ|đ\b|\$|k\b|M\b)", re.I)
 
 
+# Cấu trúc dữ liệu mỗi loại biểu đồ dashboard (khớp studio/index.html). Trường → kiểu phần tử bắt buộc.
+CHART_SCHEMA = {
+    "bar": {"items": ("label", "value")}, "dots": {"items": ("label", "value")}, "funnel": {"items": ("label", "value")},
+    "donut": {"items": ("label", "value")}, "range": {"items": ("label", "lo", "hi")},
+    "line": {"series": ("name", "points")}, "stacked": {"categories": (), "series": ("name", "values")},
+    "grouped": {"categories": (), "series": ("name", "values")}, "waterfall": {"steps": ("label", "value")},
+}
+KPI_KEYS = {"label", "value", "note", "status", "source", "unit", "sources"}
+
+
+def check_datasets(d):
+    """datasets.yaml do agent viết: sai cấu trúc thì dashboard không vẽ được — báo lỗi cụ thể thay vì để trình xem hỏng."""
+    errs = []
+    ds = load(d / "datasets.yaml") if (d / "datasets.yaml").exists() else {}
+    for i, k in enumerate(ds.get("kpis") or []):
+        extra = set(k) - KPI_KEYS if isinstance(k, dict) else set()
+        if extra:
+            errs.append(f"datasets.yaml kpis[{i}]: khoá lạ {sorted(extra)} — thường do dấu phẩy trong giá trị, "
+                        f"hãy đặt trong ngoặc kép, ví dụ value: \"66,8 USD/m²\"")
+    for c in ds.get("charts") or []:
+        cid, t = c.get("id", "?"), c.get("type")
+        if t not in CHART_SCHEMA:
+            errs.append(f"datasets.yaml chart {cid}: type '{t}' không hỗ trợ — dùng {', '.join(CHART_SCHEMA)}")
+            continue
+        for field, need in CHART_SCHEMA[t].items():
+            v = c.get(field)
+            if not isinstance(v, list) or not v:
+                errs.append(f"datasets.yaml chart {cid} ({t}): cần '{field}' là danh sách"
+                            + (f" các {{{', '.join(need)}}}" if need else ""))
+                continue
+            for j, it in enumerate(v):
+                miss = [x for x in need if not (isinstance(it, dict) and x in it)]
+                if miss:
+                    errs.append(f"datasets.yaml chart {cid}: {field}[{j}] thiếu {miss}")
+                    break
+        if t in ("stacked", "grouped") and isinstance(c.get("series"), list) and isinstance(c.get("categories"), list):
+            for sr in c["series"]:
+                if isinstance(sr, dict) and len(sr.get("values") or []) != len(c["categories"]):
+                    errs.append(f"datasets.yaml chart {cid}: series '{sr.get('name')}' cần {len(c['categories'])} giá trị theo categories")
+    return errs
+
+
 def cmd_check(slug):
     d = project_dir(slug)
     errors, warns = [], []
     assumptions, evidence = load(d / "assumptions.yaml"), load(d / "evidence.yaml")
+    errors += check_datasets(d)
 
     for k, v in assumptions["assumptions"].items():
         src = v.get("source") or []

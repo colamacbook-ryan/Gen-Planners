@@ -1,3 +1,3 @@
 {% if draft %}
-> **BẢN NHÁP v{{ version }}** — {{ unverified|length }} giả định chưa được kiểm chứng: {{ unverified|join(", ") }}. Không dùng số liệu này để cam kết với nhà đầu tư.
+> **BẢN NHÁP v{{ version }}** — {{ unverified|length }} giả định chưa được kiểm chứng{% if unverified|length > 6 %}, ví dụ: {% for k in unverified[:6] %}{{ A[k].label }}{{ "; " if not loop.last }}{% endfor %} và {{ unverified|length - 6 }} giả định khác (danh sách đủ ở sheet Assumptions trong Excel){% else %}: {% for k in unverified %}{{ A[k].label }}{{ "; " if not loop.last }}{% endfor %}{% endif %}. Không dùng số liệu này để cam kết với nhà đầu tư.
 {% endif %}

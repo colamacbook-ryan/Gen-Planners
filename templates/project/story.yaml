@@ -15,7 +15,7 @@ value_chain: []      # {layer, who, margin: low|mid|high, stance: buy|reuse|part
 phases: []           # {name, when, budget_ref, goal, gate, criteria: ["... {gate_x} ..."]}
 risks: []            # {name, prob 1-3, impact 1-3, fix}
 no_go: []
-econ: {}             # tuỳ chọn: core_stream, unit{price,cogs}, cac{spend,units,year_index}, yearly[{rate[],cogs}], life_years, share[{seg,segment}]
+econ: {}             # tuỳ chọn: unit_name (pet, khách…), ratio_label, core_stream, unit{price,cogs}, cac{spend,units,year_index}, yearly[{rate[],cogs}], life_years, share[{seg,segment}]
 console:
   context: {headline: "", lead: "", timeline: []}     # timeline: {year, cn, vn, now?, future?}
   pains: {headline: "", note: "Chân dung minh hoạ ghép từ dữ liệu, không phải người thật.", personas: []}

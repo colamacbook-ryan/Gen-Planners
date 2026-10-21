@@ -164,13 +164,13 @@ def _probe(client, url, hops=5):
             if not _public(url):
                 return {"code": None, "ok": False, "blocked": False, "error": "địa chỉ nội bộ — bỏ qua"}
             r = client.head(url)
-            if r.status_code in (403, 405, 400, 404) or r.status_code >= 500:   # nhiều site không trả lời HEAD đúng
+            if r.status_code in (403, 405, 406, 400, 404) or r.status_code >= 500:   # nhiều site không trả lời HEAD đúng
                 r = client.get(url, headers={"Range": "bytes=0-2048"})
             if r.is_redirect and r.headers.get("location"):
                 url = urllib.parse.urljoin(url, r.headers["location"])
                 continue
             code = r.status_code
-            return {"code": code, "ok": code < 400, "blocked": code in (401, 403, 429)}
+            return {"code": code, "ok": code < 400, "blocked": code in (401, 403, 406, 429)}
         return {"code": None, "ok": False, "blocked": False, "error": "chuyển hướng quá nhiều"}
     except httpx.HTTPError as e:
         return {"code": None, "ok": False, "blocked": False, "error": type(e).__name__}
@@ -178,7 +178,8 @@ def _probe(client, url, hops=5):
 
 def link_check(slug, workers=12):
     items = collect_urls(slug)
-    headers = {"User-Agent": "Mozilla/5.0 (GenPlanner link-check)"}
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+               "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", "Accept-Language": "vi,en;q=0.8"}
     with httpx.Client(timeout=12, follow_redirects=False, headers=headers) as client, cf.ThreadPoolExecutor(workers) as ex:
         for it, res in zip(items, ex.map(lambda i: _probe(client, i["url"]), items)):
             it.update(res)

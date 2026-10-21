@@ -16,6 +16,7 @@
   --hero:#060d15; --hero-fg:#eef3f8; --hero-muted:#93a6ba; --hero-line:#1d2c3c;
   --core:#3cc2a8; --core-soft:#3cc2a81f; --wedge:#6f9fe6; --ok:#4cc483; --warn:#e3a646; --bad:#e5735f; --c1:#3987e5; color-scheme:dark}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--fg);font:14px/1.55 var(--f-body);font-variant-numeric:tabular-nums}
 a{color:var(--wedge)} code,pre,.mono{font-family:var(--f-mono);font-size:12.5px}

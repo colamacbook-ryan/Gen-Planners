@@ -715,7 +715,7 @@ def media(slug: str, name: str, u=Depends(need_user)):
     return FileResponse(f)
 
 
-FILES = {"business-plan.docx", "deck.pptx", "financials.xlsx", "business-plan.md"}
+FILES = {"business-plan.docx", "deck.pptx", "financials.xlsx", "business-plan.md", "deck.md"}
 
 
 @app.get("/api/projects/{slug}/files/{name}")
@@ -905,7 +905,7 @@ def revoke_token(tid: int, u=Depends(need_user)):
     return {"ok": True}
 
 
-STANDARD = {"AGENTS.md", "CLAUDE.md", "pipeline/playbook.yaml", "pipeline/stages.yaml", "pipeline/interview.yaml",
+STANDARD = {"AGENTS.md", "CLAUDE.md", "pipeline/model-reference.md", "pipeline/playbook.yaml", "pipeline/stages.yaml", "pipeline/interview.yaml",
             "templates/project/story.yaml", "templates/project/datasets.yaml", "templates/project/products.yaml",
             "templates/project/assumptions.yaml", "templates/project/deck.md"}
 SSOT_PATH = re.compile(r"^(idea\.md|brief\.md|project\.yaml|assumptions\.yaml|evidence\.yaml|story\.yaml|datasets\.yaml|products\.yaml|deck\.md"
@@ -918,6 +918,15 @@ def standard(path: str, u=Depends(need_user)):
     if path not in STANDARD:
         raise HTTPException(404, "Các file chuẩn: " + ", ".join(sorted(STANDARD)))
     return Response((ROOT / path).read_text(), media_type="text/plain; charset=utf-8")
+
+
+def can_edit_ssot(p):
+    """Agent/founder sửa SSOT khi không có job nội bộ đang chạy (job agent ngoài đang chờ thì được)."""
+    busy = db.one("SELECT id FROM jobs WHERE project_id=? AND status IN ('queued','starting','running')", (p["id"],))
+    if busy:
+        raise HTTPException(409, "Dự án đang có job chạy — đợi xong rồi sửa.")
+    if not (WORKSPACE / p["slug"]).exists():
+        raise HTTPException(404, "Dự án chưa có workspace — bấm Chạy Plan trước.")
 
 
 def external_job(p, jid=None):
@@ -961,7 +970,7 @@ def ssot_read(slug: str, path: str, u=Depends(need_user)):
 @app.put("/api/projects/{slug}/ssot/{path:path}")
 async def ssot_write(slug: str, path: str, request: Request, u=Depends(need_user)):
     p = get_project(slug, u, True)
-    external_job(p)
+    can_edit_ssot(p)
     if not SSOT_PATH.match(path) or path in READ_ONLY:
         raise HTTPException(400, "Đường dẫn không được phép ghi")
     data = await request.body()
@@ -982,23 +991,22 @@ async def ssot_write(slug: str, path: str, request: Request, u=Depends(need_user
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_bytes(data)
     db.update("projects", p["id"], updated=db.now())
-    j = external_job(p)
-    if path == "project.yaml" and (pr := ssot.stage_progress(slug)):
+    j = db.one("SELECT id FROM jobs WHERE project_id=? AND engine='external' AND status='waiting'", (p["id"],))
+    if j and path == "project.yaml" and (pr := ssot.stage_progress(slug)):
         db.update("jobs", j["id"], progress=json.dumps(pr))
-    return {"ok": True, "path": path, "size": len(data)}
+    if not j:
+        db.insert("changes", project_id=p["id"], user_id=u["id"], key=path, label=f"Sửa file {path}", old="", new=f"{len(data)} byte", created=db.now())
+    return {"ok": True, "path": path, "size": len(data),
+            "next": "Đang có job chờ: POST /check rồi /complete." if j else f"Không có job chờ: POST /check, rồi POST /api/projects/{slug}/rebuild để cập nhật hồ sơ."}
 
 
 @app.post("/api/projects/{slug}/check")
 def ssot_check(slug: str, u=Depends(need_user)):
     p = get_project(slug, u, True)
-    external_job(p)
-    env = worker.base_env()
-    out = []
-    for cmd in (["build", slug], ["check", slug]):
-        r = subprocess.run([sys.executable, str(ROOT / "gen.py"), *cmd], env=env, cwd=ROOT, capture_output=True, text=True, timeout=300)
-        out.append((r.stdout + r.stderr).strip())
-    text = "\n".join(out).replace(str(WORKSPACE) + "/", "")
-    return {"errors": text.count("ERROR"), "output": text[-8000:]}
+    can_edit_ssot(p)
+    r = worker.export_check(slug)
+    return {**r, "kpi": ssot.kpi(slug), "results": f"/api/projects/{slug}/export/dossier (fin = kết quả model mọi kịch bản)",
+            "rendered": [f"/api/projects/{slug}/files/{f}" for f in sorted(FILES)]}
 
 
 @app.post("/api/jobs/{jid}/progress")
@@ -1016,7 +1024,8 @@ async def job_complete(jid: int, request: Request, u=Depends(need_user)):
     if j["engine"] != "external" or j["status"] != "waiting":
         raise HTTPException(409, "Job không ở trạng thái chờ agent ngoài")
     threading.Thread(target=worker.finalize_external, args=(jid, str(b.get("summary") or "")), daemon=True).start()
-    return {"ok": True, "status": "running"}
+    return {"ok": True, "status": "running", "poll": f"/api/jobs/{jid}",
+            "after": "Nếu cần sửa sau khi nộp: PUT /ssot/<path> rồi POST /api/projects/<slug>/rebuild."}
 
 
 # ------------------------------------------------------------------ admin

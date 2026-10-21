@@ -10,6 +10,8 @@ import yaml  # noqa: E402
 
 from saas.server import ssot  # noqa: E402
 from saas.server.config import ROOT, WORKSPACE  # noqa: E402
+import sys  # noqa: E402
+sys.path.insert(0, str(ROOT))
 
 TRICKY = """# đầu file
 meta: {start_year: 2027, years: 5}
@@ -88,3 +90,24 @@ def test_status_rules():
     assert a["status"] == "verified" and a["value"] == 0.3
     with pytest.raises(ssot.SSOTError):
         ssot.set_value("fuzz-st", "a_float", 0.3, "bịa")
+
+
+def test_datasets_schema_check(tmp_path):
+    """Lỗi agent thật gặp: dấu phẩy trong flow-mapping tách giá trị thành khoá rác; bar viết 'series' thay vì 'items'."""
+    import gen
+    (tmp_path / "datasets.yaml").write_text("""
+kpis:
+  - {label: Thuê, value: 66,8 USD/m², note: JLL}
+  - {label: Đúng, value: "66,8 USD/m²"}
+charts:
+  - {id: m1, type: bar, series: [{name: x, points: [[a, 1]]}]}
+  - {id: m2, type: bar, items: [{label: a, value: 1}]}
+  - {id: m3, type: grouped, categories: [a, b], series: [{name: s, values: [1]}]}
+  - {id: m4, type: pie, items: []}
+""")
+    errs = gen.check_datasets(tmp_path)
+    assert any("kpis[0]" in e and "ngoặc kép" in e for e in errs)
+    assert not any("kpis[1]" in e for e in errs)
+    assert any("m1" in e and "items" in e for e in errs) and not any("m2" in e for e in errs)
+    assert any("m3" in e and "2 giá trị" in e for e in errs) and any("m4" in e and "không hỗ trợ" in e for e in errs)
+    assert gen.check_datasets(ROOT / "projects" / "ai-robot-pet") == []          # dự án mẫu đúng chuẩn
