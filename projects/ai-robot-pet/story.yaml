@@ -1,0 +1,714 @@
+title: Hệ sinh thái AI Robot Pet Việt
+kicker: Báo cáo khai phá · Robot pet AI + CLB robotics + học viện + nhượng quyền
+thesis: Pet AI tháo rời não–thân mang thương hiệu Việt, não chạy server Việt Nam. Chuỗi CLB robotics để chơi, huấn luyện, thi đấu, nâng cấp; học viện dạy huấn luyện prompt và lập trình pet; rồi nhượng quyền
+  cả mô hình. Mỗi pet bán ra mở một dòng chi tiêu kéo dài nhiều năm.
+verdict:
+  level: caution
+  field: Đáng khai phá
+  invest: Đầu tư giai đoạn kiểm chứng trước
+  why: 'Robot pet AI đã thành ngành lớn ở Trung Quốc; điểm yếu chết người của cả ngành là người dùng chán sau vài tuần — và CLB, thi đấu, huấn luyện, nâng cấp chính là lời giải. Ba điều cần chứng minh trong
+    8–12 tuần: người trẻ chịu mua ở mức giá dự kiến, góc trải nghiệm kéo được khách quay lại, bộ não tiếng Việt chạy ổn với chi phí AI thấp.'
+headline:
+- label: Doanh thu năm 5
+  fin: base.last.revenue
+  fmt: ty
+  note: kịch bản cơ sở
+- label: EBITDA năm 5
+  fin: base.last.ebitda
+  fmt: ty
+  note: hoà vốn năm {breakeven}
+- label: Vốn bước đầu
+  ref: phase0_budget
+  fmt: tr
+  note: 8–12 tuần kiểm chứng
+- label: Tổng vốn 5 năm
+  ref: raise_amount
+  fmt: ty
+  note: giải ngân theo cửa ải
+forces:
+- title: Trung Quốc đã chứng minh
+  ref: fact_cn_aitoy_2025
+  to_ref: fact_cn_aitoy_2030
+  unit: tỷ NDT
+  caption: Thị trường AI toy 2025 → dự báo 2030; hơn 1.500 công ty
+  source: ev-caixin-aitoy
+- title: Bán chạy ở giá đại chúng
+  ref: fact_fuzozo_units
+  unit: máy Fuzozo
+  caption: trong khoảng một năm, người dùng trò chuyện 50 phút/ngày
+  source: ev-pedaily-fuzozo
+- title: Khách là người trẻ
+  ref: fact_fuzozo_female
+  fmt: pct
+  unit: người dùng nữ
+  caption: của Fuzozo là phụ nữ trưởng thành — nhu cầu là bạn đồng hành và sưu tầm
+  source: ev-pedaily-fuzozo
+- title: Hàng TQ đang tràn vào VN
+  ref: fact_vn_vacuum_growth
+  fmt: pct
+  prefix: +
+  unit: một năm
+  caption: robot hút bụi ở VN — thiết bị AI biết nói sẽ đi đúng đường này
+  source: ev-vacuum-vn
+- title: Người Việt đã quen AI
+  ref: fact_vn_ai_users
+  fmt: pct
+  unit: người dùng online
+  caption: đã dùng AI; hơn một nửa người dùng AI trả phí
+  source: ev-decisionlab-ai
+- title: Trải nghiệm + IP sinh lãi lớn
+  ref: fact_popmart_margin
+  fmt: pct
+  unit: biên gộp Pop Mart
+  caption: sản phẩm sưu tầm + cửa hàng trải nghiệm; Build-A-Bear sống nhờ tuỳ biến và nhượng quyền
+  source: ev-popmart
+opportunities:
+- name: Pet AI tháo rời não–thân (thương hiệu riêng)
+  short: Pet
+  payer: Người trẻ, gia đình
+  size: 4
+  timing: 4
+  defense: 3
+  fit: 5
+  role: core
+- name: Thân, skin, phụ kiện, nâng cấp
+  short: Phụ kiện
+  payer: Chủ pet
+  size: 3
+  timing: 4
+  defense: 3
+  fit: 5
+  role: core
+- name: Gói kỹ năng não pet (server VN)
+  short: Kỹ năng
+  payer: Chủ pet, phụ huynh, con cái ở xa
+  size: 4
+  timing: 4
+  defense: 4
+  fit: 4
+  role: core
+- name: CLB robotics & góc trải nghiệm
+  short: CLB
+  payer: Người trẻ, gia đình
+  size: 4
+  timing: 4
+  defense: 3
+  fit: 4
+  role: wedge
+- name: Học viện huấn luyện prompt & lập trình
+  short: Học viện
+  payer: Học sinh, phụ huynh, trường tư
+  size: 4
+  timing: 5
+  defense: 3
+  fit: 5
+  role: wedge
+- name: Thi đấu, giải thưởng hội viên
+  short: Thi đấu
+  payer: Hội viên, nhà tài trợ
+  size: 2
+  timing: 4
+  defense: 3
+  fit: 4
+  role: wedge
+- name: Sửa chữa, bảo dưỡng, trang trí
+  short: Dịch vụ
+  payer: Chủ pet
+  size: 2
+  timing: 4
+  defense: 3
+  fit: 5
+  role: cash
+- name: Nhượng quyền CLB
+  short: Nhượng quyền
+  payer: Nhà đầu tư địa phương
+  size: 4
+  timing: 2
+  defense: 3
+  fit: 3
+  role: later
+- name: Chỉ nhập robot về bán lẻ
+  short: Bán lẻ thuần
+  payer: Người mua lẻ
+  size: 3
+  timing: 3
+  defense: 1
+  fit: 3
+  role: drop
+value_chain:
+- layer: Linh kiện, thân máy, OEM
+  who: Nhà máy Thâm Quyến
+  margin: low
+  stance: buy
+- layer: Lắp ráp, kiểm tra, đóng gói tại VN
+  who: Ta làm
+  margin: mid
+  stance: own
+- layer: 'Não: giọng Việt, tính cách, kỹ năng, server VN'
+  who: Chưa ai ở VN
+  margin: high
+  stance: own
+- layer: Thương hiệu, IP, thân/skin sưu tầm
+  who: Ta làm
+  margin: high
+  stance: own
+- layer: CLB, cộng đồng, giải đấu
+  who: Chưa có ở VN
+  margin: mid
+  stance: own
+- layer: Học viện huấn luyện & lập trình
+  who: Trung tâm STEM chưa có sản phẩm AI pet
+  margin: high
+  stance: own
+- layer: Phân phối online
+  who: Shopee, TikTok Shop
+  margin: mid
+  stance: partner
+phases:
+- name: Giai đoạn 0 · Kiểm chứng
+  when: 8–12 tuần
+  budget_ref: phase0_budget
+  goal: Mẫu OEM não–thân, góc pop-up 4 cuối tuần, workshop + giải đấu nhỏ, đặt cọc online
+  gate: Cửa ải 1
+  criteria:
+  - Pet nói tiếng Việt tự nhiên; chi phí AI ≤ {gate_cloud_cost} nghìn đ/pet/tháng
+  - ≥ {gate_popup_visits} lượt khách mỗi cuối tuần ở góc pop-up
+  - ≥ {gate_preorders} đơn đặt cọc
+  - ≥ {gate_return} người quay lại workshop/giải đấu
+- name: Giai đoạn 1 · Ra mắt
+  when: 12 tháng
+  budget_ref: phase1_budget
+  goal: Lô OEM đầu, hợp quy, 3 góc trải nghiệm, học viện khoá đầu, gói kỹ năng
+  gate: Cửa ải 2
+  criteria:
+  - ≥ {gate_pet_use} người mua còn dùng pet ở tuần 6
+  - Góc trải nghiệm có lãi vận hành
+  - Doanh thu ngoài bán pet tăng đều
+- name: Giai đoạn 2 · Mở rộng
+  when: năm 2–5
+  budget_ref: phase2_budget
+  goal: Mỗi năm 1 CLB flagship; nhượng quyền khi CLB đầu có lãi ≥ 1 năm; gói giáo án cho trường
+  gate: Gọi vốn quỹ
+  criteria:
+  - Số liệu thật thay giả định
+  - CLB flagship có lãi ≥ 1 năm
+risks:
+- name: Người dùng chán pet sau vài tuần
+  prob: 3
+  impact: 3
+  fix: CLB, giải đấu, huấn luyện, thân mới; đo ở giai đoạn 0
+- name: CLB lỗ vì chi phí cố định
+  prob: 2
+  impact: 3
+  fix: Góc trải nghiệm chia doanh thu trước, CLB sau
+- name: Nhượng quyền mở quá nhanh
+  prob: 2
+  impact: 3
+  fix: Chỉ khi CLB đầu có lãi ≥ 1 năm; sổ tay vận hành
+- name: Sự cố nội dung với trẻ em
+  prob: 2
+  impact: 3
+  fix: Bộ lọc an toàn, red-team, phụ huynh kiểm soát
+- name: Hàng rẻ trên sàn TMĐT
+  prob: 3
+  impact: 2
+  fix: Không đua giá máy; bán hệ sinh thái + IP riêng
+- name: Chi phí AI cao hơn gói kỹ năng
+  prob: 2
+  impact: 2
+  fix: Tự host giọng nói, mô hình rẻ
+- name: Đội nhỏ ôm nhiều mảng
+  prob: 3
+  impact: 2
+  fix: Đi đúng thứ tự từng tầng
+no_go:
+- Góc pop-up và workshop không kéo được khách quay lại
+- Không đủ đơn đặt cọc ở mức giá dự kiến
+- Bộ não tiếng Việt không đạt hoặc chi phí AI vượt giá gói kỹ năng
+- Đội không làm toàn thời gian cho giai đoạn 0–1
+console:
+  context:
+    headline: Robot pet AI đã bùng nổ ở Trung Quốc. Việt Nam đang ở vạch xuất phát.
+    lead: Trong hai năm, robot pet AI thành ngành hàng tỷ đô ở Trung Quốc và có cả cửa hàng trải nghiệm. Ở Việt Nam, hàng Trung Quốc đang tràn vào, người trẻ đã quen AI, nhưng chưa có pet nào nói tiếng
+      Việt và chưa có CLB robotics nào cho giới trẻ.
+    timeline:
+    - year: '2024'
+      cn: AI toy 24,6 tỷ NDT · BubblePal bán vài nghìn máy/tháng
+      vn: Chưa có gì
+    - year: '2025'
+      cn: 29 tỷ NDT · Fuzozo 300 nghìn máy · Ropet, Loona gọi vốn
+      vn: 78% người dùng online đã dùng AI · trào lưu Labubu, xếp hàng mua đồ sưu tầm
+    - year: '2026'
+      cn: Hơn 30 tỷ NDT · Unitree mở cửa hàng trải nghiệm robot ở Bắc Kinh
+      vn: Robot hút bụi +138% (hàng TQ > 90%) · AI vào mọi trường · chưa có robot pet tiếng Việt, chưa có CLB robotics
+      now: true
+    - year: '2030'
+      cn: 85–100 tỷ NDT (dự báo)
+      vn: Ai sẽ là thương hiệu robot pet + CLB đầu tiên của người Việt?
+      future: true
+  pains:
+    headline: Bốn nhóm người đang thiếu đúng thứ hệ sinh thái này mang lại
+    note: Chân dung minh hoạ ghép từ dữ liệu, không phải người thật.
+    personas:
+    - id: genz
+      who: Linh, 24 tuổi · nhân viên văn phòng TP.HCM
+      role: Người mua chính · tự trả tiền
+      story: Sống một mình ở thành phố, mê đồ sưu tầm, từng xếp hàng mua Labubu. Muốn một 'bạn nhỏ' dễ thương biết nói chuyện, và một chỗ cuối tuần để chơi cùng bạn bè.
+      facts:
+      - v: 80%
+        l: người dùng cốt lõi của Fuzozo là nữ trưởng thành
+        src: Pedaily
+      - v: 35%
+        l: Gen Z Việt Nam dùng AI làm người tâm sự
+        src: Kaspersky 2026
+      - v: 79%
+        l: người lớn đô thị nuôi thú cưng — túi chi cho bạn đồng hành
+        src: VNA / TGM
+      today: Mua đồ sưu tầm, nuôi thú cưng, đi cà phê mèo
+      fails: Đồ sưu tầm không biết nói; thú cưng cần thời gian chăm sóc mà người đi làm không có
+      img: ropet_ces
+    - id: kid
+      who: Bé Minh, 10 tuổi · Hà Nội
+      role: Người chơi · bố mẹ trả tiền
+      story: Mê robot nhưng về nhà chỉ có điện thoại. Mẹ muốn con học AI và luyện tiếng Anh mà không thêm màn hình, cuối tuần có chỗ cho con chơi có ích.
+      facts:
+      - v: 2,1–4,5 tr
+        l: phụ huynh chi mỗi tháng cho tiếng Anh
+        src: Tuổi Trẻ, n > 1.200
+      - v: 72%
+        l: phụ huynh không chấp nhận học hoàn toàn online
+        src: Tuổi Trẻ
+      - v: 2026-27
+        l: AI vào mọi trường phổ thông, 12 tiết/lớp/năm
+        src: QĐ 2422
+      today: Trung tâm tiếng Anh, khu vui chơi, điện thoại
+      fails: Không có đồ chơi AI nói tiếng Việt; khu vui chơi không dạy gì
+      img: hanoi_robot
+    - id: elder
+      who: Bà Lan, 74 tuổi · Nghệ An
+      role: Người dùng · con cái ở xa mua tặng
+      story: Con cháu đi làm xa. Một chú pet nói giọng quê, nhắc uống thuốc và báo cho con biết hôm nay bà ổn — bằng gói kỹ năng 'chăm sóc ông bà' trên cùng một thiết bị.
+      facts:
+      - v: 14,8 triệu
+        l: người từ 60 tuổi ở Việt Nam
+        src: NSO
+      - v: 16,4%
+        l: người từ 80 tuổi sống một mình
+        src: Human Geographies
+      - v: ~14.500
+        l: búp bê AI Hyodol đang dùng cho người già ở Hàn
+        src: Korea Times
+      today: Gọi điện vài lần mỗi tuần
+      fails: Con cái không có tín hiệu gì giữa các cuộc gọi
+      img: hyodol
+    - id: team
+      who: Nhóm kỹ thuật biết tiếng Trung
+      role: Người làm ra hệ sinh thái
+      story: Có kỹ năng làm phần cứng, AI và đàm phán trực tiếp với nhà máy Thâm Quyến. Thiếu vốn và một kế hoạch đủ thuyết phục để bạn bè có tiền cùng góp.
+      facts:
+      - v: ~61 USD
+        l: giá về kho một bộ pet để bàn (OEM)
+        src: Alibaba / research/02
+      - v: 0%
+        l: thuế nhập khẩu với C/O form E
+        src: caselaw.vn HS 9503
+      - v: '> 1.500'
+        l: nhà sản xuất AI toy ở TQ để chọn đối tác
+        src: MIT Technology Review
+      today: Làm thuê, hoặc tự nhập hàng bán lẻ nhỏ lẻ
+      fails: Bán lẻ thuần dễ bị sao chép, đua giá với hàng sàn
+      img: canton
+  gap:
+    headline: Ở Trung Quốc đã có cả ngành. Ở Việt Nam, mọi tầng của hệ sinh thái còn trống.
+    compare:
+    - l: Robot pet AI nói tiếng mẹ đẻ
+      cn: Hàng trăm sản phẩm, > 1.500 công ty
+      vn: Chưa có sản phẩm tiếng Việt
+    - l: Cửa hàng / CLB trải nghiệm robot
+      cn: Unitree, Z·Pilot, cửa hàng AI toy
+      vn: Chưa có CLB robotics cho giới trẻ
+    - l: Đồ sưu tầm + trải nghiệm
+      cn: Pop Mart biên gộp 72%
+      vn: Có Pop Mart, chưa có đồ sưu tầm biết nói
+    - l: Học huấn luyện AI / prompt cho giới trẻ
+      cn: Phổ biến trong trường và trung tâm
+      vn: AI vào trường 2026-27, thiếu giáo cụ
+    - l: Sửa chữa, nâng cấp robot tiêu dùng
+      cn: Mạng lưới dịch vụ hãng
+      vn: Hãng TQ chưa có dịch vụ ở VN
+    pools:
+    - seg: kids
+      l: Robot/đồ chơi thông minh cho trẻ (HN+HCM)
+      lo: 455
+      hi: 455
+    - seg: academy
+      l: Khoá học AI-robotics (HN+HCM)
+      lo: 2300
+      hi: 2300
+    - seg: edu
+      l: Trường học HN+HCM (một lần)
+      lo: 855
+      hi: 855
+    - seg: elder
+      l: Chăm sóc người cao tuổi bằng thiết bị
+      lo: 1300
+      hi: 3900
+  solution:
+    headline: Một hệ sinh thái 4 tầng — mỗi tầng giữ chân và bán cho tầng kia
+    lead: 'Mua thân máy rẻ ở Thâm Quyến, lắp ráp tại Việt Nam, tự làm phần khó sao chép: bộ não tiếng Việt, thương hiệu và thân sưu tầm, CLB, học viện.'
+    chain:
+    - pain: Robot pet bị chán sau vài tuần (trả hàng 30–40% ở TQ)
+      fix: CLB + giải đấu + huấn luyện + thân mới cho lý do quay lại mỗi tuần
+      edge: Cả hệ sinh thái, hàng sàn không sao chép được
+      proof: Ropet giữ 80–90% người dùng sau 90 ngày
+    - pain: Người trẻ muốn bạn đồng hành, đồ sưu tầm, chỗ chơi
+      fix: Pet tháo rời não–thân, thân/skin sưu tầm, góc trải nghiệm
+      edge: IP riêng + não nói tiếng Việt
+      proof: Pop Mart biên gộp 72%; Fuzozo 300 nghìn máy
+    - pain: Phụ huynh muốn con học AI, tiếng Anh, không thêm màn hình
+      fix: Học viện huấn luyện prompt, lập trình pet; gói kỹ năng tiếng Anh
+      edge: Cùng một thiết bị; giáo án theo chương trình AI của Bộ
+      proof: 72% phụ huynh không muốn học hoàn toàn online
+    - pain: Nhóm kỹ thuật có năng lực nhưng thiếu vốn
+      fix: Nguồn hàng TQ rẻ + thuế 0% + nhượng quyền nhân rộng bằng vốn của đối tác
+      edge: Đội nói tiếng Trung, OEM số lượng nhỏ
+      proof: Build-A-Bear có 109 điểm nhượng quyền
+    bodies:
+    - Thân bánh xe
+    - Thân chó 4 chân
+    - Thân thú bông
+    - Đế để bàn
+    - Kit giáo dục
+    layers:
+    - n: '1'
+      t: Pet tháo rời não–thân
+      d: OEM thương hiệu riêng · lắp ráp VN · não chạy server VN · thân, skin, gói kỹ năng
+    - n: '2'
+      t: CLB robotics
+      d: Góc trải nghiệm trước, CLB flagship sau · chơi, F&B, thi đấu có thưởng
+    - n: '3'
+      t: Học viện & dịch vụ
+      d: Huấn luyện prompt, lập trình pet · giáo án cho trường · sửa chữa, nâng cấp, trang trí
+    - n: '4'
+      t: Nhượng quyền
+      d: Khi CLB đầu có lãi ≥ 1 năm · phí ban đầu + phí theo doanh thu
+  benefits:
+    headline: Ai được lợi, và lợi nhuận đột phá nằm ở đâu
+    stakeholders:
+    - who: Người trẻ & gia đình
+      gain: Bạn đồng hành nói tiếng Việt, chỗ chơi cuối tuần có ích, con học AI không thêm màn hình
+    - who: Ông bà & con cái ở xa
+      gain: 'Cùng một pet, gói kỹ năng chăm sóc ông bà: trò chuyện, nhắc thuốc, báo tin'
+    - who: Đối tác nhượng quyền
+      gain: Mô hình kinh doanh trải nghiệm đã chạy, có sản phẩm độc quyền để bán kèm
+    - who: Nhà đầu tư
+      gain: Nhiều dòng tiền trên cùng một khách; rủi ro giới hạn theo từng cửa ải
+  evidence:
+  - step: context
+    img: v_expo
+    video: true
+    title: Bên trong hội chợ AI Toy ở Trung Quốc — hơn 100 mẫu robot pet, AI toy
+    pub: Technology in China (YouTube)
+    date: ''
+    url: https://www.youtube.com/watch?v=Kn5I42hcl-c
+    stat: Nguồn hàng để OEM
+  - step: context
+    img: sz_aizone
+    title: 'Khu AI Toy — Hội chợ Đồ chơi Thâm Quyến 2026: ''năm của AI toy'''
+    pub: Messe Frankfurt
+    date: '2026'
+    url: https://shenzhen-international-toy-and-hobby-fair.hk.messefrankfurt.com/shenzhen/en/AI-Toy-Zone.html
+    stat: Doanh số AI toy online +395% (số của hội chợ)
+  - step: context
+    img: xinhua_aipet
+    title: Người mua thử robot pet AI lông xù tại cửa hàng Z·Pilot dịp Quốc khánh
+    pub: Xinhua
+    date: 2026-10
+    url: https://www.news.cn/tech/20261006/16eadaf11e87466491c2c68e154a43e5/c.html
+    stat: Robot pet thành hàng tiêu dùng
+  - step: context
+    img: canton
+    title: Robots turn heads at Canton Fair
+    pub: Xinhua
+    date: 2025-04
+    url: https://imgs.news.cn/english/20250429/2314ee8bd1ec49338e47bd35a17e72b1/c.html
+    stat: Robot pet tại Hội chợ Quảng Châu
+  - step: context
+    img: v_labubu
+    video: true
+    title: Hàng trăm người xếp hàng xuyên đêm 'săn' Labubu
+    pub: Báo Phụ Nữ (YouTube)
+    date: '2024'
+    url: https://www.youtube.com/watch?v=YAnS6vMRX-o
+    stat: Giới trẻ VN sẵn sàng chi cho đồ sưu tầm
+  - step: pains
+    img: ropet_ces
+    title: Ropet — robot pet AI gây chú ý tại CES 2025
+    pub: KrASIA
+    date: 2025-01
+    url: https://kr-asia.com/meet-ropet-the-ai-powered-pet-stealing-the-show-at-ces-2025
+    stat: Bạn đồng hành cho người trẻ đi làm
+  - step: pains
+    img: labubu_hcm
+    title: Giới trẻ TP.HCM cắm trại qua đêm để mua Labubu
+    pub: Tuổi Trẻ News
+    date: 2024-08
+    url: https://news.tuoitre.vn/ho-chi-minh-city-youngsters-camp-out-overnight-for-trending-labubu-toys-10381496.htm
+    stat: ~500 người xếp hàng ở Quận 7
+  - step: pains
+    img: hanoi_robot
+    title: Hà Nội đưa robot, AI và STEM đến gần người học
+    pub: SGGP
+    date: 2026-10
+    url: https://sggp.org.vn/ha-noi-dua-robot-ai-va-stem-den-gan-nguoi-hoc-post875501.html
+    stat: Học sinh muốn được chạm vào robot
+  - step: pains
+    img: popmart_bana
+    title: Pop Mart khai trương cửa hàng tại Sun World Bà Nà Hills
+    pub: VTC News
+    date: 2024-05
+    url: https://vtcnews.vn/do-choi-hang-hieu-pop-mart-khai-truong-cua-hang-tai-sun-world-ba-na-hills-ar873925.html
+    stat: Đồ sưu tầm + trải nghiệm đã vào VN
+  - step: pains
+    img: hyodol
+    title: Búp bê AI Hyodol cho người già, chính quyền địa phương Hàn Quốc mua
+    pub: Korea Times
+    date: 2022-02
+    url: https://www.koreatimes.co.kr/amp/southkorea/society/20220215/local-municipalities-use-ai-robots-to-improve-care-for-elderly
+    stat: Gói kỹ năng chăm sóc ông bà
+  - step: gap
+    img: lovot_cafe
+    title: Robot pet LOVOT có quán cà phê cố định gần Tokyo
+    pub: Time Out Tokyo
+    date: ''
+    url: https://www.timeout.com/tokyo/news/japanese-pet-robot-lovot-is-getting-its-own-permanent-cafe-near-tokyo-100620
+    stat: CLB robot pet + F&B đã chạy ở Nhật
+  - step: gap
+    img: v_lovot
+    video: true
+    title: Thăm quán cà phê robot dễ thương ở Nhật — LOVOT cafe
+    pub: It's Time to Travel (YouTube)
+    date: ''
+    url: https://www.youtube.com/watch?v=biXgMiqYBUk
+    stat: Khách chơi với robot pet tại quán
+  - step: gap
+    img: unitree_wfj
+    title: Unitree mở cửa hàng tự vận hành đầu tiên tại Vương Phủ Tỉnh
+    pub: Chính quyền Bắc Kinh
+    date: 2026-05
+    url: https://english.beijing.gov.cn/consuminginbeijing/wheretobuy/firststores/updatesoffirststores/202605/t20260507_4639802.html
+    stat: Cửa hàng trải nghiệm robot
+  - step: gap
+    img: ftc_vn
+    title: Việt Nam giành á quân giải robotics lớn nhất thế giới (FTC 2025)
+    pub: VUFO
+    date: 2025-04
+    url: https://vufo.org.vn/Viet-Nam-wins-runner-up-title-at-worlds-largest-robotics-competition-09-60850.html?lang=en
+    stat: Tài năng robot VN có sẵn, thiếu sân chơi
+  - step: gap
+    img: v_lovot_tbs
+    video: true
+    title: LOVOT nổi tiếng nhanh, có cả quán cà phê chuyên biệt (bản tin TBS)
+    pub: TBS NEWS DIG (YouTube)
+    date: ''
+    url: https://www.youtube.com/watch?v=FbFvaXnrF3U
+    stat: Truyền hình Nhật đưa tin
+  - step: solution
+    img: v_bubblepal
+    video: true
+    title: Một module AI biến mọi thú bông thành bạn biết nói (BubblePal)
+    pub: MATLAB TECH (YouTube)
+    date: ''
+    url: https://www.youtube.com/watch?v=PB8lmhi-NUk
+    stat: Gần nhất với 'não tháo rời'
+  - step: solution
+    img: bubblepal
+    title: 'BubblePal: module AI kẹp vào thú bông'
+    pub: Notebookcheck
+    date: ''
+    url: https://www.notebookcheck.net/BubblePal-AI-companion-toy-for-kids-launches-with-eerily-M3GAN-like-concept.874631.0.html
+    stat: Một não, nhiều thân
+  - step: solution
+    img: v_looi
+    video: true
+    title: LOOI — biến điện thoại thành robot để bàn
+    pub: Eric's Tech World (YouTube)
+    date: ''
+    url: https://www.youtube.com/watch?v=LHDIPx7wnd4
+    stat: Điện thoại = não, gắn lên thân bánh xe
+  - step: solution
+    img: aime
+    title: TCL Ai Me — robot AI mô-đun, lõi tháo ra khỏi đế
+    pub: designboom
+    date: 2025-01
+    url: https://www.designboom.com/technology/worlds-first-modular-ai-companion-robot-ai-me-tcl-ces-2025-01-09-2025
+    stat: Hãng TQ làm thiết kế mô-đun
+  - step: solution
+    img: v_xiaozhi_vn
+    video: true
+    title: Chế robot AI biết nói với ESP32-S3 (Xiaozhi)
+    pub: Kênh Sáng Tạo (YouTube)
+    date: ''
+    url: https://www.youtube.com/watch?v=aLbg-b4UZb0
+    stat: Não ESP32 nói tiếng Việt, tự làm được
+  - step: solution
+    img: v_hiwonder
+    video: true
+    title: Robot chó biết nói và suy nghĩ nhờ ChatGPT
+    pub: Hiwonder (YouTube)
+    date: ''
+    url: https://www.youtube.com/watch?v=3ab-o7AZ4wE
+    stat: Thân robot chó + não LLM, hãng Thâm Quyến
+  - step: benefits
+    img: loona_costume
+    title: Bộ đồ len hình vịt cho robot pet Loona
+    pub: 3D Stisk
+    date: '2026'
+    url: https://3dstisk.com/produkt/knitted-duck-costume-for-loona-premium/
+    stat: Thị trường 'mặc đồ cho robot pet'
+  - step: benefits
+    img: v_bab
+    video: true
+    title: Trải nghiệm Build-A-Bear Workshop
+    pub: Carrick Crew (YouTube)
+    date: ''
+    url: https://www.youtube.com/watch?v=mP4WoOUyh7Q
+    stat: Tự làm + tuỳ biến = biên cao
+  - step: benefits
+    img: robodog_comp
+    title: Chung kết cuộc thi phát triển robot chó lần 2
+    pub: ĐH Thanh Hoa
+    date: ''
+    url: https://www.au.tsinghua.edu.cn/en/info/1062/3408.htm
+    stat: Thi đấu robot pet
+  - step: benefits
+    img: v_vex_vn
+    video: true
+    title: VEX Robotics 2025 — chung kết quốc gia tiểu học & THCS
+    pub: Liên minh STEM (YouTube)
+    date: '2025'
+    url: https://www.youtube.com/watch?v=sema00Un9HU
+    stat: Giải robot cho trẻ em VN
+  - step: benefits
+    img: robot_mall
+    title: Cửa hàng robot Bắc Kinh có khu linh kiện và bảo dưỡng
+    pub: GCN
+    date: 2025-08
+    url: https://gcn.com/beijing-robot-shop-sells-ai-einsteins-chess-bots/3744
+    stat: Bán + sửa chữa trong một chỗ
+  - step: benefits
+    img: pedaily
+    title: 'Fuzozo: gói VIP ¥19,9–29,9/tháng, người dùng trò chuyện 50 phút/ngày'
+    pub: Pedaily
+    date: 2026-09
+    url: https://news.pedaily.cn/202609/569490.shtml
+    stat: Gói kỹ năng trả phí
+  - step: roadmap
+    img: unitree_sh
+    title: Unitree mở cửa hàng ở Thượng Hải
+    pub: Chính quyền Thượng Hải
+    date: 2026-06
+    url: https://english.shanghai.gov.cn/en-FirstStores/20260602/7a0cf9e70f5c47d3afec197e62cfd887.html
+    stat: Từ 1 cửa hàng thành chuỗi trong 6 tháng
+  - step: roadmap
+    img: ftc_vn_champ
+    title: 'FTC Vietnam 2025: phần thưởng không chỉ cho nhà vô địch'
+    pub: Tạp chí Công Thương
+    date: 2025-02
+    url: https://tapchicongthuong.vn/first-tech-challenge-vietnam-championship-2025--phan-thuong-khong-chi-gianh-cho-nha-vo-dich-133412.htm
+    stat: Mẫu giải đấu có thưởng
+  - step: roadmap
+    img: v_robomaster
+    video: true
+    title: RoboMaster 2026 — giải robot do DJI sáng lập
+    pub: Shenzhen Story (YouTube)
+    date: '2026'
+    url: https://www.youtube.com/watch?v=12YQuqB4-oY
+    stat: Giải đấu robot thành sự kiện lớn
+  - step: roadmap
+    img: bab
+    title: Build-A-Bear xây cửa hàng lớn nhất thế giới tại ICON Park
+    pub: FOX 35 Orlando
+    date: 2025-08
+    url: https://www.fox35orlando.com/news/build-a-bear-breaks-ground-flagship-store-orlandos-icon-park
+    stat: 674 điểm, 118 nhượng quyền
+  - step: roadmap
+    img: folotoy
+    title: 'Bài học FoloToy: an toàn nội dung phải có từ ngày đầu'
+    pub: CTV News
+    date: 2025-11
+    url: https://www.ctvnews.ca/sci-tech/article/sales-of-ai-enabled-teddy-bear-suspended-after-it-gave-advice-on-bdsm-sex-and-where-to-find-knives/
+    stat: Cửa ải an toàn
+images:
+  hyodol: kt_hyodol.jpg
+  folotoy: ctv_folotoy.jpg
+  pedaily: pedaily.jpg
+  bubblepal: p_bubblepal2.jpg
+  looi: p_looi_real.jpg
+  aime: p_aime.jpg
+  ropet_ces: p_ropet_ces.jpg
+  sz_aizone: i_sz_aizone.jpg
+  canton: i_canton.jpg
+  lovot_cafe: c_lovot_cafe.jpg
+  lovot_cafe2: c_lovot_cafe2.jpg
+  unitree_wfj: c_unitree_wfj.jpg
+  unitree_sh: c_unitree_sh.jpg
+  zpilot: c_zpilot.jpg
+  xinhua_aipet: c_xinhua_aipet.jpg
+  dawn: c_dawn.jpg
+  ftc_vn: k_ftc_vn.jpg
+  ftc_vn_champ: k_ftc_vn_champ.jpg
+  robodog_comp: k_robodog_comp.jpg
+  robomaster: k_robomaster.jpg
+  hanoi_robot: e_hanoi_robot.jpg
+  airoc: e_airoc.jpg
+  robot_mall: r_robot_mall.jpg
+  loona_costume: r_loona_costume.jpg
+  bab: f_bab_icon.jpg
+  labubu_hcm: y_labubu_hcm.jpg
+  popmart_bana: y_popmart_bana.jpg
+  v_bubblepal: v_PB8lmhi-NUk.jpg
+  v_looi: v_LHDIPx7wnd4.jpg
+  v_aime: v_cQvDoQS3P-8.jpg
+  v_xiaozhi_vn: v_aLbg-b4UZb0.jpg
+  v_hiwonder: v_3ab-o7AZ4wE.jpg
+  v_loona: v_Q5NaHaeNzaE.jpg
+  v_ropet: v_ImZEKz77upA.jpg
+  v_expo: v_Kn5I42hcl-c.jpg
+  v_lovot: v_biXgMiqYBUk.jpg
+  v_lovot_tbs: v_FbFvaXnrF3U.jpg
+  v_vex_vn: v_sema00Un9HU.jpg
+  v_vex_ct: v_wW-vHjmr5lU.jpg
+  v_robomaster: v_12YQuqB4-oY.jpg
+  v_bab: v_mP4WoOUyh7Q.jpg
+  v_labubu: v_YAnS6vMRX-o.jpg
+econ:
+  unit_name: pet
+  ratio_label: "Lãi mỗi pet / chi phí có khách"
+  core_stream: pet
+  unit:
+    price: pet_price
+    cogs: pet_cogs
+  cac:
+    spend: opex_marketing
+    units: pet_units
+    year_index: 2
+  yearly:
+  - rate:
+    - acc_spend
+    - pet_active
+    cogs: acc_cogs
+  - rate:
+    - service_spend
+    - pet_active
+    cogs: service_cogs
+  - rate:
+    - brain_sub_price
+    - brain_sub_rate
+    cogs: brain_sub_cogs
+  life_years: 3
+  share:
+  - seg: kids
+    segment: pet
+  - seg: academy
+    segment: academy

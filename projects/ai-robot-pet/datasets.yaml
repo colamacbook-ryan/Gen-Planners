@@ -1,0 +1,879 @@
+groups:
+- id: market
+  name: Thị trường
+- id: people
+  name: Dân số & khách hàng
+- id: demand
+  name: Nhu cầu & hành vi
+- id: cases
+  name: Đối chiếu sản phẩm tương tự
+- id: supply
+  name: Chi phí & chuỗi cung ứng
+- id: finance
+  name: Vốn & lợi nhuận
+kpis:
+- label: AI toy Trung Quốc 2025
+  value: 29 tỷ NDT
+  note: → 85–100 tỷ NDT năm 2030
+  status: actual
+- label: Người 60+ ở Việt Nam
+  value: 14,8 triệu
+  note: → 28 triệu năm 2050
+  status: actual
+- label: Robot hút bụi VN
+  value: +138%
+  note: trong 12 tháng tới 06/2026
+  status: actual
+- label: Giá về kho / máy
+  value: 28–129 USD
+  note: 3 phân khúc thiết bị
+  status: estimate
+  source: [ev-alibaba-aipets, ev-hs-9503]
+- label: Chi phí AI / pet / tháng
+  value: 0,5–8 USD
+  note: tự vận hành ↔ API cao cấp
+  status: estimate
+  source: [ev-xiaozhi, ev-deepseek-pricing, ev-openai-pricing]
+- label: Thuế nhập khẩu (form E)
+  value: 0%
+  note: MFN đồ chơi 20% nếu mất form E
+  status: actual
+charts:
+- id: m1
+  group: market
+  title: Thị trường AI toy Trung Quốc
+  takeaway: Tăng khoảng 3 lần trong 5 năm. Năm 2030 các nguồn dự báo trong khoảng 85–100 tỷ NDT.
+  type: line
+  unit: tỷ NDT
+  status: forecast
+  series:
+  - name: Quy mô thị trường
+    points:
+    - - 2024
+      - 24.6
+      - actual
+    - - 2025
+      - 29
+      - actual
+    - - 2026
+      - 30
+      - forecast
+    - - 2030
+      - 92.5
+      - forecast
+    band:
+    - - 2030
+      - 85
+      - 100
+  sources:
+  - t: MIIT via Caixin 2026-01
+    u: https://www.caixinglobal.com/2026-01-08/in-depth-chinas-ai-toy-story-102401645.html
+  - t: MIT Technology Review 2025-10
+    u: https://www.technologyreview.com/2025/10/07/1125191/ai-toys-in-china/
+  - t: Pedaily 2026-09
+    u: https://news.pedaily.cn/202609/569490.shtml
+- id: m2
+  group: market
+  title: Dự báo robot xã hội & tiêu dùng toàn cầu
+  takeaway: Các hãng nghiên cứu lệch nhau tới 3 lần. Dùng để thấy hướng đi, không dùng làm số kế hoạch.
+  type: range
+  unit: tỷ USD
+  status: forecast
+  items:
+  - label: Companion robot (hẹp) 2024→2030
+    lo: 1.26
+    hi: 2.86
+  - label: Social robot · GIA 2023→2030
+    lo: 2.4
+    hi: 11.6
+  - label: Social robot · KSI 2025→2030
+    lo: 5.75
+    hi: 20.66
+  - label: Social robot · Mordor 2025→2030
+    lo: 7.47
+    hi: 30.38
+  - label: Consumer robotics 2024→2030
+    lo: 10.9
+    hi: 40.2
+  note: Điểm trái = năm gốc, điểm phải = dự báo 2030
+  sources:
+  - t: Mordor via GII
+    u: https://www.giiresearch.com/report/moi1690140-social-robots-market-share-analysis-industry.html
+  - t: Grand View Research
+    u: https://www.grandviewresearch.com/industry-analysis/consumer-robotics-market-report
+  - t: GIA via GII
+    u: https://m.giikorea.co.kr/report/go1551726-social-robots.html
+- id: m3
+  group: market
+  title: Các túi chi tiêu liên quan ở Việt Nam
+  takeaway: Chăm sóc người cao tuổi lớn gấp gần 4 lần toàn bộ thị trường đồ chơi. Đừng nhìn dự án như một sản phẩm đồ chơi.
+  type: bar
+  unit: triệu USD
+  status: actual
+  items:
+  - label: Chăm sóc người cao tuổi (2024)
+    value: 2200
+    tag: forecast
+  - label: Đồ chơi (2025)
+    value: 601.9
+  - label: Đồ chơi bán qua TMĐT (2025)
+    value: 472
+  - label: Thức ăn thú cưng (2025)
+    value: 156
+  - label: Robot hút bụi (12 tháng)
+    value: 92.5
+  - label: Học tiếng Anh số (2025)
+    value: 43.1
+    tag: forecast
+  sources:
+  - t: IMARC đồ chơi
+    u: https://www.imarcgroup.com/vietnam-toys-market
+  - t: ECDB
+    u: https://ecdb.com/resources/sample-data/market/vn/toys
+  - t: Ken Research chăm sóc người già
+    u: https://www.kenresearch.com/industry-reports/vietnam-elderly-care-market-outlook-to-2030-report
+  - t: GfK via Vietnam News
+    u: https://vietnamnews.vn/economy/1798593/robot-vacuum-market-reaches-92-million-as-chinese-brands-dominate.html
+  - t: VNS thú cưng
+    u: https://bizhub.vietnamnews.vn/rapid-growth-in-viet-nam39s-pet-market-exposes-domestic-gap-post403570.html
+- id: m4
+  group: market
+  title: Tốc độ tăng trưởng dự báo (chỉ số, năm gốc = 100)
+  takeaway: Học tiếng Anh số tăng nhanh nhất; chăm sóc người già và đồ chơi tăng khoảng 1,7 lần.
+  type: line
+  unit: chỉ số
+  status: forecast
+  series:
+  - name: Học tiếng Anh số
+    points:
+    - - 2025
+      - 100
+      - actual
+    - - 2034
+      - 285
+      - forecast
+  - name: Chăm sóc người già
+    points:
+    - - 2024
+      - 100
+      - actual
+    - - 2030
+      - 171
+      - forecast
+  - name: Đồ chơi
+    points:
+    - - 2025
+      - 100
+      - actual
+    - - 2034
+      - 175
+      - forecast
+  sources:
+  - t: IMARC
+    u: https://www.imarcgroup.com/vietnam-toys-market
+  - t: Ken Research
+    u: https://www.kenresearch.com/industry-reports/vietnam-elderly-care-market-outlook-to-2030-report
+- id: m5
+  group: market
+  title: 'Bằng chứng độ trễ: robot hút bụi ở Việt Nam'
+  takeaway: Sản phẩm đã bão hoà ở Trung Quốc vừa tăng 2,4 lần trong một năm ở VN, hàng Trung Quốc chiếm hơn 90%.
+  type: bar
+  unit: triệu USD
+  status: actual
+  vertical: true
+  items:
+  - label: 12 tháng trước
+    value: 38.9
+    tag: estimate
+  - label: 07/2025–06/2026
+    value: 92.5
+  note: Năm trước suy ra từ mức tăng 137,6%
+  sources:
+  - t: GfK via Vietnam News
+    u: https://vietnamnews.vn/economy/1798593/robot-vacuum-market-reaches-92-million-as-chinese-brands-dominate.html
+- id: p1
+  group: people
+  title: Người từ 60 tuổi ở Việt Nam
+  takeaway: Gần gấp đôi tới 2050; VN thành xã hội già khoảng năm 2036.
+  type: line
+  unit: triệu người
+  status: forecast
+  series:
+  - name: Người 60+
+    points:
+    - - 2024
+      - 14.2
+      - actual
+    - - 2025
+      - 14.8
+      - actual
+    - - 2050
+      - 28
+      - forecast
+  sources:
+  - t: NSO điều tra giữa kỳ 2024
+    u: https://www.nso.gov.vn/du-lieu-va-so-lieu-thong-ke/2025/01/thong-cao-bao-chi-ket-qua-dieu-tra-dan-so-va-nha-o-giua-ky-nam-2024/
+  - t: UNFPA
+    u: https://vietnam.unfpa.org/en/node/63263
+- id: p2
+  group: people
+  title: Cơ cấu tuổi dân số 2024
+  takeaway: Gần một phần tư dân số dưới 15 tuổi, một phần bảy từ 60 tuổi — hai nhóm người dùng của hai sản phẩm đầu.
+  type: donut
+  unit: '%'
+  status: actual
+  items:
+  - label: Dưới 15 tuổi
+    value: 23.3
+  - label: 15–59 tuổi
+    value: 62.7
+    tag: estimate
+  - label: 60 tuổi trở lên
+    value: 14.0
+  sources:
+  - t: NSO 2024
+    u: https://www.nso.gov.vn/du-lieu-va-so-lieu-thong-ke/2025/01/thong-cao-bao-chi-ket-qua-dieu-tra-dan-so-va-nha-o-giua-ky-nam-2024/
+- id: p3
+  group: people
+  title: Các nhóm khách hàng tiềm năng
+  takeaway: Mỗi nhóm đều ở cỡ hàng chục triệu người — thị trường đủ lớn, câu hỏi là ai trả tiền đều đặn.
+  type: bar
+  unit: triệu
+  status: actual
+  items:
+  - label: Học sinh, sinh viên (người học)
+    value: 26
+  - label: Gen Z
+    value: 22.2
+  - label: Trẻ 5–15 tuổi
+    value: 18.7
+    tag: estimate
+  - label: Hộ thu nhập trung bình trở lên (ABCD)
+    value: 15.8
+  - label: Người 60+
+    value: 14.8
+  sources:
+  - t: Cimigo via The Investor
+    u: https://theinvestor.vn/vietnam-sees-rising-household-affluence-report-d13302.html
+  - t: NSO
+    u: https://www.nso.gov.vn/du-lieu-va-so-lieu-thong-ke/2025/01/thong-cao-bao-chi-ket-qua-dieu-tra-dan-so-va-nha-o-giua-ky-nam-2024/
+- id: p4
+  group: people
+  title: 'Phễu khách hàng B2C: robot cho trẻ em'
+  takeaway: Từ hơn 18 triệu trẻ xuống khoảng 12 nghìn máy trong 3 năm — mục tiêu khiêm tốn có chủ đích.
+  type: funnel
+  status: estimate
+  items:
+  - label: Trẻ 5–15 tuổi
+    value: 18700000
+    unit: trẻ
+  - label: Trẻ trong hộ ABCD
+    value: 10500000
+    unit: trẻ
+  - label: Hộ ABCD có con
+    value: 7000000
+    unit: hộ
+  - label: 'SAM: hộ HN+HCM sẵn sàng chi > 3 triệu'
+    value: 390000
+    unit: hộ
+  - label: 'SOM: máy bán trong 3 năm'
+    value: 11700
+    unit: máy
+  sources:
+  - t: research/04 — phác thảo TAM/SAM/SOM
+    u: ''
+- id: p5
+  group: people
+  title: 'Phễu khách hàng B2B: trường học'
+  takeaway: Chính sách AI phủ gần 26 nghìn trường, nhưng mục tiêu 3 năm chỉ 60 trường tư/trung tâm vì trường công thiếu ngân sách thiết bị.
+  type: funnel
+  status: estimate
+  items:
+  - label: Trường phổ thông
+    value: 25900
+    unit: trường
+  - label: 'SAM: trường ở HN + HCM'
+    value: 5700
+    unit: trường
+  - label: 'SOM: khách 3 năm'
+    value: 60
+    unit: trường
+  sources:
+  - t: QĐ 2422/QĐ-BGDĐT
+    u: https://baovanhoa.vn/doi-song/giao-duc-ai-dai-tra-tu-nam-hoc-20262027-257694.html
+- id: p6
+  group: people
+  title: Người cao tuổi sống một mình
+  takeaway: Còn thấp ở nhóm 60+, nhưng cao gấp 5 lần ở nhóm 80+. Khách hàng gần hạn là người già sống xa con, không phải sống một mình.
+  type: bar
+  unit: '%'
+  status: actual
+  vertical: true
+  items:
+  - label: 60+ (2014)
+    value: 3.2
+  - label: 60+ (mẫu 2018)
+    value: 8.9
+  - label: 80+ (2014)
+    value: 16.4
+  sources:
+  - t: Human Geographies 2021 / PMC8583075
+    u: https://pmc.ncbi.nlm.nih.gov/articles/PMC8583075
+- id: d1
+  group: demand
+  title: Người Việt và AI
+  takeaway: 'AI đã thành thói quen: hơn một nửa người dùng AI trả phí, một phần ba Gen Z coi AI là người tâm sự.'
+  type: bar
+  unit: '%'
+  status: actual
+  items:
+  - label: 18–24 tuổi đã dùng AI
+    value: 86
+  - label: Người dùng online đã dùng AI
+    value: 78
+  - label: Học sinh dùng AI để học
+    value: 63
+  - label: Người dùng AI trả phí thuê bao
+    value: 55
+  - label: 18–24 tuổi dùng hằng ngày
+    value: 40
+  - label: Gen Z dùng AI làm người tâm sự
+    value: 35
+  - label: Dùng AI hằng ngày
+    value: 33
+  sources:
+  - t: Decision Lab 2025
+    u: https://decisionlab.co/blog/vietnam-consumer-ai-market-2025-78-of-online-population-have-engaged-with-ai-one-third-turn-it-into-a-daily-habit
+  - t: Kaspersky 2026 via Tuổi Trẻ
+    u: https://tuoitre.vn
+  - t: e27/BrightCHAMPS
+    u: https://e27.co/71-of-vietnams-students-use-ai-but-concerns-linger-over-misinformation-ethics-20250730/
+- id: d2
+  group: demand
+  title: Phụ huynh và tiếng Anh
+  takeaway: Phụ huynh muốn con luyện nói, đã chi nhiều, nhưng 72% không chấp nhận học hoàn toàn online — chỗ trống cho thiết bị không màn hình.
+  type: bar
+  unit: '%'
+  status: actual
+  items:
+  - label: Coi tiếng Anh là thiết yếu
+    value: 87
+  - label: Không chấp nhận học hoàn toàn online
+    value: 72
+  - label: Chê chương trình thiếu cá nhân hoá
+    value: 53
+  note: Phụ huynh chi 2,1–4,5 triệu đ/tháng cho tiếng Anh (n > 1.200, 5 thành phố)
+  sources:
+  - t: Tuổi Trẻ News 2026-03
+    u: https://news.tuoitre.vn/
+- id: d3
+  group: demand
+  title: 'Chi tiêu cho bạn đồng hành: thú cưng'
+  takeaway: Người Việt đô thị nuôi thú cưng nhiều hơn mức trung bình châu Á và sẵn sàng chi thêm — cùng túi tiền cảm xúc với bạn đồng hành AI.
+  type: bar
+  unit: '%'
+  status: actual
+  items:
+  - label: Người lớn đô thị VN nuôi thú cưng
+    value: 79
+  - label: Trung bình châu Á – TBD
+    value: 60
+  - label: Định tăng ngân sách cho thú cưng
+    value: 55
+  - label: Coi thú cưng là gia đình
+    value: 45
+  sources:
+  - t: VNA / TGM 2026-04
+    u: https://happyvietnam.vnanet.vn/en/vietnams-pet-care-market-emerges-as-lucrative-investment-opportunity/56942.html
+- id: d4
+  group: demand
+  title: Quy mô nhu cầu theo phân khúc (SAM ước tính)
+  takeaway: Khoá học AI-robotics và người cao tuổi là hai túi nhu cầu lớn nhất; robot cho trẻ em nhỏ hơn nhiều người nghĩ.
+  type: range
+  unit: tỷ đ / năm
+  status: estimate
+  items:
+  - label: Người cao tuổi (thiết bị + thuê bao)
+    lo: 1300
+    hi: 3900
+  - label: Khoá học AI-robotics (HN+HCM)
+    lo: 2300
+    hi: 2300
+  - label: Trường học HN+HCM (một lần)
+    lo: 855
+    hi: 855
+  - label: Robot cho trẻ em (HN+HCM)
+    lo: 455
+    hi: 455
+  note: Ước tính bottom-up trong research/04 và research/07; người già quy đổi từ 50–150 triệu USD
+  sources:
+  - t: research/04, research/07
+    u: ''
+- id: c1
+  group: cases
+  title: Đã bán được bao nhiêu máy
+  takeaway: Sản phẩm giá đại chúng (Fuzozo, BubblePal) bán hàng trăm nghìn máy trong khoảng một năm; robot cao cấp chỉ vài chục nghìn.
+  type: bar
+  unit: nghìn máy
+  status: actual
+  items:
+  - label: Miko (Ấn Độ, luỹ kế)
+    value: 700
+  - label: Fuzozo (TQ, ~1 năm)
+    value: 300
+  - label: BubblePal (TQ)
+    value: 250
+  - label: Loona (TQ)
+    value: 90
+  - label: Ropet
+    value: 20
+  - label: Moflin (Nhật)
+    value: 20
+  - label: FoloToy (Q1/2025)
+    value: 20
+  - label: Hyodol (Hàn, cho người già)
+    value: 14.5
+  note: Số do doanh nghiệp tự công bố
+  sources:
+  - t: Pedaily
+    u: https://news.pedaily.cn/202609/569490.shtml
+  - t: 36Kr
+    u: https://eu.36kr.com/en/p/3477139508206210
+  - t: Gasgoo
+    u: https://autonews.gasgoo.com/articles/news/seeds-keyi-technology-raises-nearly-rmb-100-million-in-new-funding-round-2008898565877620737
+- id: c2
+  group: cases
+  title: 'Định vị giá: ta đứng ở đâu'
+  takeaway: Pet của ta nằm giữa nhóm giá đại chúng đã thắng ở TQ và nhóm cao cấp; các robot quá đắt (Moxie, Jibo) đều đã chết.
+  type: dots
+  unit: USD
+  status: actual
+  items:
+  - label: Fuzozo
+    value: 55
+  - label: FoloToy
+    value: 99
+  - label: LOOI
+    value: 129
+  - label: BubblePal
+    value: 149
+  - label: Bộ pet não–thân (ta)
+    value: 134
+    tag: ours
+  - label: Eilik
+    value: 199
+  - label: Petoi Bittle X
+    value: 279
+  - label: Ropet
+    value: 299
+  - label: Moflin
+    value: 429
+  - label: Loona
+    value: 449
+  - label: Moxie (đã đóng cửa)
+    value: 799
+    tag: failed
+  - label: Jibo (đã đóng cửa)
+    value: 899
+    tag: failed
+  sources:
+  - t: research/01, research/02
+    u: ''
+  - t: Axios — Moxie
+    u: https://www.axios.com/2024/12/10/moxie-kids-robot-shuts-down
+- id: c3
+  group: cases
+  title: Doanh thu của các mô hình tương tự
+  takeaway: Từ startup AI toy hơn chục triệu USD tới Pop Mart hàng tỷ USD — trần của mô hình 'IP + trải nghiệm' rất cao.
+  type: bar
+  unit: triệu USD
+  status: actual
+  log: true
+  items:
+  - label: Pop Mart FY2025
+    value: 5085
+  - label: Build-A-Bear FY2025
+    value: 529.8
+  - label: Anki 2017 (đã đóng cửa)
+    value: 100
+    tag: failed
+  - label: Miko FY24
+    value: 43
+  - label: Fuzozo (tới 06/2026)
+    value: 16.4
+  - label: BubblePal (ước)
+    value: 13.7
+    tag: estimate
+  note: Thang logarit. Quy đổi NDT/7,3; INR/83
+  sources:
+  - t: HKEX Pop Mart
+    u: https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0325/2026032500285.pdf
+  - t: SEC Build-A-Bear
+    u: https://www.sec.gov/Archives/edgar/data/1113809/000143774926007824/ex_931843.htm
+  - t: Entrackr Miko
+    u: https://entrackr.com/?p=184985
+- id: c4
+  group: cases
+  title: Vốn đã gọi được
+  takeaway: Nhà đầu tư TQ đang rót mạnh vào AI toy; Anki gọi 200 triệu USD vẫn chết — tiền không thay được việc giữ chân người dùng.
+  type: bar
+  unit: triệu USD
+  status: actual
+  items:
+  - label: Anki (đã đóng cửa)
+    value: 200
+    tag: failed
+  - label: Haivivi / BubblePal Series A
+    value: 27.4
+  - label: Robopoet / Fuzozo Pre-A
+    value: 13.7
+  - label: KEYi / Loona vòng mới
+    value: 13.7
+  - label: Teky (edtech VN)
+    value: 10
+  sources:
+  - t: 36Kr
+    u: https://eu.36kr.com/en/p/3477139508206210
+  - t: The Robot Report — Anki
+    u: https://www.therobotreport.com/inside-anki-shutdown-who-owns-ip-assets-auction-failed-partnership/
+- id: c5
+  group: cases
+  title: Biên lợi nhuận gộp tham chiếu
+  takeaway: 'Biên gộp tăng theo mức sở hữu IP và cảm xúc: đồ chơi AI cơ bản 50–65%, Pop Mart 72%, LOVOT trên 90%.'
+  type: range
+  unit: '%'
+  status: actual
+  items:
+  - label: AI toy cơ bản (TQ)
+    lo: 50
+    hi: 65
+  - label: Pop Mart FY2025
+    lo: 72.1
+    hi: 72.1
+  - label: AI companion ¥1.500–3.000
+    lo: 70
+    hi: 85
+  - label: LOVOT (Nhật)
+    lo: 90
+    hi: 92
+  - label: Bán lại robot không có IP (ước)
+    lo: 25
+    hi: 35
+    tag: estimate
+  sources:
+  - t: 36Kr / Tech Planet
+    u: https://eu.36kr.com/en/p/3477139508206210
+  - t: HKEX Pop Mart
+    u: https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0325/2026032500285.pdf
+- id: c6
+  group: cases
+  title: Giữ chân người dùng — biến số sống còn
+  takeaway: Trung bình ngành bị trả lại 30–40% vì hết hứng thú; người thắng giữ được 80–90% sau 90 ngày.
+  type: range
+  unit: '%'
+  status: actual
+  items:
+  - label: Tỷ lệ trả hàng AI plush online (TQ)
+    lo: 30
+    hi: 40
+  - label: Tỷ lệ trả hàng Ropet
+    lo: 0
+    hi: 4
+  - label: Ropet còn dùng sau 90 ngày
+    lo: 80
+    hi: 90
+  - label: Gym giữ chân hội viên / năm
+    lo: 66.4
+    hi: 66.4
+  - label: 'Ngưỡng cửa ải: người mua còn dùng tuần 6'
+    lo: 60
+    hi: 60
+    tag: ours
+  sources:
+  - t: 36Kr 2025-07
+    u: https://eu.36kr.com/en/p/3383903471074569
+  - t: 36Kr 2026-04
+    u: https://eu.36kr.com/en/p/3769249595835142
+  - t: HFA via GoCardless
+    u: https://gocardless.com/en-au/guides/posts/member-retention-playbook
+- id: c7
+  group: cases
+  title: Gọi vốn cộng đồng (Kickstarter)
+  takeaway: Robot để bàn có câu chuyện tốt gọi được hàng trăm nghìn tới hàng triệu USD trước khi sản xuất — một kênh kiểm chứng nhu cầu rẻ.
+  type: bar
+  unit: nghìn USD
+  status: actual
+  vertical: true
+  items:
+  - label: Loona
+    value: 3200
+  - label: LOOI
+    value: 519
+  - label: Ropet
+    value: 400
+  sources:
+  - t: KEYi
+    u: https://keyirobot.com/en-de/about-us
+  - t: Kicktraq LOOI
+    u: https://www.kicktraq.com/projects/tangiblefuture/looi-robot-turn-your-smartphone-into-a-desktop-robot/
+- id: s1
+  group: supply
+  title: Giá về kho mỗi máy theo phân khúc
+  takeaway: Giá mua xưởng (FOB) chiếm phần lớn; vận chuyển chưa tới 2%. Hợp quy và phát triển firmware đáng kể hơn vận chuyển.
+  type: stacked
+  unit: USD / máy
+  status: estimate
+  categories:
+  - Giọng nói cơ bản
+  - Để bàn màn hình + camera
+  - Robot di động
+  series:
+  - name: Giá xưởng (FOB)
+    values:
+    - 15
+    - 40
+    - 90
+  - name: Firmware, thương hiệu (phân bổ)
+    values:
+    - 5
+    - 8
+    - 15
+  - name: Hợp quy (phân bổ)
+    values:
+    - 5
+    - 5
+    - 8
+  - name: VAT nhập khẩu
+    values:
+    - 0.8
+    - 4.1
+    - 9.2
+  - name: Bao bì, dự phòng lỗi
+    values:
+    - 1.5
+    - 2.5
+    - 4.5
+  - name: Vận chuyển
+    values:
+    - 0.5
+    - 1
+    - 2
+  sources:
+  - t: research/02 — mô hình landed cost
+    u: ''
+  - t: Alibaba
+    u: https://electronics.alibaba.com/product/ai-robotic-pets
+- id: s2
+  group: supply
+  title: Tỷ trọng các khoản trong giá về kho
+  takeaway: Máy càng rẻ thì chi phí cố định phân bổ (firmware, hợp quy) càng nặng — lý do cần lô đủ lớn.
+  type: stacked
+  percent: true
+  unit: '%'
+  status: estimate
+  categories:
+  - Giọng nói cơ bản
+  - Để bàn
+  - Robot di động
+  series:
+  - name: Giá xưởng (FOB)
+    values:
+    - 15
+    - 40
+    - 90
+  - name: Firmware, thương hiệu (phân bổ)
+    values:
+    - 5
+    - 8
+    - 15
+  - name: Hợp quy (phân bổ)
+    values:
+    - 5
+    - 5
+    - 8
+  - name: VAT nhập khẩu
+    values:
+    - 0.8
+    - 4.1
+    - 9.2
+  - name: Bao bì, dự phòng lỗi
+    values:
+    - 1.5
+    - 2.5
+    - 4.5
+  - name: Vận chuyển
+    values:
+    - 0.5
+    - 1
+    - 2
+  sources:
+  - t: research/02
+    u: ''
+- id: s3
+  group: supply
+  title: 'Vận chuyển Trung Quốc → Việt Nam: thời gian theo phương thức'
+  takeaway: Đường biển rẻ nhất cho lô lớn; đường bộ 2–7 ngày cho hàng mẫu và bổ sung nhanh.
+  type: range
+  unit: ngày
+  status: actual
+  items:
+  - label: Đường bộ / sắt · 1,5–3 USD/kg
+    lo: 2
+    hi: 7
+  - label: Chuyển phát · ~3 USD/kg
+    lo: 3
+    hi: 5
+  - label: Container 20'/40' · 360–825 USD
+    lo: 8
+    hi: 13
+  - label: Hàng lẻ (LCL) · 18–50 USD/m³
+    lo: 9
+    hi: 17
+  sources:
+  - t: Sino Shipping
+    u: https://www.sino-shipping.com/country-guides/freight-from-china-to-vietnam
+  - t: FreightAmigo
+    u: https://www.freightamigo.com
+- id: s4
+  group: supply
+  title: Chi phí AI mỗi người dùng/tháng so với giá thuê bao
+  takeaway: Dùng API realtime cao cấp thì lỗ trên mỗi gói kỹ năng; phải tự vận hành giọng nói + mô hình rẻ để có lãi.
+  type: bar
+  unit: USD / người / tháng
+  status: estimate
+  items:
+  - label: API realtime (gpt-realtime-mini)
+    value: 8.1
+  - label: Gemini Flash Live
+    value: 7.3
+  - label: Ghép ASR + DeepSeek + TTS
+    value: 4.8
+  - label: Tự vận hành (trần)
+    value: 1.5
+    tag: ours
+  - label: Doubao ở TQ (dùng ít)
+    value: 0.12
+  refs:
+  - label: Gói kỹ năng 99k/tháng
+    value: 3.81
+  note: Giả định 20 phút trò chuyện mỗi ngày
+  sources:
+  - t: OpenAI pricing
+    u: https://developers.openai.com/api/docs/pricing
+  - t: DeepSeek pricing
+    u: https://api-docs.deepseek.com/quick_start/pricing
+  - t: Sina — Doubao
+    u: https://finance.sina.cn/tech/2026-06-25/detail-inieqskx7881093.d.html
+- id: s5
+  group: supply
+  title: Thuế áp dụng
+  takeaway: Có form E thì thuế nhập khẩu bằng 0; 3 năm đầu miễn thuế thu nhập doanh nghiệp.
+  type: bar
+  unit: '%'
+  status: actual
+  items:
+  - label: Thuế NK đồ chơi không có form E (MFN)
+    value: 20
+  - label: Thuế TNDN chuẩn
+    value: 20
+  - label: Thuế TNDN doanh thu 3–50 tỷ
+    value: 17
+  - label: Thuế TNDN doanh thu ≤ 3 tỷ
+    value: 15
+  - label: VAT thiết bị điện tử
+    value: 10
+  - label: VAT đồ chơi trẻ em
+    value: 5
+  - label: Thuế NK với form E (ACFTA)
+    value: 0
+  - label: Thuế TNDN 3 năm đầu (DNNVV mới)
+    value: 0
+  sources:
+  - t: caselaw.vn HS 9503
+    u: https://caselaw.vn/chi-tiet-ma-hs/95030099
+  - t: Luật TNDN 67/2025
+    u: https://amis.misa.vn/246961/ap-dung-thue-suat-15-voi-doanh-nghiep-doanh-thu-duoi-3-ty/
+  - t: NQ 198/2025
+    u: https://luatvietnam.vn/thue-phi-le-phi/10-chinh-sach-moi-ve-thue-phi-theo-nghi-quyet-198-2025-qh15-565-102213-article.html
+- id: s6
+  group: supply
+  title: Giá thuê mặt bằng bán lẻ (cho CLB)
+  takeaway: Mặt tiền trung tâm đắt gấp 10 lần mức giả định của CLB — vì vậy bắt đầu bằng góc trải nghiệm chia doanh thu, CLB đặt ở tầng trên hoặc ngoài trung tâm.
+  type: bar
+  unit: USD / m² / tháng
+  status: actual
+  items:
+  - label: Đồng Khởi (HCM)
+    value: 310
+  - label: HCM trung tâm
+    value: 267.6
+  - label: Hà Nội trung tâm
+    value: 177.9
+  - label: HCM ngoài trung tâm
+    value: 53.7
+  - label: Hà Nội ngoài trung tâm
+    value: 39.4
+  - label: Giả định CLB (tầng trên)
+    value: 25
+    tag: ours
+  sources:
+  - t: CBRE HCM Q4/2025
+    u: https://mktgdocs.cbre.com/2299/a3287bbc-5816-4959-9a8f-ff85abcdd649-59748775/CBRE_Vietnam_HCMC_Figures_Q4_2.pdf
+  - t: CBRE Hà Nội Q4/2025
+    u: https://mktgdocs.cbre.com/2299/f2dfc91b-e6a5-4242-8612-4702511e1f62-1785117709/CBRE_Vietnam_Hanoi_Figures_Q4_.pdf
+- id: s7
+  group: supply
+  title: Doanh thu một CLB 150 m² mỗi tháng
+  takeaway: Vé chơi là dòng lớn nhất; bán robot và khoá học cộng lại ngang vé — CLB là kênh bán hàng, không chỉ chỗ chơi.
+  type: donut
+  unit: triệu đ / tháng
+  status: estimate
+  items:
+  - label: Vé chơi
+    value: 144
+  - label: Hội viên
+    value: 75
+  - label: Khoá học
+    value: 72
+  - label: Bán robot
+    value: 72
+  - label: F&B
+    value: 54
+  - label: Thi đấu, tiệc
+    value: 34
+  - label: Phụ kiện
+    value: 30
+  - label: Sửa chữa, nâng cấp
+    value: 12
+  sources:
+  - t: research/05 — P&L nháp 1 CLB
+    u: ''
+- id: s8
+  group: supply
+  title: Cấu trúc chi phí một CLB mỗi tháng
+  takeaway: Thuê mặt bằng + nhân sự chiếm hơn một nửa chi phí và là chi phí cố định — doanh thu hụt 30% là gần như mất lãi.
+  type: waterfall
+  unit: triệu đ / tháng
+  status: estimate
+  steps:
+  - label: Doanh thu
+    value: 493
+    kind: total
+  - label: Giá vốn
+    value: -105
+  - label: Nhân sự
+    value: -104
+  - label: Thuê mặt bằng
+    value: -98
+  - label: Marketing
+    value: -25
+  - label: Phần mềm, bảo trì
+    value: -25
+  - label: Điện nước
+    value: -15
+  - label: EBITDA
+    value: 121
+    kind: total
+  sources:
+  - t: research/05
+    u: ''

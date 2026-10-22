@@ -1,0 +1,120 @@
+- id: bubblepal
+  name: BubblePal
+  maker: Haivivi (TQ)
+  category: Module AI kẹp vào thú bông
+  price: ¥389 / $149
+  url: https://heyupnow.com/products/haivivi-bubblepal-ai-toy
+  role: 'Gần nhất với ''não tháo rời'': một module, nhiều thân'
+  image: p_bubblepal.jpg
+- id: looi
+  name: LOOI
+  maker: TangibleFuture (TQ)
+  category: Điện thoại làm não + thân bánh xe
+  price: từ $129
+  url: https://looirobot.com/
+  role: Não gắn lên thân di chuyển
+  image: p_looi_real.jpg
+- id: aime
+  name: TCL Ai Me
+  maker: TCL (TQ)
+  category: Robot AI mô-đun
+  price: trưng bày CES 2025
+  url: https://www.designboom.com/technology/worlds-first-modular-ai-companion-robot-ai-me-tcl-ces-2025-01-09-2025
+  role: Lõi tháo khỏi đế — hãng lớn đi hướng mô-đun
+  image: p_aime.jpg
+- id: loona
+  name: Loona
+  maker: KEYi Tech (Thâm Quyến)
+  category: Robot pet bánh xe + ChatGPT
+  price: $449
+  url: https://keyirobot.com/products/loona
+  role: '>90 nghìn máy; Kickstarter $3,2M'
+  image: p_loona.jpg
+- id: ropet
+  name: Ropet
+  maker: Mengyou (TQ)
+  category: Robot pet lông, thay áo được
+  price: $299
+  url: https://ropetai.com/
+  role: Giữ 80–90% người dùng sau 90 ngày
+  image: p_ropet_ces.jpg
+- id: ebo
+  name: EBO X
+  maker: Enabot (Thâm Quyến)
+  category: Robot gia đình di động
+  price: cao cấp
+  url: https://enabot.com/products/ebo-x
+  role: Thân bánh xe + camera
+  image: p_ebo.jpg
+- id: eilik
+  name: Eilik
+  maker: Energize Lab (TQ)
+  category: Robot để bàn cảm xúc
+  price: $199
+  url: https://store.energizelab.com/de/products/eilik
+  role: Pet để bàn giá vừa
+  image: p_eilik.jpg
+- id: emo
+  name: EMO
+  maker: LivingAI (Thâm Quyến)
+  category: Robot pet để bàn
+  price: cao cấp
+  url: https://living.ai/emo/
+  role: Tính cách riêng, có cộng đồng người chơi
+  image: p_emo.jpg
+- id: vector
+  name: Vector 2.0
+  maker: Digital Dream Labs
+  category: Robot pet kết nối cloud
+  price: thuê bao
+  url: https://www.digitaldreamlabs.com/products/vector-robot
+  role: 'Bài học Anki: hết tiền là thiết bị chết'
+  image: p_vector.jpg
+- id: moflin
+  name: Moflin
+  maker: Casio (Nhật)
+  category: Thú bông cảm xúc
+  price: $429
+  url: https://www.casio.com/us/moflin/
+  role: Tính cách lớn dần — 'huấn luyện'
+  image: moflin.jpg
+- id: mechdog
+  name: Hiwonder MechDog
+  maker: Hiwonder (Thâm Quyến)
+  category: Thân robot chó + não ESP32
+  price: $349,99+
+  url: https://www.hiwonder.com/products/mechdog
+  role: Kit não + thân cho học viện
+  image: mechdog.jpg
+- id: bittle
+  name: Petoi Bittle X
+  maker: Petoi
+  category: Kit robot chó mã nguồn mở
+  price: $237–279
+  url: https://www.petoi.com/products/petoi-robot-dog-bittle-x-voice-controlled
+  role: Lập trình, điều khiển bằng giọng
+  image: bittle.jpg
+- id: xiaozhi
+  name: xiaozhi-esp32
+  maker: Mã nguồn mở (MIT)
+  category: Não AI tự làm
+  price: kit ~$25
+  url: https://github.com/78/xiaozhi-esp32
+  role: Nền móng não tháo rời, server riêng
+  image: v_aLbg-b4UZb0.jpg
+- id: fuzozo
+  name: Fuzozo
+  maker: Robopoet (TQ)
+  category: AI plush bạn đồng hành
+  price: ¥399
+  url: https://www.agora.io/en/success-stories/fuzozo
+  role: ~300 nghìn máy, 50 phút/ngày
+  image: pedaily.jpg
+- id: folotoy
+  name: FoloToy
+  maker: FoloToy (SG/TQ)
+  category: Chip AI biến mọi đồ chơi biết nói
+  price: $99
+  url: https://folotoy.com/
+  role: Bài học an toàn nội dung
+  image: folotoy.jpg

@@ -1,0 +1,156 @@
+# SINGLE SOURCE OF TRUTH — AI Robot Pet → "Bộ não AI tiếng Việt cho thiết bị"
+# status: placeholder → estimate → verified. Tiền: triệu đ. Năm 1 = 2027.
+# Dữ kiện thị trường (fact_*) là số đã có nguồn; giả định kinh doanh (còn lại) là ước tính cần kiểm chứng ở Giai đoạn 0.
+meta:
+  currency: VND
+  unit_label: triệu đ
+  start_year: 2027
+  years: 5
+  fx_usd: 26000
+
+assumptions:
+  # ---------------------------------------------------------------- dữ kiện thị trường
+  fact_cn_aitoy_2025:   {label: Thị trường AI toy TQ 2025, value: 29, unit: tỷ NDT, status: verified, confidence: medium, source: [ev-caixin-aitoy]}
+  fact_cn_aitoy_2030:   {label: Thị trường AI toy TQ 2030 (dự báo cao), value: 100, unit: tỷ NDT, status: verified, confidence: low, source: [ev-mittr-aitoy]}
+  fact_cn_aitoy_firms:  {label: Số công ty AI toy ở TQ, value: 1500, unit: công ty, status: verified, confidence: medium, source: [ev-mittr-aitoy]}
+  fact_fuzozo_units:    {label: Fuzozo đã bán, value: 300000, unit: máy, status: verified, confidence: medium, source: [ev-pedaily-fuzozo], note: Doanh nghiệp tự công bố}
+  fact_fuzozo_minutes:  {label: Fuzozo thời gian dùng TB, value: 50, unit: phút/ngày, status: verified, confidence: low, source: [ev-pedaily-fuzozo]}
+  fact_fuzozo_female:   {label: Tỷ lệ nữ trong người dùng cốt lõi Fuzozo, value: 0.8, unit: "%", status: verified, confidence: low, source: [ev-pedaily-fuzozo]}
+  fact_return_rate:     {label: Tỷ lệ trả hàng AI plush online ở TQ, value: 0.3, unit: "%", status: verified, confidence: medium, source: [ev-36kr-returns, ev-36kr-ropet]}
+  fact_ropet_retention: {label: Ropet giữ chân người dùng sau 90 ngày, value: 0.8, unit: "%", status: verified, confidence: low, source: [ev-36kr-ropet], note: Tự công bố 80–90%}
+  fact_doubao_devices:  {label: Thiết bị kết nối Doubao (06/2025), value: 1000000, unit: thiết bị, status: verified, confidence: medium, source: [ev-36kr-ropet]}
+  fact_vn_60plus:       {label: Người 60+ ở VN (2025), value: 14.8, unit: triệu người, status: verified, confidence: high, source: [ev-nso-census]}
+  fact_vn_60plus_2050:  {label: Người 60+ ở VN (2050), value: 28, unit: triệu người, status: verified, confidence: medium, source: [ev-unfpa-ageing]}
+  fact_vn_aged_year:    {label: Năm VN thành xã hội già, value: 2036, unit: năm, status: verified, confidence: medium, source: [ev-unfpa-ageing]}
+  fact_vn_abcd_hh:      {label: Hộ thu nhập ABCD, value: 15.8, unit: triệu hộ, status: verified, confidence: medium, source: [ev-cimigo-abcd]}
+  fact_vn_schools:      {label: Trường phổ thông, value: 25900, unit: trường, status: verified, confidence: medium, source: [ev-nso-census], note: Nguồn Thời báo Tài chính 2024 trong research/04}
+  fact_vn_toys:         {label: Thị trường đồ chơi VN 2025, value: 601.9, unit: triệu USD, status: verified, confidence: medium, source: [ev-imarc-toys]}
+  fact_vn_vacuum:       {label: Thị trường robot hút bụi VN 12 tháng tới 06/2026, value: 92.5, unit: triệu USD, status: verified, confidence: medium, source: [ev-vacuum-vn]}
+  fact_vn_vacuum_growth: {label: Tăng trưởng robot hút bụi VN, value: 1.376, unit: "%", status: verified, confidence: medium, source: [ev-vacuum-vn]}
+  fact_vn_ai_users:     {label: Người dùng online VN đã dùng AI, value: 0.78, unit: "%", status: verified, confidence: medium, source: [ev-decisionlab-ai]}
+  fact_vn_ai_paying:    {label: Người dùng AI trả phí thuê bao, value: 0.55, unit: "%", status: verified, confidence: low, source: [ev-decisionlab-ai]}
+  fact_vn_pet_owners:   {label: Người trưởng thành đô thị nuôi thú cưng, value: 0.79, unit: "%", status: verified, confidence: medium, source: [ev-pet-vn]}
+  fact_vn_english_spend_lo: {label: Chi tiêu tiếng Anh/tháng của phụ huynh (thấp), value: 2.1, unit: triệu đ, status: verified, confidence: low, source: [ev-english-parents]}
+  fact_vn_english_spend_hi: {label: Chi tiêu tiếng Anh/tháng của phụ huynh (cao), value: 4.5, unit: triệu đ, status: verified, confidence: low, source: [ev-english-parents]}
+  fact_vn_no_online:    {label: Phụ huynh không chấp nhận học hoàn toàn online, value: 0.72, unit: "%", status: verified, confidence: low, source: [ev-english-parents]}
+  fact_landed_low:      {label: Giá về kho/máy (loại giọng nói cơ bản), value: 28, unit: USD, status: estimate, confidence: medium, source: [ev-alibaba-aipets, ev-hs-9503], note: Mô hình landed cost research/02}
+  fact_landed_mid:      {label: Giá về kho/máy (để bàn có màn hình + camera), value: 61, unit: USD, status: estimate, confidence: medium, source: [ev-alibaba-aipets, ev-hs-9503]}
+  fact_cloud_selfhost:  {label: Chi phí AI/người dùng/tháng khi tự host, value: 1.5, unit: USD (trần), status: estimate, confidence: low, source: [ev-xiaozhi, ev-deepseek-pricing], note: 0,5–1,5 USD; cần benchmark}
+  fact_cloud_realtime:  {label: Chi phí AI/người dùng/tháng dùng API realtime, value: 8, unit: USD, status: estimate, confidence: medium, source: [ev-openai-pricing]}
+  fact_cn_margin_lo:    {label: Biên gộp AI toy TQ phân khúc thấp, value: 0.5, unit: "%", status: verified, confidence: low, source: [ev-36kr-margin]}
+  fact_cn_margin_hi:    {label: Biên gộp AI toy TQ phân khúc ¥1.500–3.000, value: 0.85, unit: "%", status: verified, confidence: low, source: [ev-36kr-margin]}
+  fact_acfta_duty:      {label: Thuế NK ACFTA với C/O form E (mã 9503 và 85xx), value: 0, unit: "%", status: verified, confidence: medium, source: [ev-hs-9503]}
+  fact_mfn_toy_duty:    {label: Thuế NK MFN đồ chơi 9503 (không có form E), value: 0.2, unit: "%", status: verified, confidence: medium, source: [ev-hs-9503]}
+  fact_club_capex:      {label: Capex 1 CLB 150 m² HCM, value: 1980, unit: triệu đ, status: estimate, confidence: low, source: [ev-cbre-hcm, ev-min-wage], note: research/05}
+
+  fact_landed_pet:      {label: Giá về kho/bộ pet não + thân (OEM), value: 61, unit: USD, status: estimate, confidence: medium, source: [ev-alibaba-aipets, ev-hs-9503], note: Phân khúc để bàn có màn hình + camera (research/02)}
+  fact_popmart_margin:  {label: Biên gộp Pop Mart FY2025, value: 0.721, unit: "%", status: verified, confidence: high, source: [ev-popmart]}
+
+  # ================================================================ HỆ SINH THÁI AI ROBOT PET VIỆT
+  # Tầng 1 — Pet tháo rời não–thân (OEM thương hiệu riêng, não chạy server VN)
+  pet_price:         {label: Giá bộ pet (não + 1 thân), value: 3.49, unit: triệu đ/bộ, status: estimate, confidence: low, source: [ev-pedaily-fuzozo, ev-36kr-ropet], note: Giữa Fuzozo (~1,4 tr) và Ropet (~7,8 tr); kiểm chứng bằng đặt cọc ở giai đoạn 0}
+  pet_units:         {label: Bộ pet bán ra/năm, value: [500, 2500, 6000, 10000, 15000], unit: bộ, status: estimate, confidence: low, source: [ev-000], note: Năm 3 ≈ một nửa SOM B2C (research/04); CLB và đại lý nhượng quyền là kênh bán chính}
+  pet_cogs:          {label: Giá vốn + kênh bộ pet, value: 0.55, unit: "%", status: estimate, confidence: medium, source: [ev-alibaba-aipets], note: Về kho ~1,6 tr (46%) + bảo hành, chiết khấu kênh}
+  pet_active:        {label: Tỷ lệ pet đã bán còn hoạt động (chi tiêu tiếp), value: 0.5, unit: "%", status: estimate, confidence: low, source: [ev-36kr-returns, ev-36kr-ropet], note: CLB + thi đấu + nâng cấp là cách giữ người dùng; đo ở giai đoạn 0}
+  # Tầng 1b — Thân, phụ kiện, skin, nâng cấp (nhờ thiết kế tháo rời)
+  acc_spend:         {label: Chi cho thân mới, skin, phụ kiện/pet hoạt động/năm, value: 0.8, unit: triệu đ/năm, status: estimate, confidence: low, source: [ev-popmart], note: "Build-A-Bear: combo phụ kiện đẩy giá trị đơn từ ~50 lên >70 USD"}
+  acc_cogs:          {label: Giá vốn phụ kiện (IP riêng), value: 0.4, unit: "%", status: estimate, confidence: medium, source: [ev-popmart], note: Pop Mart biên gộp 72%; bán lại không IP chỉ ~30%}
+  # Tầng 1c — Não: gói kỹ năng (bạn đồng hành, luyện tiếng Anh, chăm sóc ông bà, huấn luyện…)
+  brain_sub_price:   {label: Gói kỹ năng não pet/năm, value: 1.188, unit: triệu đ/năm, status: estimate, confidence: low, source: [ev-pedaily-fuzozo], note: 99k/tháng; Fuzozo VIP ¥19,9–29,9/tháng}
+  brain_sub_rate:    {label: Tỷ lệ pet có gói kỹ năng trả phí, value: 0.35, unit: "%", status: estimate, confidence: low, source: [ev-decisionlab-ai], note: 55% người dùng AI ở VN có trả phí thuê bao}
+  brain_sub_cogs:    {label: Giá vốn gói kỹ năng (cloud AI), value: 0.35, unit: "%", status: estimate, confidence: medium, source: [ev-xiaozhi, ev-deepseek-pricing]}
+  elder_sub_months:  {label: Số tháng trả gói kỹ năng trung bình, value: 18, unit: tháng, status: estimate, confidence: low, source: [ev-36kr-ropet], note: Dùng cho tính giá trị vòng đời khách}
+  # Tầng 2 — CLB robotics: góc trải nghiệm trước, CLB flagship sau
+  corner_count:      {label: Góc trải nghiệm (pop-up trong cà phê/TTTM), value: [3, 5, 5, 4, 4], unit: góc, status: estimate, confidence: low, source: [ev-000]}
+  corner_rev:        {label: Doanh thu/góc/năm (vé chơi, bán pet, workshop), value: 1080, unit: triệu đ, status: estimate, confidence: low, source: [ev-000], note: ~90 tr/tháng; chưa tính bán pet (đã tính ở tầng 1)}
+  corner_opex:       {label: Chi phí/góc/năm (thuê chỗ chia doanh thu, 2 nhân viên, demo), value: 720, unit: triệu đ, status: estimate, confidence: low, source: [ev-min-wage]}
+  club_venues:       {label: CLB flagship đang hoạt động, value: [0, 1, 2, 3, 4], unit: CLB, status: estimate, confidence: low, source: [ev-000], note: Mở sau khi góc trải nghiệm chứng minh lượng khách}
+  club_rev:          {label: Doanh thu/CLB/năm (không gồm bán pet), value: 5052, unit: triệu đ, status: estimate, confidence: low, source: [ev-cbre-hcm, ev-min-wage], note: 421 tr/tháng = P&L research/05 trừ dòng bán robot}
+  club_cogs:         {label: Giá vốn CLB (F&B, giải thưởng, vật tư), value: 0.15, unit: "%", status: estimate, confidence: low, source: [ev-000]}
+  club_opex:         {label: Chi phí vận hành/CLB/năm, value: 3204, unit: triệu đ, status: estimate, confidence: low, source: [ev-cbre-hcm, ev-min-wage], note: 267 tr/tháng}
+  # Tầng 3 — Học viện: huấn luyện prompt, lập trình pet, thi đấu
+  academy_enroll:    {label: Lượt học viên/năm, value: [150, 800, 2000, 3500, 5000], unit: lượt, status: estimate, confidence: low, source: [ev-algorithmics], note: Teky ~50k, MindX ~40k học viên luỹ kế}
+  academy_fee:       {label: Học phí/khoá (4 tuần), value: 2.5, unit: triệu đ, status: estimate, confidence: low, source: [ev-algorithmics], note: Algorithmics 2–3 tr/tháng}
+  academy_cogs:      {label: Giá vốn học viện (giảng viên, kit), value: 0.4, unit: "%", status: estimate, confidence: medium, source: [ev-min-wage]}
+  edu_customers:     {label: Trường tư/trung tâm mua gói giáo án + kit, value: [3, 15, 35, 60, 90], unit: khách, status: estimate, confidence: low, source: [ev-qd2422]}
+  edu_package:       {label: Gói giáo án AI 12 tiết + kit pet/năm, value: 60, unit: triệu đ/khách/năm, status: estimate, confidence: low, source: [ev-stem-room]}
+  edu_cogs:          {label: Giá vốn gói giáo dục, value: 0.45, unit: "%", status: estimate, confidence: medium, source: [ev-alibaba-aipets]}
+  # Tầng 3b — Dịch vụ sửa chữa, nâng cấp, bảo dưỡng
+  service_spend:     {label: Chi dịch vụ sửa/nâng cấp/pet hoạt động/năm, value: 0.3, unit: triệu đ/năm, status: estimate, confidence: low, source: [ev-000]}
+  service_cogs:      {label: Giá vốn dịch vụ, value: 0.5, unit: "%", status: estimate, confidence: low, source: [ev-000]}
+  # Tầng 4 — Nhượng quyền
+  fr_outlets:        {label: CLB nhượng quyền đang hoạt động, value: [0, 0, 1, 4, 10], unit: CLB, status: estimate, confidence: low, source: [ev-royalty-vn], note: Chỉ mở khi CLB flagship có lãi ≥ 1 năm}
+  fr_new:            {label: CLB nhượng quyền mở mới/năm, value: [0, 0, 1, 3, 6], unit: CLB, status: estimate, confidence: low, source: [ev-royalty-vn]}
+  fr_royalty:        {label: Phí nhượng quyền theo doanh thu, value: 0.06, unit: "%", status: estimate, confidence: medium, source: [ev-royalty-vn, ev-codeninjas], note: VN 3–8%; STEM Mỹ 6–10%}
+  fr_fee:            {label: Phí nhượng quyền ban đầu/CLB, value: 300, unit: triệu đ, status: estimate, confidence: low, source: [ev-codeninjas], note: Code Ninjas $40–45k}
+  fr_cogs:           {label: Chi phí hỗ trợ đối tác nhượng quyền, value: 0.25, unit: "%", status: estimate, confidence: low, source: [ev-000]}
+  # Đơn vị kinh tế
+  fr_pet_share:      {label: Ghi chú - pet bán qua CLB nhượng quyền đã tính trong pet_units, value: 0, unit: "-", status: estimate, confidence: high, source: [ev-000]}
+
+  # ---------------------------------------------------------------- chi phí chung
+  opex_team:         {label: Nhân sự lõi (kỹ thuật, nội dung, vận hành), value: [2400, 4200, 6000, 7800, 9600], unit: triệu đ, status: estimate, confidence: medium, source: [ev-min-wage], note: ~8 → 32 người}
+  opex_marketing:    {label: Marketing & cộng đồng, value: [600, 1800, 3000, 4200, 5500], unit: triệu đ, status: estimate, confidence: low, source: [ev-000]}
+  opex_compliance:   {label: Hợp quy, pháp lý, BVDLCN, an toàn AI, value: [600, 900, 1100, 1300, 1500], unit: triệu đ, status: estimate, confidence: low, source: [ev-tt29-2025, ev-pdp-law, ev-ai-law]}
+  opex_ga:           {label: Văn phòng & quản lý chung, value: [300, 600, 800, 1000, 1200], unit: triệu đ, status: estimate, confidence: medium, source: [ev-000]}
+  capex_plan:        {label: Capex (khuôn & NRE não–thân, chứng nhận, server, fit-out CLB), value: [1600, 2480, 2480, 2480, 2480], unit: triệu đ, status: estimate, confidence: low, source: [ev-alibaba-aipets, ev-cbre-hcm], note: Từ năm 2 mỗi năm 1 CLB flagship ~1,98 tỷ + nâng cấp sản phẩm}
+  cit_rate:          {label: Thuế TNDN (miễn 3 năm đầu cho DNNVV mới), value: [0, 0, 0, 0.17, 0.2], unit: "%", status: verified, confidence: medium, source: [ev-nq198, ev-cit-law]}
+
+  # ---------------------------------------------------------------- lộ trình & cửa ải
+  phase0_budget:     {label: Giai đoạn 0 - kiểm chứng (mẫu OEM, demo não, góc pop-up, workshop, đặt cọc), value: 350, unit: triệu đ, status: estimate, confidence: medium, source: [ev-000]}
+  phase1_budget:     {label: Giai đoạn 1 - lô OEM đầu, 3 góc trải nghiệm, học viện, ra mắt, value: 4650, unit: triệu đ, status: estimate, confidence: low, source: [ev-000]}
+  phase2_budget:     {label: Giai đoạn 2 - CLB flagship, nhượng quyền, mở rộng kỹ năng, value: 10000, unit: triệu đ, status: estimate, confidence: low, source: [ev-000]}
+  exp_a_budget:      {label: Thí nghiệm A - mẫu OEM não–thân + demo não tiếng Việt, value: 120, unit: triệu đ, status: estimate, confidence: medium, source: [ev-alibaba-aipets]}
+  exp_b_budget:      {label: Thí nghiệm B - góc pop-up 4 cuối tuần, value: 90, unit: triệu đ, status: estimate, confidence: medium, source: [ev-000]}
+  exp_c_budget:      {label: Thí nghiệm C - workshop huấn luyện pet + giải đấu nhỏ, value: 40, unit: triệu đ, status: estimate, confidence: medium, source: [ev-000]}
+  exp_d_budget:      {label: Thí nghiệm D - chiến dịch đặt cọc online, value: 50, unit: triệu đ, status: estimate, confidence: medium, source: [ev-000]}
+  trip_budget:       {label: Chuyến khảo sát Thâm Quyến 5 ngày/người, value: 22, unit: triệu đ, status: estimate, confidence: medium, source: [ev-freight], note: 15–22 tr (research/02)}
+  gate_popup_visits: {label: Ngưỡng - lượt khách/cuối tuần ở góc pop-up, value: 150, unit: lượt, status: estimate, confidence: low, source: [ev-000]}
+  gate_preorders:    {label: Ngưỡng - đơn đặt cọc trong giai đoạn 0, value: 100, unit: đơn, status: estimate, confidence: low, source: [ev-000]}
+  gate_return:       {label: Ngưỡng - khách quay lại workshop/giải đấu lần 2, value: 0.4, unit: "%", status: estimate, confidence: low, source: [ev-000]}
+  gate_pet_use:      {label: Ngưỡng - người mua còn dùng pet ở tuần 6, value: 0.6, unit: "%", status: estimate, confidence: medium, source: [ev-36kr-ropet]}
+  gate_cloud_cost:   {label: Ngưỡng - chi phí AI/pet/tháng, value: 35, unit: nghìn đ, status: estimate, confidence: medium, source: [ev-xiaozhi], note: Dưới giá gói kỹ năng 99k}
+
+  # ---------------------------------------------------------------- vốn (khung đề xuất, bàn sau)
+  raise_amount:      {label: Tổng vốn cần cho 5 năm (chia theo giai đoạn), value: 15000, unit: triệu đ, status: estimate, confidence: low, source: [ev-000], note: Không gọi một lần - xem lộ trình}
+  pre_money:         {label: Định giá trước vốn (tham khảo), value: 15000, unit: triệu đ, status: placeholder, confidence: low, source: [ev-000]}
+  discount_rate:     {label: Suất chiết khấu, value: 0.25, unit: "%", status: estimate, confidence: medium, source: [ev-000]}
+  exit_multiple:     {label: Hệ số định giá (×EBITDA năm 5), value: 6, unit: x, status: estimate, confidence: low, source: [ev-000]}
+
+model:
+  segments:
+    pet: Pet AI tháo rời não–thân
+    acc: Thân, skin, phụ kiện, nâng cấp
+    brain: Gói kỹ năng não pet (server VN)
+    club: CLB robotics & góc trải nghiệm
+    academy: Học viện huấn luyện & giáo dục
+    service: Dịch vụ sửa chữa, bảo dưỡng
+    franchise: Nhượng quyền
+  revenue_streams:
+    - {id: pet, segment: pet, price: pet_price, volume: pet_units, cogs_pct: pet_cogs, core: true}
+    - {id: acc, segment: acc, price: acc_spend, volume: ["cum:pet_units", pet_active], cogs_pct: acc_cogs}
+    - {id: brain_sub, segment: brain, price: brain_sub_price, volume: ["cum:pet_units", brain_sub_rate], cogs_pct: brain_sub_cogs}
+    - {id: corner, segment: club, price: corner_rev, volume: corner_count, cogs_pct: club_cogs}
+    - {id: club, segment: club, price: club_rev, volume: club_venues, cogs_pct: club_cogs}
+    - {id: academy, segment: academy, price: academy_fee, volume: academy_enroll, cogs_pct: academy_cogs}
+    - {id: edu, segment: academy, price: edu_package, volume: edu_customers, cogs_pct: edu_cogs}
+    - {id: service, segment: service, price: service_spend, volume: ["cum:pet_units", pet_active], cogs_pct: service_cogs}
+    - {id: royalty, segment: franchise, price: [club_rev, fr_royalty], volume: fr_outlets, cogs_pct: fr_cogs}
+    - {id: fr_fee, segment: franchise, price: fr_fee, volume: fr_new, cogs_pct: fr_cogs}
+  opex:
+    - {name: Nhân sự lõi, amount: opex_team}
+    - {name: Marketing, amount: opex_marketing}
+    - {name: Hợp quy & an toàn, amount: opex_compliance}
+    - {name: Quản lý chung, amount: opex_ga}
+    - {name: Vận hành góc trải nghiệm, amount: [corner_count, corner_opex], segment: club}
+    - {name: Vận hành CLB, amount: [club_venues, club_opex], segment: club}
+  capex: capex_plan
+  tax_rate: cit_rate
+  funding: raise_amount
+  pre_money: pre_money
+  discount_rate: discount_rate
+  exit_multiple: exit_multiple
+  scenarios:
+    bear: {volume_x: 0.5, opex_x: 0.9}
+    base: {}
+    bull: {volume_x: 1.5, opex_x: 1.1}
+    club_weak: {stream_x: {corner: 0.6, club: 0.6, royalty: 0.5, fr_fee: 0.5}}

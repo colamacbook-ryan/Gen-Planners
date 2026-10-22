@@ -1,0 +1,45 @@
+# SINGLE SOURCE OF TRUTH cho mọi con số của dự án.
+# status: placeholder (chưa nghiên cứu) → estimate (có cách ước tính) → verified (có nguồn ngoài/dữ liệu thật)
+# confidence: low | medium | high.  value: số hoặc list theo từng năm.
+meta:
+  currency: VND
+  unit_label: triệu đ        # mọi số tiền tính bằng triệu VND
+  start_year: 2027
+  years: 5
+
+assumptions:
+  raise_amount:   {label: Vốn gọi, value: 1000, unit: triệu đ, status: placeholder, confidence: low, source: []}
+  pre_money:      {label: Định giá trước vốn, value: 2000, unit: triệu đ, status: placeholder, confidence: low, source: []}
+  price_main:     {label: Giá bán sản phẩm chính, value: 1, unit: triệu đ/đơn vị, status: placeholder, confidence: low, source: []}
+  volume_main:    {label: Sản lượng/năm, value: [100, 200, 400, 600, 800], unit: đơn vị, status: placeholder, confidence: low, source: []}
+  cogs_main_pct:  {label: Giá vốn % doanh thu, value: 0.5, unit: "%", status: placeholder, confidence: low, source: []}
+  opex_staff:     {label: Chi phí nhân sự/năm, value: [100, 120, 150, 180, 200], unit: triệu đ, status: placeholder, confidence: low, source: []}
+  opex_marketing: {label: Chi phí marketing/năm, value: [50, 60, 80, 90, 100], unit: triệu đ, status: placeholder, confidence: low, source: []}
+  capex_plan:     {label: Đầu tư ban đầu, value: [200, 0, 0, 0, 0], unit: triệu đ, status: placeholder, confidence: low, source: []}
+  cit_rate:       {label: Thuế TNDN, value: 0.2, unit: "%", status: placeholder, confidence: medium, source: []}
+  discount_rate:  {label: Suất chiết khấu, value: 0.2, unit: "%", status: estimate, confidence: medium, source: []}
+  phase0_budget:  {label: Giai đoạn 0 - kiểm chứng, value: 300, unit: triệu đ, status: placeholder, confidence: low, source: []}
+  phase1_budget:  {label: Giai đoạn 1 - ra mắt, value: 3000, unit: triệu đ, status: placeholder, confidence: low, source: []}
+  phase2_budget:  {label: Giai đoạn 2 - mở rộng, value: 7000, unit: triệu đ, status: placeholder, confidence: low, source: []}
+  exit_multiple:  {label: Hệ số định giá thoát vốn (×EBITDA), value: 6, unit: x, status: placeholder, confidence: low, source: []}
+  founder_capital: {label: Vốn founder tự góp, value: 0, unit: triệu đ, status: placeholder, confidence: low, source: []}
+
+model:
+  revenue_streams:
+    - {id: main, name: Sản phẩm chính, price: price_main, volume: volume_main, cogs_pct: cogs_main_pct}
+    # dòng chỉ thu một lần (bán thiết bị, phí gia nhập): thêm `kind: one_off` — tách khỏi doanh thu định kỳ
+  opex:
+    - {name: Nhân sự, amount: opex_staff}
+    - {name: Marketing, amount: opex_marketing}
+  capex: capex_plan
+  tax_rate: cit_rate
+  funding: raise_amount
+  founder_capital: founder_capital   # vốn founder góp, cộng vào tiền đầu kỳ (không tính vào cổ phần nhà đầu tư)
+  pre_money: pre_money
+  discount_rate: discount_rate
+  exit_multiple: exit_multiple
+  # exit_basis: recurring_ebitda   # định giá chỉ trên EBITDA định kỳ khi có doanh thu bán một lần đáng kể (mặc định: ebitda)
+  scenarios:            # nhân hệ số lên base
+    bear: {volume_x: 0.6, price_x: 0.9, opex_x: 1.1}
+    base: {}
+    bull: {volume_x: 1.4}

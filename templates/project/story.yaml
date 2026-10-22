@@ -1,0 +1,26 @@
+# Câu chuyện console — 6 bước. Số liệu tham chiếu assumptions (ref/to_ref/budget_ref), không gõ tay.
+# Ảnh: tên file trong media/ (khai báo ở images:). Clip: video: true + url YouTube đã xác nhận.
+title: ""            # tên lĩnh vực/dự án theo lời founder
+kicker: ""
+thesis: ""           # 2–3 câu: ý tưởng gốc của founder, nói lại cho nhà đầu tư
+verdict: {level: caution, field: "", invest: "", why: ""}   # level: go | caution | stop
+headline:            # 4 con số chính
+  - {label: "Doanh thu năm 5", fin: base.last.revenue, fmt: ty, note: "kịch bản cơ sở"}
+  - {label: "EBITDA năm 5", fin: base.last.ebitda, fmt: ty, note: "hoà vốn năm {breakeven}"}
+  - {label: "Vốn bước đầu", ref: phase0_budget, fmt: tr, note: ""}
+  - {label: "Tổng vốn 5 năm", ref: raise_amount, fmt: ty, note: "giải ngân theo cửa ải"}
+forces: []           # {title, ref, to_ref?, fmt?, prefix?, unit, caption, source}
+opportunities: []    # {name, short, payer, size 1-5, timing 1-5, defense 1-5, fit 1-5, role: core|wedge|cash|later|drop}
+value_chain: []      # {layer, who, margin: low|mid|high, stance: buy|reuse|partner|own|later}
+phases: []           # {name, when, budget_ref, goal, gate, criteria: ["... {gate_x} ..."]}
+risks: []            # {name, prob 1-3, impact 1-3, fix}
+no_go: []
+econ: {}             # tuỳ chọn: unit_name (pet, khách…), ratio_label, core_stream, unit{price,cogs}, cac{spend,units,year_index}, yearly[{rate[],cogs}], life_years, share[{seg,segment}]
+console:
+  context: {headline: "", lead: "", timeline: []}     # timeline: {year, cn, vn, now?, future?}
+  pains: {headline: "", note: "Chân dung minh hoạ ghép từ dữ liệu, không phải người thật.", personas: []}
+  gap: {headline: "", compare: [], pools: []}
+  solution: {headline: "", lead: "", chain: [], bodies: [], layers: []}
+  benefits: {headline: "", stakeholders: []}
+  evidence: []        # {step, img, video?, title, pub, date, url, stat}
+images: {}            # khoá: tên file trong media/

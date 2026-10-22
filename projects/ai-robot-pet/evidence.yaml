@@ -1,0 +1,283 @@
+# Nguồn bằng chứng. Chi tiết + bối cảnh: research/0x-*.md. Thu thập 2026-10.
+ev-000:
+  title: Ước tính nội bộ của nhóm sáng lập (Gen) từ dữ liệu research/
+  publisher: Founders
+  type: internal
+  note: Dùng cho giả định chưa có nguồn ngoài trực tiếp; ghi cách ước tính trong note của assumption.
+
+# --- R1 thị trường toàn cầu / TQ
+ev-caixin-aitoy:
+  title: China's AI toy story — thị trường AI toy TQ ¥29 tỷ (2025, MIIT)
+  publisher: Caixin Global
+  date: 2026-01-08
+  url: https://www.caixinglobal.com/2026-01-08/in-depth-chinas-ai-toy-story-102401645.html
+  type: news
+ev-mittr-aitoy:
+  title: AI toys in China — ¥100 tỷ vào 2030, >1.500 công ty
+  publisher: MIT Technology Review
+  date: 2025-10-07
+  url: https://www.technologyreview.com/2025/10/07/1125191/ai-toys-in-china/
+  type: news
+ev-pedaily-fuzozo:
+  title: Fuzozo ~300k máy, >¥120M, 50 phút/ngày, VIP ¥19.9–29.9/tháng
+  publisher: Pedaily
+  date: 2026-09-22
+  url: https://news.pedaily.cn/202609/569490.shtml
+  type: news
+ev-36kr-margin:
+  title: Biên gộp AI toy 50–65% / 70–85%; BubblePal 250k máy; chiến tranh giá
+  publisher: 36Kr
+  date: 2025-09-22
+  url: https://eu.36kr.com/en/p/3477139508206210
+  type: news
+ev-36kr-returns:
+  title: AI plush trả hàng 30–40%, giá thành < ¥100
+  publisher: 36Kr
+  date: 2025-07-18
+  url: https://eu.36kr.com/en/p/3383903471074569
+  type: news
+ev-36kr-ropet:
+  title: Ropet return <4%, retention 90 ngày 80–90%; >1 tr thiết bị Doubao; JoyInside >40 thương hiệu; subscription ~¥100/năm
+  publisher: 36Kr
+  date: 2026-04-16
+  url: https://eu.36kr.com/en/p/3769249595835142
+  type: news
+ev-mordor-social:
+  title: Social robots $7,47B (2025) → $30,38B (2030)
+  publisher: Mordor Intelligence (via GII)
+  url: https://www.giiresearch.com/report/moi1690140-social-robots-market-share-analysis-industry.html
+  type: report
+ev-moxie:
+  title: Moxie kids robot shuts down
+  publisher: Axios
+  date: 2024-12-10
+  url: https://www.axios.com/2024/12/10/moxie-kids-robot-shuts-down
+  type: news
+ev-folotoy:
+  title: FoloToy Kumma bị đình chỉ bán vì nội dung không an toàn
+  publisher: CTV News
+  date: 2025-11-19
+  url: https://www.ctvnews.ca/sci-tech/article/sales-of-ai-enabled-teddy-bear-suspended-after-it-gave-advice-on-bdsm-sex-and-where-to-find-knives/
+  type: news
+
+# --- R2 nguồn hàng & chi phí
+ev-alibaba-aipets:
+  title: Niêm yết AI companion / AI robotic pets ($13–168 FOB)
+  publisher: Alibaba.com
+  date: 2026-10-20
+  url: https://electronics.alibaba.com/product/ai-robotic-pets
+  type: marketplace
+  note: Giá niêm yết của trader, cần RFQ.
+ev-xiaozhi:
+  title: xiaozhi-esp32 (MIT) — tự host server
+  publisher: GitHub 78/xiaozhi-esp32
+  date: 2026-10-20
+  url: https://github.com/78/xiaozhi-esp32
+  type: report
+ev-openai-pricing:
+  title: OpenAI realtime pricing
+  publisher: OpenAI
+  date: 2026-10-20
+  url: https://developers.openai.com/api/docs/pricing
+  type: report
+ev-deepseek-pricing:
+  title: DeepSeek API pricing
+  publisher: DeepSeek
+  date: 2026-10-20
+  url: https://api-docs.deepseek.com/quick_start/pricing
+  type: report
+ev-sina-doubao:
+  title: Chi phí token đồ chơi Doubao ¥6–10/thiết bị/năm; khung giá AI toy TQ
+  publisher: Sina Finance
+  date: 2026-06-25
+  url: https://finance.sina.cn/tech/2026-06-25/detail-inieqskx7881093.d.html
+  type: news
+ev-freight:
+  title: Cước TQ→VN (LCL, FCL)
+  publisher: Sino Shipping
+  date: 2026-10
+  url: https://www.sino-shipping.com/country-guides/freight-from-china-to-vietnam
+  type: report
+
+# --- R3 pháp lý
+ev-hs-9503:
+  title: HS 9503.00.99 — MFN 20%, ACFTA 0%, VAT 5%
+  publisher: caselaw.vn
+  date: 2026-10-20
+  url: https://caselaw.vn/chi-tiet-ma-hs/95030099
+  type: law
+ev-tt29-2025:
+  title: Thông tư 29/2025/TT-BKHCN — danh mục thiết bị vô tuyến
+  publisher: Bộ KH&CN
+  date: 2025-11-13
+  url: https://www.qtsc.com.vn/uploads/files/2025/12/30/29_2025_TT-BKHCN_680684.pdf
+  type: law
+ev-pdp-law:
+  title: Luật BVDLCN 91/2025/QH15 — chuyển dữ liệu xuyên biên giới, dữ liệu trẻ em
+  publisher: GV Lawyers
+  date: 2025-09
+  url: https://gvlawyers.com.vn/wp-content/uploads/2025/09/VN_Legal-alert-_Law-on-PDP-2025.pdf
+  type: law
+ev-ai-law:
+  title: Luật Trí tuệ nhân tạo 134/2025/QH15
+  publisher: Apolat Legal
+  url: https://apolatlegal.com/vi/laws/luat-tri-tue-nhan-tao-2025-so-134-2025-qh15/
+  type: law
+ev-cit-law:
+  title: Luật Thuế TNDN 67/2025 — 15%/17%/20%
+  publisher: MISA AMIS
+  url: https://amis.misa.vn/246961/ap-dung-thue-suat-15-voi-doanh-nghiep-doanh-thu-duoi-3-ty/
+  type: law
+ev-nq198:
+  title: NQ 198/2025/QH15 + NĐ 20/2026 — miễn TNDN 3 năm cho DNNVV mới
+  publisher: LuatVietnam
+  url: https://luatvietnam.vn/thue-phi-le-phi/10-chinh-sach-moi-ve-thue-phi-theo-nghi-quyet-198-2025-qh15-565-102213-article.html
+  type: law
+ev-sweat-equity:
+  title: Không được góp vốn bằng công sức (Luật DN Đ34)
+  publisher: LuatVietnam
+  url: https://luatvietnam.vn/doanh-nghiep/cac-hinh-thuc-gop-von-vao-doanh-nghiep-561-32904-article.html
+  type: law
+
+# --- R4 cầu VN
+ev-nso-census:
+  title: Điều tra dân số giữa kỳ 2024
+  publisher: NSO
+  date: 2025-01-06
+  url: https://www.nso.gov.vn/du-lieu-va-so-lieu-thong-ke/2025/01/thong-cao-bao-chi-ket-qua-dieu-tra-dan-so-va-nha-o-giua-ky-nam-2024/
+  type: gov
+ev-cimigo-abcd:
+  title: 15,8 tr hộ ABCD (56%)
+  publisher: The Investor / Cimigo
+  date: 2024-11-12
+  url: https://theinvestor.vn/vietnam-sees-rising-household-affluence-report-d13302.html
+  type: report
+ev-imarc-toys:
+  title: Thị trường đồ chơi VN $601,9M (2025)
+  publisher: IMARC
+  date: 2026-04-22
+  url: https://www.imarcgroup.com/vietnam-toys-market
+  type: report
+ev-qd2422:
+  title: QĐ 2422/QĐ-BGDĐT — giáo dục AI đại trà từ năm học 2026-27
+  publisher: Báo Văn hoá
+  date: 2026-08-20
+  url: https://baovanhoa.vn/doi-song/giao-duc-ai-dai-tra-tu-nam-hoc-20262027-257694.html
+  type: gov
+ev-decisionlab-ai:
+  title: 78% dùng AI; 55% người dùng AI trả phí
+  publisher: Decision Lab
+  date: 2025-08
+  url: https://decisionlab.co/blog/vietnam-consumer-ai-market-2025-78-of-online-population-have-engaged-with-ai-one-third-turn-it-into-a-daily-habit
+  type: survey
+ev-pet-vn:
+  title: 79% người trưởng thành đô thị nuôi thú cưng
+  publisher: VNA / TGM
+  date: 2026-04-22
+  url: https://happyvietnam.vnanet.vn/en/vietnams-pet-care-market-emerges-as-lucrative-investment-opportunity/56942.html
+  type: news
+ev-algorithmics:
+  title: Học phí lập trình trẻ em 2–3 tr/tháng
+  publisher: Algorithmics VN
+  url: https://algo.edu.vn/en/
+  type: marketplace
+ev-stem-room:
+  title: Phòng STEM trường học 2 tỷ (Petrovietnam tài trợ)
+  publisher: Báo Pháp luật
+  date: 2025
+  url: https://baophapluat.vn/petrovietnam-ho-tro-truong-noi-tru-o-tuyen-quang-xay-dung-phong-stem.html
+  type: news
+
+# --- R5 CLB & nhượng quyền
+ev-cbre-hcm:
+  title: Giá thuê bán lẻ HCM Q4/2025
+  publisher: CBRE
+  date: 2026-02
+  url: https://mktgdocs.cbre.com/2299/a3287bbc-5816-4959-9a8f-ff85abcdd649-59748775/CBRE_Vietnam_HCMC_Figures_Q4_2.pdf
+  type: report
+ev-min-wage:
+  title: Lương tối thiểu vùng 2026 (NĐ 293/2025)
+  publisher: Thư viện Pháp luật
+  url: https://thuvienphapluat.vn/hoi-dap-phap-luat/nghi-dinh-luong-toi-thieu-vung-2026-la-nghi-dinh-nao-138076681.html
+  type: law
+ev-popmart:
+  title: Pop Mart FY2025 — DT RMB 37,12 tỷ, biên gộp 72,1%
+  publisher: HKEX
+  date: 2026-03-25
+  url: https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0325/2026032500285.pdf
+  type: report
+ev-royalty-vn:
+  title: Royalty nhượng quyền VN 3–6%
+  publisher: Acman
+  url: https://acman.vn/chi-phi-nhuong-quyen.html
+  type: report
+ev-codeninjas:
+  title: Code Ninjas royalty 6–8,25% + 2% marketing
+  publisher: Franzy
+  url: https://franzy.com/franchises/code-ninjas
+  type: report
+
+# --- R6 use-case
+ev-english-parents:
+  title: Khảo sát >1.200 phụ huynh — chi 2,1–4,5 tr/tháng cho tiếng Anh; 72% không chấp nhận học hoàn toàn online
+  publisher: Tuổi Trẻ News
+  date: 2026-03-28
+  url: https://news.tuoitre.vn/
+  type: survey
+  note: Bài mã 103260328123950931 — cần lưu URL đầy đủ khi kiểm chứng.
+ev-elliq:
+  title: ElliQ — New York State Office for the Aging, giảm 95% cô đơn (tự báo cáo)
+  publisher: NYSOFA
+  date: 2023-08-01
+  url: https://aging.ny.gov
+  type: gov
+ev-kaspersky-genz:
+  title: 35% Gen Z VN dùng AI làm người tâm sự
+  publisher: Kaspersky via Tuổi Trẻ
+  date: 2026-09-24
+  url: https://tuoitre.vn
+  type: survey
+  note: Cần URL bài gốc.
+
+# --- R7 tín hiệu dài hạn
+ev-vacuum-vn:
+  title: Thị trường robot hút bụi VN US$92,5M, +137,6% YoY, hãng TQ > 90% (GfK)
+  publisher: Vietnam News
+  date: 2026-09
+  url: https://vietnamnews.vn/economy/1798593/robot-vacuum-market-reaches-92-million-as-chinese-brands-dominate.html
+  type: news
+ev-unfpa-ageing:
+  title: VN thành xã hội già ~2036, siêu già ~2049; 60+ tới 28 tr vào 2050
+  publisher: UNFPA Viet Nam
+  url: https://vietnam.unfpa.org/en/node/63263
+  type: gov
+ev-qd2371:
+  title: QĐ 2371/QĐ-TTg — tiếng Anh là ngôn ngữ thứ hai trong trường học tới 2035
+  publisher: Vietnam Law Magazine
+  date: 2025-10-27
+  url: https://vietnamlawmagazine.vn/scheme-to-make-english-the-second-language-in-schools-approved-75776.html
+  type: law
+ev-viettel-iflytek:
+  title: Viettel × iFLYTEK hợp tác giọng nói AI tiếng Việt cho thiết bị edge
+  publisher: TechNode Global
+  date: 2026-04-10
+  url: https://technode.global/2026/04/10/vietnams-viettel-telecom-chinas-iflytek-to-jointly-advance-vietnamese-ai-voice
+  type: news
+ev-hyodol:
+  title: Chính quyền địa phương Hàn Quốc dùng robot AI chăm sóc người già (Hyodol)
+  publisher: Korea Times
+  date: 2022-02-15
+  url: https://www.koreatimes.co.kr/amp/southkorea/society/20220215/local-municipalities-use-ai-robots-to-improve-care-for-elderly
+  type: news
+ev-embodied-data:
+  title: Ngành robot Mỹ thuê ngoài thu thập dữ liệu huấn luyện ở nước thu nhập thấp
+  publisher: MIT Technology Review
+  date: 2026-04-01
+  url: https://www.technologyreview.com/2026/04/01/1134863
+  type: news
+ev-vn-speech-data:
+  title: Bộ dữ liệu hội thoại tiếng Việt mở lớn nhất 267 giờ
+  publisher: arXiv
+  date: 2026-02
+  url: https://arxiv.org/abs/2603.01894
+  type: report

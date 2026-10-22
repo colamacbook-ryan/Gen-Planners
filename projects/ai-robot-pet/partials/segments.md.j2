@@ -1,0 +1,6 @@
+{% set f = fin[scenario] %}
+| Mảng ({{ meta.unit_label }}) | Doanh thu {{ f.last.year }} | Đóng góp {{ f.last.year }} | Biên đóng góp | Doanh thu luỹ kế | Đóng góp luỹ kế |
+|---|---:|---:|---:|---:|---:|
+{% for g in f.segments.values() %}
+| {{ g.name }} | {{ g.last.revenue|num }} | {{ g.last.contribution|num }} | {{ g.last.margin|pct }} | {{ g.total_revenue|num }} | {{ g.total_contribution|num }} |
+{% endfor %}
