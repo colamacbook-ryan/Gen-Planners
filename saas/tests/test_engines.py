@@ -196,6 +196,11 @@ def test_run_route_validation():
         db.update("api_keys", k["id"], model="")                               # key cũ không có model
         slug = u.post("/api/projects", json={"name": "Route", "idea": "Dự án thử kiểm tra tham số chạy Plan bằng key."}).json()["slug"]
         r = u.post(f"/api/projects/{slug}/run", json={"billing": "user_key", "api_key_id": k["id"], "force": True})
+        assert r.status_code == 200 and db.one("SELECT model FROM jobs WHERE id=?", (r.json()["job_id"],))["model"] == "deepseek/deepseek-v4.1-flash"
+        u.post(f"/api/jobs/{r.json()['job_id']}/cancel")
+        ko = u.post("/api/keys", json={"provider": "openai", "key": "sk-openai-test-000000", "model": "gpt-x"}).json()
+        db.update("api_keys", ko["id"], model="")                              # OpenAI không có model mặc định → phải chọn
+        r = u.post(f"/api/projects/{slug}/run", json={"billing": "user_key", "api_key_id": ko["id"], "force": True})
         assert r.status_code == 400 and "Chọn model" in r.json()["detail"]
         for bad in ("abc", "0", "5000"):
             r = u.post(f"/api/projects/{slug}/run", json={"billing": "user_key", "api_key_id": k["id"], "model": "x/y", "budget_usd": bad, "force": True})
@@ -231,6 +236,17 @@ def test_owner_native_profile_and_cli_is_subscription_only(monkeypatch):
         o.delete(f"/api/admin/agents/{p['id']}")
 
 
+def test_every_provider_has_a_key_guide():
+    with TestClient(main.app, headers=X) as u:
+        login(u, "guide@x.io")
+        ps = u.get("/api/providers").json()
+        for k, p in ps.items():
+            g = p["guide"]
+            assert g and g["url"].startswith("https://") and len(g["steps"]) >= 3 and g["url_label"], k
+        assert "miễn phí" in ps["gemini"]["guide"]["tag"].lower() and "KHÔNG đủ" in ps["gemini"]["guide"]["cost"]
+    assert set(search.GUIDES) == {"tavily", "brave"} and all(g["url"].startswith("https://") for g in search.GUIDES.values())
+
+
 def test_search_settings_validation():
     with TestClient(main.app, headers=X) as o:
         login(o, "owner-search@x.io", "owner")
@@ -240,6 +256,7 @@ def test_search_settings_validation():
         s = o.put("/api/admin/settings", json={"search_provider": "auto", "search_key": "BSA-test", "search_key_kind": "brave",
                                                "native_default_budget_usd": "2", "native_token_cap": "3000000"}).json()
         assert s["search_key_set"] and s["search_key_kind"] == "brave" and s["search_active"] == "brave" and "search_key_enc" not in s
+        assert s["search_guides"]["tavily"]["url"].startswith("https://")
         assert s["native_default_budget_usd"] == "2" and s["native_token_cap"] == "3000000"
         assert o.put("/api/admin/settings", json={"native_default_budget_usd": "0"}).status_code == 400
         s = o.put("/api/admin/settings", json={"clear_search_key": True}).json()

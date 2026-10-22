@@ -566,7 +566,7 @@ def quota(u):
 # ------------------------------------------------------------------ API keys (BYOK)
 @app.get("/api/providers")
 def providers(u=Depends(need_user)):
-    return llm.PROVIDERS
+    return {k: {**v, "guide": llm.GUIDES.get(k)} for k, v in llm.PROVIDERS.items()}
 
 
 def key_row(k):
@@ -1727,7 +1727,7 @@ def list_agents(o=Depends(need_owner)):
     return {"sandbox": st, "profiles": [profile_row(p) for p in db.q("SELECT * FROM agent_profiles ORDER BY is_active DESC, priority, id")],
             "engines": {k: {"label": v["label"], "install": v["install"], "installed": bool(agents.binary(k)) if k in agents.CLI else True,
                             "key_label": v.get("key_label"), "actions": list(v["terminal"])} for k, v in agents.ENGINES.items()},
-            "providers": {k: {"label": v["label"], "models": v["models"]} for k, v in llm.PROVIDERS.items()}}
+            "providers": {k: {"label": v["label"], "models": v["models"], "guide": llm.GUIDES.get(k)} for k, v in llm.PROVIDERS.items()}}
 
 
 def get_profile(pid):
@@ -1880,7 +1880,7 @@ def get_settings(o=Depends(need_owner)):
     s = {r["key"]: r["value"] for r in db.q("SELECT * FROM settings") if r["key"] in EDITABLE}
     return {**s, "google_client_secret_set": bool(db.setting("google_client_secret_enc")), "smtp_password_set": bool(db.setting("smtp_password_enc")),
             "mail_configured": mail.configured(), "search_key_set": bool(db.setting("search_key_enc")),
-            "search_key_kind": db.setting("search_key_kind"), "search_active": search.provider()}
+            "search_key_kind": db.setting("search_key_kind"), "search_active": search.provider(), "search_guides": search.GUIDES}
 
 
 @app.post("/api/admin/settings/test-email")

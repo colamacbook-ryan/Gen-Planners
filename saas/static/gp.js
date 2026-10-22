@@ -59,6 +59,10 @@ function topbar(title, sub = "", actions = "", below = "") {
     <div class="grow"><h1>${title}</h1>${sub ? `<div class="sub">${sub}</div>` : ""}</div>${actions ? `<div class="top-actions">${actions}</div>` : ""}</div>${below}</div>`;
 }
 const loading = (t = "Đang tải…") => `<div class="loading"><span class="spinner"></span> ${esc(t)}</div>`;
+// Hướng dẫn lấy key từng bước (dữ liệu từ server: llm.GUIDES, search.GUIDES)
+const guideBox = (g, title = "Cách lấy key") => !g ? "" : `<div class="guide"><div class="row"><b class="grow">${esc(title)}</b>${g.tag ? `<span class="pill core">${esc(g.tag)}</span>` : ""}</div>
+  <ol>${g.steps.map(s => `<li>${esc(s)}</li>`).join("")}</ol>
+  <a class="btn" href="${esc(g.url)}" target="_blank" rel="noopener noreferrer">${icon("external")}${esc(g.url_label)}</a>${g.cost ? `<p class="hint" style="margin:8px 0 0">${esc(g.cost)}</p>` : ""}</div>`;
 const emptyRow = (cols, text, action = "") => `<tr class="empty-row"><td colspan="${cols}"><div class="empty">${text}${action ? `<div style="margin-top:10px">${action}</div>` : ""}</div></td></tr>`;
 const loadError = (msg, retry) => `<div class="banner bad">${esc(msg)} <button type="button" class="sm" onclick="${retry}">Thử lại</button></div>`;
 // Overlay (hộp thoại, ngăn kéo, menu, modal) đóng khi chuyển trang — không để lơ lửng trên trang mới.

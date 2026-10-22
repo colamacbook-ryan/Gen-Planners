@@ -15,6 +15,19 @@ from .ssot import _public
 UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36 GenPlanner",
       "Accept-Language": "vi,en;q=0.8"}
 PROVIDERS = ("auto", "brave", "tavily", "duckduckgo", "none")
+# Hướng dẫn lấy key tìm web (hiện ở Cài đặt hệ thống → Chạy Plan). Key Gemini miễn phí (AI Studio) không tìm web được:
+# công cụ Google Search của Gemini bị từ chối (429) ở gói miễn phí.
+GUIDES = {
+    "tavily": {"tag": "Miễn phí 1.000 lượt/tháng · nên dùng", "url": "https://app.tavily.com/home", "url_label": "Mở Tavily (đăng ký / lấy key)",
+               "steps": ["Đăng ký tại app.tavily.com (email, Google hoặc GitHub) — không cần thẻ.",
+                         "Trang Overview hiện sẵn API key (bắt đầu bằng tvly-) → bấm copy.",
+                         "Dán vào ô Key tìm web bên dưới, chọn loại Tavily, bấm Lưu cài đặt rồi Thử tìm web."],
+               "cost": "Gói Researcher miễn phí 1.000 credit/tháng, reset đầu tháng; một lượt Plan dùng khoảng vài chục lượt tìm."},
+    "brave": {"tag": "", "url": "https://api-dashboard.search.brave.com/app/keys", "url_label": "Mở Brave Search API dashboard",
+              "steps": ["Đăng ký tại api-dashboard.search.brave.com.", "Chọn một gói Search (xem giá trên trang; có thể cần thẻ).",
+                        "Vào API Keys → Add API key → copy.", "Dán vào ô Key tìm web bên dưới, chọn loại Brave, Lưu cài đặt rồi Thử tìm web."],
+              "cost": "Xem bảng giá hiện hành trên trang Brave."},
+}
 
 
 class SearchError(Exception):

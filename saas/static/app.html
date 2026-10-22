@@ -64,7 +64,7 @@ function sideList() {
 }
 
 // ---------------------------------------------------------------- bắt đầu (người dùng mới)
-const STEP_GO = {sample: () => S.samples[0] && openSample(), key: () => location.hash = "settings", project: () => location.hash = "new",
+const STEP_GO = {sample: () => S.samples[0] && openSample(), key: () => location.hash = "settings/keys", project: () => location.hash = "new",
   interview: () => latest("interview"), locked: () => latest("brainstorm"), plan: () => latest("run"), share: () => latest("dossier")};
 function latest(tab) { if (S.projects[0]) go(S.projects[0].slug, tab); else location.hash = "new"; }
 function openSample() { const s = S.samples[0]; api("/me/onboarding", {body: {viewed_sample: true}}).catch(() => {}); go(s.slug, "dossier"); }
@@ -88,7 +88,7 @@ function viewHome() {
         <section class="card"><div class="k">Ý tưởng của bạn</div><h2 style="margin:6px 0">Tạo dự án mới</h2>
           <p class="hint">Chỉ cần tên và vài câu mô tả. Trợ lý sẽ phỏng vấn để hiểu sâu hơn — không cần chuẩn bị gì thêm.</p>
           <button type="button" id="homeNew">Dự án mới</button></section>
-        ${S.me.has_keys || S.me.ai_live ? "" : `<section class="card"><div class="k">Trợ lý AI</div><p class="hint" style="margin:6px 0 10px">Trợ lý phỏng vấn, brainstorm và Chạy Plan bằng API key AI của bạn (DeepSeek, Anthropic, OpenAI, Gemini hoặc OpenRouter). Key được mã hoá và không bao giờ hiện lại.</p><a href="#settings"><button type="button">Thêm API key</button></a></section>`}
+        ${S.me.has_keys || S.me.ai_live ? "" : `<section class="card"><div class="k">Trợ lý AI</div><p class="hint" style="margin:6px 0 10px">Trợ lý phỏng vấn, brainstorm và Chạy Plan bằng API key AI của bạn (DeepSeek, Anthropic, OpenAI, Gemini hoặc OpenRouter). Key được mã hoá và không bao giờ hiện lại.</p><a href="#settings/keys"><button type="button">Thêm API key (có hướng dẫn)</button></a></section>`}
       </div></div></div>`;
   $$("[data-step]").forEach(b => b.onclick = () => STEP_GO[b.dataset.step]());
   $("#openSample") && ($("#openSample").onclick = openSample);
@@ -98,7 +98,7 @@ function keyBanner() {
   if (S.me.ai_live) return `<div class="banner"><b>Bản demo:</b> trợ lý đang chạy bằng Claude trong tài khoản claude.ai của bạn — không cần API key. Trên bản máy chủ, mỗi người dùng thêm API key riêng ở Cài đặt.</div>`;
   if (S.me.has_keys) return "";
   return `<div class="banner"><b>Chưa có API key.</b> Trợ lý AI chạy bằng key của chính bạn (DeepSeek, Anthropic, OpenAI, Gemini hoặc OpenRouter).
-    ${S.me.demo_allowed ? "Hiện đang ở <b>chế độ demo</b> — câu hỏi theo kịch bản, không có AI phản biện." : ""} <a href="#settings">Thêm key →</a></div>`;
+    ${S.me.demo_allowed ? "Hiện đang ở <b>chế độ demo</b> — câu hỏi theo kịch bản, không có AI phản biện." : ""} <a href="#settings/keys">Thêm key (có hướng dẫn từng bước) →</a></div>`;
 }
 
 // ---------------------------------------------------------------- new project
@@ -198,7 +198,7 @@ async function chatBox(room, el, sideHtml, after) {
     try { await api(`/projects/${S.cur.slug}/${room}`, {body: {text: t}}); await refresh(); if (alive(v)) after(); }
     catch (x) { if (!alive(v)) return toast(x.message);                     // lỗi: gỡ tin nháp, trả chữ về ô nhập, báo lỗi ngay trong khung chat
       $("#typing")?.remove(); $("#pending")?.remove(); $("#ct").value = t;
-      box.insertAdjacentHTML("beforeend", `<div class="banner bad" id="chatErr">${esc(x.message)}${/key|HTTP 40[13]/i.test(x.message) ? ' — <a href="#settings">kiểm tra API key</a>' : ""}</div>`); box.scrollTop = box.scrollHeight; }
+      box.insertAdjacentHTML("beforeend", `<div class="banner bad" id="chatErr">${esc(x.message)}${/key|HTTP 40[13]/i.test(x.message) ? ' — <a href="#settings/keys">kiểm tra API key</a>' : ""}</div>`); box.scrollTop = box.scrollHeight; }
     finally { const b = $("#cf button"); if (b) b.disabled = false; } };
   $("#cf").onsubmit = e => { e.preventDefault(); send(); };
   $("#ct").onkeydown = e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } };
@@ -280,7 +280,7 @@ async function tabRun() {
   const opts = [
     mode !== "user_key" && ["owner", "Tài khoản hệ thống (core agent)", S.me.core_ready ? `Agent chạy trên tài khoản AI của chủ hệ thống · ${ownerLeft}.`
       : S.me.role === "owner" ? 'Chưa có core agent sẵn sàng — <a href="/admin#agents">cấu hình ở trang Core agent</a>.' : "Chủ hệ thống chưa bật core agent — chọn cách khác bên dưới.", !S.me.core_ready],
-    mode !== "owner" && ["user_key", "API key của tôi", planKeys.length ? `Engine API của hệ thống gọi thẳng nhà cung cấp bằng key của bạn (DeepSeek, OpenAI, Gemini, Anthropic, OpenRouter): tìm web, đọc nguồn, ghi số liệu, tự kiểm tra từng stage. Chi phí tính vào tài khoản AI của bạn, có trần.` : 'Thêm API key ở <a href="#settings">Cài đặt → AI & API key</a> — DeepSeek rẻ nhất cho một lượt Plan đầy đủ.', !planKeys.length],
+    mode !== "owner" && ["user_key", "API key của tôi", planKeys.length ? `Engine API của hệ thống gọi thẳng nhà cung cấp bằng key của bạn (DeepSeek, OpenAI, Gemini, Anthropic, OpenRouter): tìm web, đọc nguồn, ghi số liệu, tự kiểm tra từng stage. Chi phí tính vào tài khoản AI của bạn, có trần.` : 'Thêm API key ở <a href="#settings/keys">Cài đặt → AI & API key</a> (có hướng dẫn lấy key từng bước) — DeepSeek rẻ nhất cho một lượt Plan đầy đủ.', !planKeys.length],
     ["external", "Agent ngoài của tôi", "Claude Code, Antigravity hay agent bất kỳ bạn đang dùng nhận việc qua API token — chạy trên máy của bạn, chi phí của bạn.", false],
     S.me.demo_allowed && ["demo", "Demo", "Không gọi AI: ghi brief vào dự án và build từ template — để thử luồng.", false]].filter(Boolean);
   const running = p.jobs.find(j => ["queued", "starting", "running", "waiting"].includes(j.status));
@@ -292,7 +292,7 @@ async function tabRun() {
     <div id="keyRow" hidden><label for="rk">Key dùng để chạy</label><select id="rk">${planKeys.map(k => `<option value="${k.id}" data-p="${esc(k.provider)}">${esc(k.label)} · ${esc(k.key_hint)} · ${esc(k.model)}</option>`).join("")}</select>
       <label for="rb2">Trần chi phí lượt chạy (USD, tuỳ chọn)</label><input id="rb2" inputmode="decimal" placeholder="để trống = trần mặc định ${esc(S.me.native_budget_usd)} USD">
       <div class="hint">Engine tự dừng khi chạm trần; các stage đã xong được giữ lại, lần sau chạy tiếp từ stage dở. Với DeepSeek Flash một lượt đầy đủ thường dưới 1 USD; model lớn (Claude, GPT) đắt hơn nhiều lần.</div>
-      <div class="hint" id="orHint" hidden>Key OpenRouter / OpenAI: ghi rõ model bên dưới (vd <code>deepseek/deepseek-v4-flash</code>, <code>openai/gpt-5-mini</code>) — chọn model hỗ trợ gọi công cụ (tool calling).</div></div>
+      <div class="hint" id="orHint" hidden>Key OpenRouter / OpenAI: ghi rõ model bên dưới (vd <code>deepseek/deepseek-v4.1-flash</code>, <code>openai/gpt-5.6-luna</code>) — chọn model hỗ trợ gọi công cụ (tool calling).</div></div>
     <label for="rm">Model (tuỳ chọn — để trống dùng mặc định)</label><input id="rm" placeholder="mặc định">
     <div class="row" style="margin-top:14px"><button class="pri" id="go" ${running || !p.mine ? "disabled" : ""}>${icon("play")}Chạy Plan</button>
     ${miss.length ? '<label class="row hint" style="margin:0"><input type="checkbox" id="force" style="width:auto"> chạy dù còn thiếu</label>' : ""}</div><p class="err" id="rmsg"></p></div>
@@ -314,7 +314,7 @@ async function showHandoff(id) {
   const h = await api(`/jobs/${id}/handoff`), toks = await api("/tokens"), el = $("#handoff");
   el.hidden = false;
   el.innerHTML = `<div class="next" style="display:block"><b>Đang chờ agent ngoài.</b> Dán đoạn dưới vào Claude Code / Antigravity / agent của bạn, kèm một API token.
-    ${toks.length ? `Bạn đã có ${toks.length} token (${toks.map(t => esc(t.prefix)).join(", ")}).` : ""} <a href="#settings">Quản lý token →</a>
+    ${toks.length ? `Bạn đã có ${toks.length} token (${toks.map(t => esc(t.prefix)).join(", ")}).` : ""} <a href="#settings/tokens">Quản lý token →</a>
     <div class="row" style="margin-top:8px"><button type="button" class="sm pri" id="hcopy">Sao chép hướng dẫn</button>${toks.length ? "" : '<button type="button" class="sm" id="hnew">Tạo token cho agent</button>'}</div>
     <div id="htok"></div></div><pre class="log" style="max-height:260px">${esc(h.prompt)}</pre>`;
   $("#hcopy").onclick = () => copy(h.prompt);
@@ -519,17 +519,18 @@ function setPrefs(v) {
 
 async function setKeys(v) {
   [S.keys, S.providers] = await Promise.all([api("/keys"), api("/providers")]);
-  if (!sbody(v, `<section class="card"><h2>API key của tôi</h2><p class="hint">Trợ lý AI (phỏng vấn, brainstorm) chạy bằng key mặc định của bạn. Key Anthropic hoặc Gemini còn dùng được để <b>Chạy Plan</b> bằng tài khoản của bạn. Key được mã hoá, không bao giờ hiển thị lại.</p>
+  if (!sbody(v, `<section class="card"><h2>API key của tôi</h2><p class="hint">Trợ lý AI (phỏng vấn, brainstorm) chạy bằng key mặc định của bạn; mọi key đều dùng được để <b>Chạy Plan</b> bằng tài khoản AI của bạn. Key được mã hoá, không bao giờ hiển thị lại.</p>
     <div class="scroll-x"><table class="t"><thead><tr><th>Nhà cung cấp</th><th>Key</th><th>Model</th><th>Kiểm tra</th><th></th></tr></thead><tbody>${S.keys.map(k => `<tr data-k="${k.id}">
       <td>${esc(k.label)}${k.is_default ? ' <span class="pill core">mặc định</span>' : ""}<div class="hint">${k.plan_engine ? "chat + chạy Plan" : "chỉ chat"}</div></td><td class="mono">${esc(k.key_hint)}</td>
       <td><input class="km" aria-label="Model của key" value="${esc(k.model)}" list="kml${k.id}" style="min-width:170px" title="Bấm để chọn trong danh sách model key này dùng được"><datalist id="kml${k.id}"></datalist></td><td>${k.last_test ? (k.last_test_ok ? pill("ok") : pill("error")) : '<span class="hint">—</span>'}</td>
       <td class="actions"><button class="sm" data-a="test" type="button">Thử</button>${k.is_default ? "" : '<button class="sm ghost" data-a="def" type="button">Đặt mặc định</button>'}<button class="sm ghost danger" data-a="del" type="button">Xoá</button></td></tr>`).join("") || emptyRow(5, "Chưa có key — thêm key bên dưới để có trợ lý AI thật.")}</tbody></table></div></section>
-    <section class="card"><h2>Thêm key</h2><form id="kf"><div class="grid g2" style="gap:0 12px">
+    <section class="card"><h2>Thêm key</h2><p class="hint">Chưa có key? Chọn nhà cung cấp — hướng dẫn từng bước hiện ngay bên dưới. Gợi ý: <b>DeepSeek</b> rẻ nhất cho Chạy Plan;
+      <b>Gemini</b> có gói miễn phí đủ cho phỏng vấn và brainstorm.</p><form id="kf"><div class="grid g2" style="gap:0 12px">
       <div><label for="kp">Nhà cung cấp</label><select id="kp">${Object.entries(S.providers).map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`).join("")}</select></div>
-      <div><label for="kmo">Model</label><input id="kmo" list="kml" required><datalist id="kml"></datalist></div></div>
+      <div><label for="kmo">Model</label><input id="kmo" list="kml" required><datalist id="kml"></datalist></div></div><div id="kguide"></div>
       <label for="kk">API key</label><input id="kk" type="password" required autocomplete="off" placeholder="dán key vào đây">
       <p class="err" id="kmsg"></p><button class="pri">Lưu key</button></form></section>`)) return;
-  const fill = () => { const m = S.providers[$("#kp").value].models; $("#kml").innerHTML = m.map(x => `<option value="${x}">`).join(""); $("#kmo").value = m[0] || ""; $("#kmo").placeholder = m.length ? "" : "nhập tên model, ví dụ gpt-…"; };
+  const fill = () => { const m = S.providers[$("#kp").value].models; $("#kguide").innerHTML = guideBox(S.providers[$("#kp").value].guide, "Cách lấy key " + S.providers[$("#kp").value].label); $("#kml").innerHTML = m.map(x => `<option value="${x}">`).join(""); $("#kmo").value = m[0] || ""; $("#kmo").placeholder = m.length ? "" : "nhập tên model, ví dụ gpt-…"; };
   $("#kp").onchange = fill; fill();
   $("#kf").onsubmit = async e => { e.preventDefault(); const btn = e.submitter; btn.disabled = true; btn.textContent = "Đang kiểm tra key…";
     try { const k = await api("/keys", {body: {provider: $("#kp").value, model: $("#kmo").value, key: $("#kk").value}});

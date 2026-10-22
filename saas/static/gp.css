@@ -90,6 +90,10 @@ table.t{width:100%;border-collapse:collapse;font-size:13px} .t th{text-align:lef
 .log{background:var(--term-bg);color:var(--term-fg);border-radius:10px;padding:12px;font:12px/1.5 var(--f-mono);white-space:pre-wrap;max-height:460px;overflow-y:auto;margin:0}
 .prose{max-width:860px} .prose h1{font-size:24px} .prose h2{margin-top:1.4em} .prose li{margin:.25em 0}
 .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--hero);color:var(--hero-fg);padding:9px 16px;border-radius:10px;z-index:99;font-size:13px;box-shadow:0 6px 20px #0004}
+.guide{border:1px solid var(--line);background:var(--sunk);border-radius:10px;padding:12px 14px;margin:6px 0 12px;font-size:13px}
+.guide ol{margin:8px 0 10px;padding-left:20px;line-height:1.55} .guide li+li{margin-top:2px}
+a.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:6px 12px;border-radius:8px;text-decoration:none;font-weight:500}
+a.btn:hover{border-color:var(--core)} a.btn svg{width:15px;height:15px}
 .banner{border:1px solid color-mix(in srgb,var(--warn) 45%,var(--line));background:color-mix(in srgb,var(--warn) 10%,var(--surface));padding:10px 14px;border-radius:10px;margin-bottom:14px;font-size:13px}
 iframe.viewer{width:100%;height:calc(100vh - 170px);border:1px solid var(--line);border-radius:12px;background:var(--surface)}
 .empty{padding:40px;text-align:center;color:var(--muted)}

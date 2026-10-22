@@ -113,6 +113,11 @@ OpenRouter) với function calling, không có shell:
 
 Hết tín dụng / key bị từ chối / gói miễn phí hết lượt / chạm trần đều có thông báo cụ thể (`worker.explain_failure`).
 
+**Hướng dẫn lấy key ngay trong giao diện:** chọn nhà cung cấp ở Cài đặt → AI & API key (và form profile Engine API ở admin) là hiện các bước +
+nút mở đúng trang lấy key + chi phí thực tế (`llm.GUIDES`). Key tìm web: Cài đặt hệ thống → Chạy Plan (`search.GUIDES`) — Tavily miễn phí
+1.000 credit/tháng là lựa chọn mặc định nên dùng. Key Gemini miễn phí (AI Studio) không dùng để tìm web được: công cụ Google Search của Gemini
+bị từ chối ở gói miễn phí (đã thử: gọi thường 200, bật `google_search` 429).
+
 ## Lịch sử phiên bản & kiểm tra số liệu
 
 - Mỗi dự án là một repo git riêng trong workspace (`saas/server/history.py`). Mỗi mốc — chạy Plan, build lại, sửa số liệu,

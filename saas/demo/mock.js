@@ -9,7 +9,8 @@ const PROVIDERS = {
   anthropic: {label: "Anthropic (Claude)", models: ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"], plan_engine: "native"},
   openai: {label: "OpenAI", models: [], plan_engine: "native"},
   gemini: {label: "Google Gemini", models: ["gemini-flash-latest", "gemini-pro-latest"], plan_engine: "native"},
-  openrouter: {label: "OpenRouter", models: [], plan_engine: "native"}};
+  openrouter: {label: "OpenRouter", models: ["deepseek/deepseek-v4.1-flash"], plan_engine: "native"}};
+const GUIDES = __GUIDES__;
 const ENGINES = {
   agy: {label: "Antigravity CLI (agy)", install: "curl -fsSL https://antigravity.google/cli/install.sh | bash", key_label: "Gemini API key", actions: ["login", "usage", "credits", "logout"]},
   claude: {label: "Claude Code CLI", install: "npm install -g @anthropic-ai/claude-code", key_label: "Anthropic API key", actions: ["login", "usage", "logout"]},
@@ -322,7 +323,7 @@ R("GET", "/projects/([\\w-]+)/lint", (b, [slug]) => { getProject(slug, need());
   return {errors: [], warnings: ["Bản demo không chạy được bộ kiểm tra độ hợp lý (cần Python trên máy chủ). Trên bản máy chủ, mục này liệt kê lỗi và chỗ nhà đầu tư sẽ hỏi."]}; });
 R("POST", "/tokens", () => fail(400, "API token cho agent ngoài chỉ có trên bản máy chủ."));
 R("GET", "/keys/(\\d+)/models", () => fail(400, "Bản demo không gọi được nhà cung cấp AI để lấy danh sách model."));
-R("GET", "/providers", () => (need(), PROVIDERS));
+R("GET", "/providers", () => (need(), Object.fromEntries(Object.entries(PROVIDERS).map(([k, v]) => [k, {...v, guide: GUIDES.llm[k]}]))));
 const keyRow = k => ({...k, plan_engine: PROVIDERS[k.provider].plan_engine});
 R("GET", "/keys", () => { const u = need(); return D.keys.filter(k => k.user_id === u.id).sort((a, b) => b.is_default - a.is_default).map(keyRow); });
 R("POST", "/keys", (b) => {
@@ -498,7 +499,7 @@ const profRow = p => ({...p, models: p.models || [], tokens_month: 0, jobs_month
   installed: true, terminal: !!D.terminals[p.id]?.alive});
 R("GET", "/admin/agents", () => { needOwner(); return {profiles: [...D.profiles].sort((a, b) => (b.is_active - a.is_active) || (a.priority - b.priority)).map(profRow),
   engines: Object.fromEntries(Object.entries(ENGINES).map(([k, e]) => [k, {...e, installed: true}])),
-  providers: Object.fromEntries(Object.entries(PROVIDERS).map(([k, v]) => [k, {label: v.label, models: v.models}]))}; });
+  providers: Object.fromEntries(Object.entries(PROVIDERS).map(([k, v]) => [k, {label: v.label, models: v.models, guide: GUIDES.llm[k]}]))}; });
 const profOf = id => D.profiles.find(p => p.id === +id) || fail(404, "Không có profile");
 R("POST", "/admin/agents", (b) => {
   const o = needOwner(); if (!ENGINES[b.engine] || !String(b.name || "").trim()) fail(400, "Cần tên và engine hợp lệ");
@@ -544,7 +545,7 @@ R("POST", "/admin/agents/(\\d+)/terminal/stop", (b, [id]) => {
   if (t?.action === "usage") { p.quota_text = termText(t); p.quota_checked = now(); }
   delete D.terminals[p.id]; return {ok: true};
 });
-const settingsOut = () => ({...D.settings, google_client_secret_set: false, search_key_set: false, search_key_kind: "", search_active: D.settings.search_provider === "auto" ? "duckduckgo" : D.settings.search_provider});
+const settingsOut = () => ({...D.settings, google_client_secret_set: false, search_key_set: false, search_key_kind: "", search_guides: GUIDES.search, search_active: D.settings.search_provider === "auto" ? "duckduckgo" : D.settings.search_provider});
 R("GET", "/admin/settings", () => { needOwner(); return settingsOut(); });
 R("POST", "/admin/settings/test-search", () => fail(400, "Bản demo không tìm web — thử trên bản máy chủ."));
 R("PUT", "/admin/settings", (b) => { const o = needOwner(); for (const k of Object.keys(DEFAULT_SETTINGS)) if (k in b) D.settings[k] = String(b[k]); audit(o.id, "settings_update", "", b); return settingsOut(); });

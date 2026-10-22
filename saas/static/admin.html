@@ -46,7 +46,7 @@ async function overview() {
   const alerts = [
     !ag && owner && ["bad", 'Chưa có core agent — người dùng chưa chạy được Plan bằng tài khoản hệ thống. <a href="#agents">Cấu hình agent →</a>'],
     !H.sandbox && ["warn", `Agent chưa được cô lập: ${esc(H.sandbox_hint)}`],
-    owner && ["duckduckgo", "none"].includes(H.search) && ["warn", `Engine API ${H.search === "none" ? "đang tắt tìm web" : "đang tìm web bằng DuckDuckGo không key (thường bị chặn trên máy chủ)"} — số liệu sẽ nhiều ước tính, ít nguồn. <a href="#settings">Thêm key Brave / Tavily →</a>`],
+    owner && ["duckduckgo", "none"].includes(H.search) && ["warn", `Engine API ${H.search === "none" ? "đang tắt tìm web" : "đang tìm web bằng DuckDuckGo không key (thường bị chặn trên máy chủ)"} — số liệu sẽ nhiều ước tính, ít nguồn. <a href="#settings">Thêm key Tavily (miễn phí) →</a>`],
     H.maintenance && ["warn", 'Đang bật chế độ bảo trì — người dùng chỉ xem được. <a href="#settings">Tắt ở Cài đặt →</a>'],
     st.disk_free / st.disk_total < .1 && ["bad", `Ổ đĩa sắp đầy: còn ${bytes(st.disk_free)} (${pct(st.disk_free / st.disk_total)}).`],
     H.oldest_queued_s > 600 && ["warn", `Có job chờ ${dur(H.oldest_queued_s)} — tăng "Số job song song" hoặc kiểm tra core agent.`],
@@ -241,13 +241,16 @@ async function agents() {
     <div id="apr" hidden><label for="apv">Nhà cung cấp</label><select id="apv">${Object.entries(providers).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join("")}</select></div>
     <div><label for="al">Nhãn tài khoản (email)</label><input id="al" placeholder="để nhận ra tài khoản nào"></div>
     <div id="akr" hidden><label for="ak">API key của hệ thống</label><input id="ak" type="password" autocomplete="off"></div>
+    <div id="agd" style="grid-column:1/-1"></div>
     <div><label for="amo">Model (tuỳ chọn)</label><input id="amo" placeholder="lấy danh sách sau khi thêm"></div>
     <div><label for="ap">Ưu tiên (số nhỏ chạy trước)</label><input id="ap" type="number" value="100"></div></div>
     <p class="hint" id="ahint"></p><p class="err" id="amsg"></p><button class="pri">Thêm tài khoản agent</button></form></div>`;
   const HINT = {native: "Engine API gọi thẳng API bằng key của hệ thống, tính tiền theo token — trần chi phí mỗi lượt đặt ở Cài đặt hệ thống → Chạy Plan.",
     agy: "Đăng nhập tài khoản Google (gói tháng) trong terminal sau khi thêm.", claude: "Đăng nhập tài khoản Claude (gói Pro/Max) trong terminal sau khi thêm, rồi lưu token dài hạn."};
-  const syncMode = () => { const n = $("#ae").value === "native"; $("#akr").hidden = $("#apr").hidden = !n; $("#ahint").textContent = HINT[$("#ae").value] || ""; };
-  $("#ae").onchange = syncMode; syncMode();
+  const syncMode = () => { const n = $("#ae").value === "native"; $("#akr").hidden = $("#apr").hidden = !n; $("#ahint").textContent = HINT[$("#ae").value] || "";
+    $("#agd").innerHTML = n ? guideBox(providers[$("#apv").value].guide, "Cách lấy key " + providers[$("#apv").value].label) : "";
+    if (n && !$("#amo").value) $("#amo").placeholder = providers[$("#apv").value].models[0] || "nhập tên model"; };
+  $("#ae").onchange = $("#apv").onchange = syncMode; syncMode();
   $("#af").onsubmit = async e => { e.preventDefault(); const n = $("#ae").value === "native"; try { await api("/admin/agents", {body: {name: $("#an").value, engine: $("#ae").value,
     provider: n ? $("#apv").value : undefined, key: n ? $("#ak").value : undefined, model: $("#amo").value, account_label: $("#al").value, priority: $("#ap").value}});
     toast("Đã thêm tài khoản agent"); agents(); } catch (x) { $("#amsg").textContent = x.message; } };
@@ -343,10 +346,11 @@ async function settings() {
     ${f("owner_job_budget_usd", "Trần mỗi lượt bằng tài khoản hệ thống (USD)", "text", "Cho profile Engine API của hệ thống. 0 = dùng trần mặc định")}
     ${f("native_token_cap", "Trần token mỗi lượt", "number", "Tổng token vào + ra; chặn cả model không biết giá")}
     ${sel("search_provider", "Tìm web cho agent", [["auto", "Tự động (Brave/Tavily nếu có key, không thì DuckDuckGo)"], ["brave", "Brave Search API"], ["tavily", "Tavily"], ["duckduckgo", "DuckDuckGo (miễn phí, có thể bị giới hạn)"], ["none", "Tắt — agent chỉ đọc URL đã biết"]], `Đang dùng: <b>${esc(s.search_active)}</b>`)}
-    <div><label for="srk">Key tìm web (Brave / Tavily)</label><div class="row"><select id="srkk" aria-label="Loại key tìm web" style="width:auto"><option value="brave" ${s.search_key_kind === "brave" ? "selected" : ""}>Brave</option><option value="tavily" ${s.search_key_kind === "tavily" ? "selected" : ""}>Tavily</option></select>
+    <div><label for="srk">Key tìm web (Tavily / Brave)</label><div class="row"><select id="srkk" aria-label="Loại key tìm web" style="width:auto"><option value="tavily" ${s.search_key_kind !== "brave" ? "selected" : ""}>Tavily</option><option value="brave" ${s.search_key_kind === "brave" ? "selected" : ""}>Brave</option></select>
       <input id="srk" class="grow" type="password" autocomplete="off" placeholder="${s.search_key_set ? `đã lưu key ${esc(s.search_key_kind)} — nhập để thay` : "tuỳ chọn"}"></div>
       ${s.search_key_set ? '<label class="row hint" style="margin-top:6px"><input type="checkbox" id="srkClear" style="width:auto"> Xoá key đã lưu</label>' : ""}</div></div>
-    <div class="form-actions"><button type="button" id="srtest">Thử tìm web</button><span class="hint">Lưu cài đặt trước khi thử. DuckDuckGo thường chặn máy chủ đặt ở datacenter — Brave (2.000 lượt/tháng miễn phí) hoặc Tavily ổn định hơn.</span></div></section>
+    <div id="srguide"></div>
+    <div class="form-actions"><button type="button" id="srtest">Thử tìm web</button><span class="hint">Lưu cài đặt trước khi thử. DuckDuckGo thường chặn máy chủ đặt ở datacenter; key Gemini miễn phí (AI Studio) không tìm web được — dùng Tavily (miễn phí) hoặc Brave.</span></div></section>
   <section class="card" id="s-mail"><h2>Email (SMTP)</h2><p class="hint">Dùng cho quên mật khẩu, gửi lời mời và báo Plan chạy xong. Dùng máy chủ mail của công ty, Google Workspace (smtp.gmail.com, mật khẩu ứng dụng), Amazon SES, Mailgun…
       ${s.mail_configured ? pill("ok") : '<span class="pill warn">chưa cấu hình</span>'}</p><div class="grid g2" style="gap:0 14px">
     ${f("smtp_host", "Máy chủ SMTP", "text", "", "smtp.gmail.com")}${f("smtp_port", "Cổng", "number", "587 cho STARTTLS, 465 cho SSL")}
@@ -370,6 +374,8 @@ async function settings() {
     if ($("#srk").value) { b.search_key = $("#srk").value; b.search_key_kind = $("#srkk").value; } if ($("#srkClear")?.checked) b.clear_search_key = true;
     try { await api("/admin/settings", {method: "PUT", body: b}); A.me = await api("/me"); toast("Đã lưu cài đặt"); settings(); }
     catch (x) { $("#smsg").textContent = "✗ " + x.message; $("#smsg").className = "err"; toast("Chưa lưu: " + x.message); } };
+  const srg = () => $("#srguide").innerHTML = guideBox(s.search_guides[$("#srkk").value], "Cách lấy key " + $("#srkk").selectedOptions[0].textContent);
+  $("#srkk").onchange = srg; srg();
   $("#srtest").onclick = async e => { const b = e.currentTarget; b.disabled = true;
     try { const r = await api("/admin/settings/test-search", {body: {}}); toast(`${r.provider}: ${r.results.length} kết quả · ${r.results[0].title}`); }
     catch (x) { toast(x.message); } finally { b.disabled = false; } };

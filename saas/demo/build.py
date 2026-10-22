@@ -78,7 +78,13 @@ def build():
 
     gp = (STATIC / "gp.js").read_text().replace('location.href = "/login"', 'GPDEMO.nav("login")')
     bank = yaml.safe_load((ROOT / "pipeline" / "interview.yaml").read_text())
-    mock = (ROOT / "saas" / "demo" / "mock.js").read_text().replace("__BANK__", json.dumps(bank, ensure_ascii=False))
+    sys.path.insert(0, str(ROOT))
+    import os
+    os.environ.setdefault("GP_DATA", tempfile.mkdtemp(prefix="gp-demo-"))   # search.py mở DB khi import — không đụng dữ liệu thật
+    from saas.server.llm import GUIDES as LLM_GUIDES                       # một nguồn hướng dẫn lấy key cho cả server và demo
+    from saas.server.search import GUIDES as SEARCH_GUIDES
+    mock = (ROOT / "saas" / "demo" / "mock.js").read_text().replace("__BANK__", json.dumps(bank, ensure_ascii=False)) \
+        .replace("__GUIDES__", json.dumps({"llm": LLM_GUIDES, "search": SEARCH_GUIDES}, ensure_ascii=False))
     css = (STATIC / "gp.css").read_text()
 
     shell = """

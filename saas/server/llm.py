@@ -12,11 +12,45 @@ import httpx
 # chỉ dùng cho tài khoản gói tháng của owner.
 PROVIDERS = {
     "deepseek": {"label": "DeepSeek", "models": ["deepseek-flash", "deepseek-v4-pro"], "plan_engine": "native"},
-    "anthropic": {"label": "Anthropic (Claude)", "models": ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"], "plan_engine": "native"},
-    "openai": {"label": "OpenAI", "models": [], "plan_engine": "native"},
+    "openrouter": {"label": "OpenRouter", "models": ["deepseek/deepseek-v4.1-flash", "google/gemini-3.8-flash", "openai/gpt-5.6-luna"],
+                   "plan_engine": "native"},
     # Alias "-latest" do Google tự trỏ sang bản hiện hành — không bị ngừng như tên phiên bản cố định
     "gemini": {"label": "Google Gemini", "models": ["gemini-flash-latest", "gemini-pro-latest"], "plan_engine": "native"},
-    "openrouter": {"label": "OpenRouter", "models": [], "plan_engine": "native"},
+    "anthropic": {"label": "Anthropic (Claude)", "models": ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"], "plan_engine": "native"},
+    "openai": {"label": "OpenAI", "models": [], "plan_engine": "native"},
+}
+# Hướng dẫn lấy key từng bước — hiện ngay trong form thêm key (app + admin). tag: nhãn ngắn; cost: chi phí thực tế cho một lượt Plan.
+GUIDES = {
+    "deepseek": {"tag": "Rẻ nhất · nên dùng", "url": "https://platform.deepseek.com/api_keys", "url_label": "Mở trang API keys của DeepSeek",
+                 "steps": ["Đăng ký / đăng nhập tại platform.deepseek.com (email hoặc Google).",
+                           "Vào Top up, nạp tiền (khoảng 5 USD là đủ chạy nhiều lượt Plan). DeepSeek không có gói miễn phí.",
+                           "Vào API keys → Create new API key → đặt tên (ví dụ Gen Planner) → copy key bắt đầu bằng sk-.",
+                           "Dán key vào ô bên dưới, giữ model deepseek-flash, bấm Lưu key — hệ thống gọi thử ngay."],
+                 "cost": "Một lượt Plan đầy đủ thường khoảng 0,3–1 USD với deepseek-flash."},
+    "openrouter": {"tag": "Một key — nhiều AI", "url": "https://openrouter.ai/settings/keys", "url_label": "Mở trang Keys của OpenRouter",
+                   "steps": ["Đăng ký / đăng nhập tại openrouter.ai.",
+                             "Vào Settings → Credits, nạp tiền (khoảng 5 USD).",
+                             "Vào Settings → Keys → Create key. Nếu đặt Credit limit, để ít nhất vài USD — key hết hạn mức sẽ bị từ chối giữa chừng.",
+                             "Copy key bắt đầu bằng sk-or-, dán bên dưới. Model gợi ý: deepseek/deepseek-v4.1-flash (rẻ)."],
+                   "cost": "Giá theo model chọn; deepseek/deepseek-v4.1-flash tương đương DeepSeek trực tiếp, cộng phí nạp tiền của OpenRouter."},
+    "gemini": {"tag": "Có gói miễn phí", "url": "https://aistudio.google.com/apikey", "url_label": "Mở Google AI Studio → API key",
+               "steps": ["Đăng nhập aistudio.google.com bằng tài khoản Google.",
+                         "Bấm Create API key → chọn (hoặc tạo) một Google Cloud project → copy key.",
+                         "Dán key bên dưới, giữ model gemini-flash-latest, bấm Lưu key.",
+                         "Muốn Chạy Plan: bật Billing cho project đó trong Google Cloud Console (Set up billing ngay trong AI Studio)."],
+               "cost": "Gói miễn phí chỉ khoảng 20 lượt gọi/ngày mỗi model — đủ cho phỏng vấn, brainstorm; KHÔNG đủ cho một lượt Plan (cần vài chục–hàng trăm lượt). "
+                       "Bật billing thì tính theo token, giá model Flash thấp."},
+    "anthropic": {"tag": "Chất lượng cao · đắt", "url": "https://platform.claude.com/settings/keys", "url_label": "Mở trang API keys của Anthropic",
+                  "steps": ["Đăng ký / đăng nhập Claude Console (platform.claude.com).",
+                            "Vào Billing, nạp credit.",
+                            "Vào API keys → Create key → copy key bắt đầu bằng sk-ant-.",
+                            "Dán bên dưới; claude-haiku-5-5 rẻ hơn, claude-sonnet-5-5 chất lượng hơn."],
+                  "cost": "Đắt hơn DeepSeek nhiều lần — nên đặt trần chi phí khi Chạy Plan. Gói Claude Pro/Max (chat) KHÔNG bao gồm API."},
+    "openai": {"tag": "", "url": "https://platform.openai.com/api-keys", "url_label": "Mở trang API keys của OpenAI",
+               "steps": ["Đăng nhập platform.openai.com.", "Vào Billing, nạp credit.",
+                         "Vào API keys → Create new secret key → copy key bắt đầu bằng sk-.",
+                         "Dán bên dưới và nhập tên model hỗ trợ gọi công cụ (bấm vào ô Model sau khi lưu để xem danh sách)."],
+               "cost": "Gói ChatGPT Plus KHÔNG bao gồm API — API tính tiền riêng theo token."},
 }
 # Điểm cuối chuẩn OpenAI (chat/completions + tools) của từng nhà cung cấp — engine native dùng một định dạng duy nhất.
 OPENAI_COMPAT = {
