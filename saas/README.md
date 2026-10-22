@@ -18,8 +18,8 @@ Người dùng (/app)                           Owner / admin (/admin)
 
 | | Dùng cho | Ai trả tiền | Cấu hình |
 |---|---|---|---|
-| **API key của user** (BYOK) | Trợ lý phỏng vấn, brainstorm; và Chạy Plan nếu là key Anthropic / OpenRouter (qua Claude Code, model `anthropic/*`) / Gemini (agy) | User | `/app#settings` — Anthropic, OpenAI, Gemini, OpenRouter. Key mã hoá Fernet, không bao giờ trả về trình duyệt |
-| **Core agent của owner** | Chạy Plan | Owner (giới hạn bằng hạn mức lần chạy/tháng của từng user) | `/admin#agents` — Antigravity CLI (`agy`) mặc định, Claude Code CLI dự phòng |
+| **API key của user** (BYOK) | Trợ lý phỏng vấn, brainstorm **và Chạy Plan qua Engine API** (`saas/server/native.py`) | User, theo token, có trần | `/app#settings` — DeepSeek, Anthropic, OpenAI, Gemini, OpenRouter. Key mã hoá Fernet, không bao giờ trả về trình duyệt |
+| **Core agent của owner** | Chạy Plan khi user chọn "tài khoản hệ thống" | Owner (giới hạn bằng hạn mức lần chạy/tháng của từng user) | `/admin#agents` — CLI đăng nhập **gói tháng**: Antigravity (`agy`) mặc định, Claude Code dự phòng; hoặc profile **Engine API** bằng key API của hệ thống |
 
 Owner chọn ở Cài đặt: chạy Plan bằng tài khoản hệ thống, bằng key của user, hoặc để user chọn.
 Không có key nào → chế độ **demo** (câu hỏi theo kịch bản, build từ template) nếu owner bật.
@@ -92,9 +92,26 @@ Quy tắc giao diện (token màu, khung trang, trạng thái, thuật ngữ): `
 câu trả lời không lộ email nào có tài khoản), gửi lời mời qua email, báo khi Plan chạy xong (người dùng tắt được ở Tuỳ chọn).
 Chưa cấu hình → các chỗ đó nói rõ và chỉ cách khác (admin đặt lại mật khẩu, sao chép link mời).
 
-**Trần chi phí mỗi lượt chạy:** người dùng nhập ở tab Chạy Plan (key riêng); owner đặt mặc định cho tài khoản hệ thống. Claude Code
-dừng khi ước tính chạm trần (`--max-budget-usd`) và agent nhận chỉ dẫn làm tiết kiệm (≤ 3 subagent song song). Hết tín dụng / key bị
-từ chối / chạm trần đều có thông báo cụ thể. Key OpenRouter: Claude Code qua "Anthropic Skin" (`ANTHROPIC_BASE_URL=https://openrouter.ai/api`).
+## Engine API (chạy Plan bằng API key)
+
+CLI agy / Claude Code chỉ dành cho tài khoản **gói tháng** của owner. Mọi lượt chạy bằng **API key** (của user, hoặc profile Engine API
+của hệ thống) đi qua engine native — gọi thẳng `chat/completions` chuẩn OpenAI của nhà cung cấp (DeepSeek, OpenAI, Gemini, Anthropic,
+OpenRouter) với function calling, không có shell:
+
+- **Công cụ**: `list_files`, `read_file`, `read_standard` (AGENTS.md, playbook, stages, template), `write_file` / `edit_file` (chỉ file SSOT
+  của đúng dự án, đúng `writes` của stage; `brief.md` chỉ đọc; YAML được kiểm cú pháp), `web_search`, `fetch_url` (chặn địa chỉ nội bộ ở mọi
+  bước chuyển hướng), `run_check` (build + check + export), `finish_stage`. Prompt: `pipeline/native-agent-prompt.md`.
+- **Từng stage một hội thoại mới**: ngữ cảnh = ý tưởng + brief + ghi chú các stage trước; kết quả công cụ cũ được rút gọn → rẻ và không phình.
+  Stage đã `done` trong `project.yaml` được bỏ qua → chạy lại sau khi dừng sẽ làm tiếp từ stage dở.
+- **Trần**: USD mỗi lượt (người dùng nhập ở tab Chạy Plan; mặc định `native_default_budget_usd`; profile hệ thống dùng `owner_job_budget_usd`)
+  tính từ bảng giá (DeepSeek) hoặc chi phí thật OpenRouter trả về; trần token (`native_token_cap`) chặn cả model không biết giá; thời gian tối đa
+  của job; huỷ có hiệu lực ngay giữa hai lượt gọi. Chạm trần → build phần đã làm, báo rõ.
+- **Tìm web**: owner chọn ở Cài đặt hệ thống → Chạy Plan: Brave Search API / Tavily (key mã hoá, có gói miễn phí) hoặc DuckDuckGo không key
+  (thường bị chặn khi máy chủ ở datacenter — nút *Thử tìm web* để kiểm tra).
+- Model mặc định: DeepSeek `deepseek-flash`, Gemini `gemini-flash-latest`, Anthropic `claude-sonnet-5-5`; OpenAI/OpenRouter phải chọn model
+  có hỗ trợ tool calling.
+
+Hết tín dụng / key bị từ chối / gói miễn phí hết lượt / chạm trần đều có thông báo cụ thể (`worker.explain_failure`).
 
 ## Lịch sử phiên bản & kiểm tra số liệu
 

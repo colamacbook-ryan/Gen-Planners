@@ -19,7 +19,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import db, sandbox
+from . import db, llm, sandbox
 from .config import AGENTS_HOME, which
 from .security import dec
 
@@ -31,11 +31,14 @@ ENGINES = {
             "terminal": {"login": (["agy"], []), "usage": (["agy"], ["/usage"]), "credits": (["agy"], ["/credits"]),
                          "logout": (["agy"], ["/logout"])}},
     "claude": {"label": "Claude Code CLI", "install": "npm install -g @anthropic-ai/claude-code",
-               "key_env": "ANTHROPIC_API_KEY", "key_label": "Anthropic hoặc OpenRouter API key",
+               "key_env": "ANTHROPIC_API_KEY", "key_label": "Anthropic API key",
                "terminal": {"login": (["claude", "setup-token"], []), "usage": (["claude"], ["/status"]),
                             "logout": (["claude"], ["/logout"])}},
+    # Engine API: key API của hệ thống (DeepSeek, OpenAI, Gemini, Anthropic, OpenRouter) chạy qua engine native — tính tiền theo token
+    "native": {"label": "Engine API (key API của hệ thống)", "install": "", "terminal": {}},
     "demo": {"label": "Demo (không gọi AI — chỉ build template)", "install": "", "terminal": {}},
 }
+CLI = ("agy", "claude")             # chỉ đăng nhập gói tháng
 CLAUDE_MODELS = ["sonnet", "opus", "haiku", "claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"]
 ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*(\x07|\x1b\\)|\x1b[()][A-Z0-9]|\x1b[=>]|\r")
 CURSOR_RIGHT = re.compile(r"\x1b\[(\d*)C")
@@ -43,7 +46,6 @@ URL = re.compile(r"https?://[^\s\"'<>]+")
 AUTH_HINT = re.compile(r"authentication required|not signed in|please sign in|authentication failed|invalid api key|api key not valid|api_key_invalid|401", re.I)
 CREDIT_HINT = re.compile(r"key limit exceeded|insufficient (credits|funds|balance)|credit balance is too low|payment required|\b402\b|"
                          r"exceeded your current quota|billing", re.I)
-BUDGET_HINT = re.compile(r"max[_ -]?budget|budget (exceeded|reached|limit)|exceeded (the )?(usd )?budget", re.I)
 QUOTA_HINT = re.compile(r"quota|rate.?limit|429|resource.?exhausted|credits?|usage limit|out of", re.I)
 
 
@@ -73,33 +75,16 @@ def cli_problem(engine):
             f"(thư mục cha không cho đi qua). Bấm “Cài đặt CLI” để cài vào /usr/local/bin.")
 
 
-OPENROUTER_DEFAULT_PLAN_MODEL = "anthropic/claude-sonnet-5.5"
-OPENROUTER_ANTHROPIC = "https://openrouter.ai/api"       # "Anthropic Skin" của OpenRouter — Claude Code nói chuyện như với Anthropic
-MODEL_SLOTS = ("ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-               "CLAUDE_CODE_SUBAGENT_MODEL")
-
-
-def is_openrouter(key):
-    return bool(key) and key.startswith("sk-or-")
-
-
-def env_for(profile, home_dir: Path, key: str | None = None, model: str | None = None):
-    """Môi trường cho CLI: HOME riêng; chế độ API key → cài settings provider + biến key."""
+def env_for(profile, home_dir: Path):
+    """Môi trường cho CLI của owner: HOME riêng (phiên đăng nhập gói tháng); profile cũ dạng API key → biến key."""
     env = sandbox.clean_env(dict(os.environ))                       # không lộ khoá/bí mật của máy chủ cho agent
     env.update(HOME=str(home_dir), BROWSER="echo", NO_BROWSER="1", TERM="xterm-256color")
     env["PATH"] = f"{home_dir}/.local/bin:{Path.home()}/.local/bin:" + env.get("PATH", "")
-    if key is None and profile.get("engine") == "claude" and profile.get("auth_mode") == "account" and profile.get("key_enc"):
+    if profile.get("engine") == "claude" and profile.get("auth_mode") == "account" and profile.get("key_enc"):
         env["CLAUDE_CODE_OAUTH_TOKEN"] = dec(profile["key_enc"])     # token từ `claude setup-token`, admin dán vào
-    key = key if key is not None else (dec(profile.get("key_enc")) if profile.get("auth_mode") == "api_key" else "")
+    key = dec(profile.get("key_enc")) if profile.get("auth_mode") == "api_key" and profile.get("key_enc") else ""
     if key:
         eng = profile["engine"]
-        if eng == "claude" and is_openrouter(key):
-            # Claude Code qua OpenRouter: base URL + auth token; mọi "khe" model (kể cả subagent, tác vụ nền haiku) trỏ về
-            # đúng model đã chọn — model mặc định của Claude Code không tồn tại trên OpenRouter.
-            env.update(ANTHROPIC_BASE_URL=OPENROUTER_ANTHROPIC, ANTHROPIC_AUTH_TOKEN=key, ANTHROPIC_API_KEY="")
-            m = model or profile.get("model") or OPENROUTER_DEFAULT_PLAN_MODEL
-            env.update({slot: m for slot in MODEL_SLOTS})
-            return _readable_certs(env, home_dir)
         env[ENGINES[eng]["key_env"]] = key
         if eng == "agy":
             s = home_dir / ".gemini" / "antigravity-cli" / "settings.json"
@@ -140,6 +125,14 @@ def run(profile, args, timeout=60):
 
 
 def check(profile):
+    if profile["engine"] == "native":                       # thử key bằng cách hỏi danh sách model
+        try:
+            n = len(llm.list_models(profile["provider"], dec(profile["key_enc"] or "")))
+            code, out = 0, f"Key {llm.PROVIDERS[profile['provider']]['label']} hoạt động — {n} model dùng được."
+        except (llm.LLMError, KeyError) as e:
+            code, out = 1, str(e)[:500]
+        db.update("agent_profiles", profile["id"], version=None, status="ready" if code == 0 else "needs_login")
+        return code, out
     code, out = run(profile, ["--version"], 30)
     db.update("agent_profiles", profile["id"], version=out.splitlines()[0][:120] if code == 0 and out else None,
               status="ready" if code == 0 else ("not_installed" if code == 127 else "error"))
@@ -158,6 +151,11 @@ def list_models(profile):
                 tok = line.strip().lstrip("-*•> ").split()
                 if tok and re.fullmatch(r"[a-z0-9][a-z0-9._:/-]{2,}", tok[0]) and not tok[0].startswith("http"):
                     models.append(tok[0])
+    elif profile["engine"] == "native":
+        try:
+            models, out = llm.list_models(profile["provider"], dec(profile["key_enc"] or "")), "Danh sách lấy từ nhà cung cấp."
+        except llm.LLMError as e:
+            return [], str(e)[:500]
     else:
         return [], "Demo không dùng model."
     db.update("agent_profiles", profile["id"], models=json.dumps(sorted(set(models))))

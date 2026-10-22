@@ -1,17 +1,19 @@
 // Gen Planner — backend giả lập trong trình duyệt cho bản demo trên claude.ai.
 // Cùng API với saas/server/main.py; dữ liệu nằm trong localStorage của người xem.
 // Trợ lý phỏng vấn/brainstorm dùng Claude thật qua capability `sample` (tài khoản Claude của người xem);
-// core agent (agy/claude CLI) chỉ được MÔ PHỎNG — CLI thật cần máy chủ.
+// Chạy Plan (CLI gói tháng của owner, hoặc Engine API bằng key) chỉ được MÔ PHỎNG — cần máy chủ thật.
 (() => {
 const BANK = __BANK__;
 const PROVIDERS = {
-  anthropic: {label: "Anthropic (Claude)", models: ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"], plan_engine: "claude"},
-  openai: {label: "OpenAI", models: [], plan_engine: null},
-  gemini: {label: "Google Gemini", models: ["gemini-2.5-pro", "gemini-2.5-flash"], plan_engine: "agy"},
-  openrouter: {label: "OpenRouter", models: [], plan_engine: null}};
+  deepseek: {label: "DeepSeek", models: ["deepseek-flash", "deepseek-v4-pro"], plan_engine: "native"},
+  anthropic: {label: "Anthropic (Claude)", models: ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"], plan_engine: "native"},
+  openai: {label: "OpenAI", models: [], plan_engine: "native"},
+  gemini: {label: "Google Gemini", models: ["gemini-flash-latest", "gemini-pro-latest"], plan_engine: "native"},
+  openrouter: {label: "OpenRouter", models: [], plan_engine: "native"}};
 const ENGINES = {
   agy: {label: "Antigravity CLI (agy)", install: "curl -fsSL https://antigravity.google/cli/install.sh | bash", key_label: "Gemini API key", actions: ["login", "usage", "credits", "logout"]},
   claude: {label: "Claude Code CLI", install: "npm install -g @anthropic-ai/claude-code", key_label: "Anthropic API key", actions: ["login", "usage", "logout"]},
+  native: {label: "Engine API (key API của hệ thống)", install: "", key_label: null, actions: []},
   demo: {label: "Demo (không gọi AI — chỉ build template)", install: "", key_label: null, actions: []}};
 const QUESTIONS = BANK.questions, QIDS = QUESTIONS.map(q => q.id), QMAP = Object.fromEntries(QUESTIONS.map(q => [q.id, q]));
 const BLOCKS = Object.fromEntries(BANK.blocks.map(b => [b.id, b.title]));
@@ -22,7 +24,7 @@ const DEFAULT_SETTINGS = {site_name: "Gen Planner", allow_signup: "1", plan_bill
   default_quota_jobs_month: "3", job_timeout_min: "120", max_concurrent_jobs: "1", auto_failover: "1", allow_demo_engine: "1",
   google_client_id: "", public_base_url: "", signup_domains: "", support_email: "", default_country: "Việt Nam", announcement: "",
   announcement_level: "info", maintenance: "0", log_retention_days: "0", smtp_host: "", smtp_port: "587", smtp_user: "", smtp_from: "",
-  smtp_tls: "starttls", owner_job_budget_usd: "0"};
+  smtp_tls: "starttls", owner_job_budget_usd: "0", native_default_budget_usd: "3", native_token_cap: "4000000", search_provider: "auto"};
 
 // ------------------------------------------------------------------ storage
 let D;
@@ -221,9 +223,9 @@ function simulate(jid) {
   } else if (j.engine === "demo") {
     steps.push("Engine demo: không gọi AI — ghi idea.md + brief.md vào dự án và build từ template để thử luồng.", `$ python gen.py new ${p.slug}`, `✓ tạo ${p.slug}`, `$ python gen.py build ${p.slug}`, "✓ build business-plan.md · deck.md · financials.xlsx", `$ python gen.py check ${p.slug}`, "✓ check: 0 lỗi, 36 cảnh báo (giả định còn placeholder — chưa nghiên cứu)", `$ python tools/export.py ${p.slug}`, "project.json · dossier.json · documents.json");
   } else {
-    const who = j.billing === "user_key" ? `API key của user (${j.key_hint || ""})` : `tài khoản hệ thống "${prof?.name || "?"}"`;
-    steps.push(`[MÔ PHỎNG] Engine ${j.engine} · ${who} · model ${j.model || prof?.model || "mặc định"}`,
-      "[MÔ PHỎNG] Bản demo trên claude.ai không chạy được CLI agent — đây là trình tự một job thật sẽ đi qua:",
+    const who = j.billing === "user_key" ? `API key của bạn (${j.key_hint || ""})` : `tài khoản hệ thống "${prof?.name || "?"}"`;
+    steps.push(`[MÔ PHỎNG] ${j.engine === "native" ? "Engine API" : "Engine " + j.engine} · ${who} · model ${j.model || prof?.model || "mặc định"}`,
+      "[MÔ PHỎNG] Bản demo trên claude.ai không gọi agent thật — đây là trình tự một job thật sẽ đi qua:",
       "› Đọc AGENTS.md, pipeline/playbook.yaml, pipeline/stages.yaml, brief.md",
       ...BANKSTREAMS.map(s => `⚙ ${s}`),
       "› Tổng hợp evidence.yaml, assumptions.yaml, sections/*.md, deck.md, story.yaml, datasets.yaml",
@@ -282,7 +284,7 @@ R("POST", "/auth/forgot", () => ({ok: true, mail: false, message: "Bản demo kh
 R("POST", "/auth/reset", () => fail(400, "Bản demo không có đặt lại mật khẩu qua email."));
 R("POST", "/admin/settings/test-email", () => fail(400, "Bản demo không gửi email — cấu hình SMTP trên bản máy chủ."));
 R("GET", "/me", () => meOf(need()));
-const meOf = u => ({...pub(u), has_keys: D.keys.some(k => k.user_id === u.id), site_name: S("site_name"), plan_billing: S("plan_billing"), quota: quota(u), demo_allowed: S("allow_demo_engine") === "1", ai_live: !aiOff, core_ready: true, onboarding: onboarding(u),
+const meOf = u => ({...pub(u), has_keys: D.keys.some(k => k.user_id === u.id), site_name: S("site_name"), plan_billing: S("plan_billing"), quota: quota(u), demo_allowed: S("allow_demo_engine") === "1", native_budget_usd: S("native_default_budget_usd"), ai_live: !aiOff, core_ready: true, onboarding: onboarding(u),
   announcement: S("announcement"), announcement_level: S("announcement_level"), maintenance: S("maintenance") === "1", support_email: S("support_email")});
 R("PATCH", "/me", (b) => { const u = need(); if ("name" in b) u.name = String(b.name || "").trim().slice(0, 80) || null;
   if (b.prefs) { u.prefs ??= {}; if (b.prefs.theme) { if (!["system", "light", "dark"].includes(b.prefs.theme)) fail(400, "Giao diện: system | light | dark"); u.prefs.theme = b.prefs.theme; }
@@ -402,9 +404,9 @@ R("POST", "/projects/([\\w-]+)/run", (b, [slug]) => {
   if (b.billing === "demo") { if (S("allow_demo_engine") !== "1") fail(403, "Owner đã tắt engine demo"); Object.assign(j, {engine: "demo", billing: "demo"}); }
   else if (b.billing === "user_key") {
     if (mode === "owner") fail(403, "Hệ thống chỉ cho chạy Plan bằng tài khoản của owner.");
-    const k = myKey(u, b.api_key_id), eng = PROVIDERS[k.provider].plan_engine;
-    if (!eng) fail(400, `Key ${k.provider} chỉ dùng để chat. Chạy Plan cần key Anthropic (claude CLI) hoặc Gemini (agy).`);
-    Object.assign(j, {engine: eng, billing: "user_key", api_key_id: k.id, key_hint: k.key_hint, model: b.model || k.model});
+    const k = myKey(u, b.api_key_id), model = b.model || k.model || PROVIDERS[k.provider].models[0];
+    if (!model) fail(400, `Chọn model cho key ${PROVIDERS[k.provider].label}.`);
+    Object.assign(j, {engine: "native", billing: "user_key", api_key_id: k.id, key_hint: k.key_hint, model, provider: k.provider});
   } else {
     if (mode === "user_key") fail(403, "Hệ thống yêu cầu chạy Plan bằng API key của bạn.");
     const q = quota(u); if (q.owner_jobs_limit != null && q.owner_jobs_month >= q.owner_jobs_limit) fail(403, `Hết quota ${q.owner_jobs_limit} lần chạy/tháng bằng tài khoản hệ thống. Dùng API key của bạn hoặc liên hệ admin.`);
@@ -495,12 +497,14 @@ R("GET", "/admin/audit", () => { needAdmin(); return [...D.audit].reverse().slic
 const profRow = p => ({...p, models: p.models || [], tokens_month: 0, jobs_month: D.jobs.filter(j => j.profile_id === p.id && j.created >= month()).length,
   installed: true, terminal: !!D.terminals[p.id]?.alive});
 R("GET", "/admin/agents", () => { needOwner(); return {profiles: [...D.profiles].sort((a, b) => (b.is_active - a.is_active) || (a.priority - b.priority)).map(profRow),
-  engines: Object.fromEntries(Object.entries(ENGINES).map(([k, e]) => [k, {...e, installed: true}]))}; });
+  engines: Object.fromEntries(Object.entries(ENGINES).map(([k, e]) => [k, {...e, installed: true}])),
+  providers: Object.fromEntries(Object.entries(PROVIDERS).map(([k, v]) => [k, {label: v.label, models: v.models}]))}; });
 const profOf = id => D.profiles.find(p => p.id === +id) || fail(404, "Không có profile");
 R("POST", "/admin/agents", (b) => {
   const o = needOwner(); if (!ENGINES[b.engine] || !String(b.name || "").trim()) fail(400, "Cần tên và engine hợp lệ");
-  const key = String(b.key || "").trim(), mode = b.auth_mode === "api_key" ? "api_key" : "account";
-  const p = {id: nid(), name: b.name.trim(), engine: b.engine, auth_mode: mode, key_hint: key ? (key.length > 12 ? key.slice(0, 4) + "…" + key.slice(-4) : "…") : null,
+  const key = String(b.key || "").trim(), mode = b.engine === "native" ? "api_key" : "account";
+  if (b.engine === "native" && (!PROVIDERS[b.provider] || !key)) fail(400, "Engine API cần nhà cung cấp và API key");
+  const p = {id: nid(), name: b.name.trim(), engine: b.engine, auth_mode: mode, provider: b.engine === "native" ? b.provider : null, key_hint: key ? (key.length > 12 ? key.slice(0, 4) + "…" + key.slice(-4) : "…") : null,
     model: b.model || null, enabled: 1, is_active: D.profiles.length ? 0 : 1, priority: +b.priority || 100, account_label: b.account_label || null,
     status: b.engine === "demo" || (mode === "api_key" && key) ? "ready" : "needs_login", version: b.engine === "agy" ? "1.4.3" : b.engine === "claude" ? "2.1.305 (Claude Code)" : null,
     models: b.engine === "claude" ? ["sonnet", "opus", "haiku", "claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"] : [], quota_text: null, quota_checked: null, budget_tokens_month: null, created: now()};
@@ -509,7 +513,7 @@ R("POST", "/admin/agents", (b) => {
 R("PATCH", "/admin/agents/(\\d+)", (b, [id]) => {
   const o = needOwner(), p = profOf(id);
   for (const k of ["name", "model", "account_label", "priority", "budget_tokens_month"]) if (k in b) p[k] = b[k];
-  if ("enabled" in b) p.enabled = b.enabled ? 1 : 0; if (["account", "api_key"].includes(b.auth_mode)) p.auth_mode = b.auth_mode;
+  if ("enabled" in b) p.enabled = b.enabled ? 1 : 0;
   if (b.key) { p.key_hint = b.key.length > 12 ? b.key.slice(0, 4) + "…" + b.key.slice(-4) : "…"; p.status = "ready"; }
   if (b.reset_status) p.status = "ready"; audit(o.id, "agent_update", p.name); return profRow(p);
 });
@@ -540,8 +544,10 @@ R("POST", "/admin/agents/(\\d+)/terminal/stop", (b, [id]) => {
   if (t?.action === "usage") { p.quota_text = termText(t); p.quota_checked = now(); }
   delete D.terminals[p.id]; return {ok: true};
 });
-R("GET", "/admin/settings", () => { needOwner(); return {...D.settings, google_client_secret_set: false}; });
-R("PUT", "/admin/settings", (b) => { const o = needOwner(); for (const k of Object.keys(DEFAULT_SETTINGS)) if (k in b) D.settings[k] = String(b[k]); audit(o.id, "settings_update", "", b); return {...D.settings, google_client_secret_set: false}; });
+const settingsOut = () => ({...D.settings, google_client_secret_set: false, search_key_set: false, search_key_kind: "", search_active: D.settings.search_provider === "auto" ? "duckduckgo" : D.settings.search_provider});
+R("GET", "/admin/settings", () => { needOwner(); return settingsOut(); });
+R("POST", "/admin/settings/test-search", () => fail(400, "Bản demo không tìm web — thử trên bản máy chủ."));
+R("PUT", "/admin/settings", (b) => { const o = needOwner(); for (const k of Object.keys(DEFAULT_SETTINGS)) if (k in b) D.settings[k] = String(b[k]); audit(o.id, "settings_update", "", b); return settingsOut(); });
 R("POST", "/admin/seed-sample", () => { const o = needOwner(); if (D.projects.some(p => p.slug === SAMPLE_SLUG)) fail(409, "Đã nạp mẫu rồi"); seedSample(o); audit(o.id, "seed_sample", SAMPLE_SLUG); return {slug: SAMPLE_SLUG}; });
 
 // ------------------------------------------------------------------ fetch shim

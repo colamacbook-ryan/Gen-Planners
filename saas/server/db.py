@@ -78,7 +78,11 @@ DEFAULT_SETTINGS = {
     "announcement_level": "info",       # info | warn
     "maintenance": "0",                 # 1 = người dùng thường chỉ xem; không tạo/chạy/sửa (admin vẫn làm được)
     "log_retention_days": "0",          # 0 = giữ mãi; N = xoá log job cũ hơn N ngày (giữ dòng thống kê)
-    "owner_job_budget_usd": "0",       # trần chi phí mỗi lượt chạy bằng tài khoản hệ thống (0 = không giới hạn; chỉ claude CLI hỗ trợ)
+    "owner_job_budget_usd": "0",       # trần USD mỗi lượt chạy bằng profile Engine API của hệ thống (0 = dùng trần mặc định bên dưới)
+    "native_default_budget_usd": "3",  # trần USD mặc định mỗi lượt Engine API khi người chạy không đặt trần
+    "native_token_cap": "4000000",     # trần token mỗi lượt Engine API — chặn cả khi model không có bảng giá
+    "search_provider": "auto",         # auto | brave | tavily | duckduckgo | none — tìm web cho Engine API
+    "search_key_enc": "", "search_key_kind": "",
     "smtp_host": "", "smtp_port": "587", "smtp_user": "", "smtp_password_enc": "", "smtp_from": "", "smtp_tls": "starttls",
 }
 
@@ -91,7 +95,8 @@ _conn.executescript(SCHEMA)
 for _t, _c, _d in (("jobs", "progress", "TEXT"), ("projects", "is_sample", "INTEGER NOT NULL DEFAULT 0"),
                    ("users", "onboarding", "TEXT"), ("users", "invited_by", "INTEGER"),
                    ("jobs", "system_fault", "INTEGER NOT NULL DEFAULT 0"), ("jobs", "by_admin", "INTEGER"),
-                   ("users", "prefs", "TEXT"), ("projects", "archived", "INTEGER NOT NULL DEFAULT 0"), ("jobs", "budget_usd", "REAL")):
+                   ("users", "prefs", "TEXT"), ("projects", "archived", "INTEGER NOT NULL DEFAULT 0"), ("jobs", "budget_usd", "REAL"),
+                   ("agent_profiles", "provider", "TEXT")):
     if _c not in [r[1] for r in _conn.execute(f"PRAGMA table_info({_t})")]:
         _conn.execute(f"ALTER TABLE {_t} ADD COLUMN {_c} {_d}")
 for k, v in DEFAULT_SETTINGS.items():

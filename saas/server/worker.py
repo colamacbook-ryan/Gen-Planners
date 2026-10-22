@@ -1,7 +1,8 @@
 """Hàng đợi job: chạy core agent cho một dự án, rồi build + check + export để trình xem hiển thị.
 
-billing = owner    → chạy bằng agent profile (tài khoản của owner), tính vào quota job/tháng của user.
-billing = user_key → chạy bằng API key của chính user (Anthropic → claude CLI, Gemini → agy chế độ API key), HOME tạm riêng job.
+billing = owner    → chạy bằng agent profile của owner: CLI agy / Claude Code đăng nhập gói tháng, hoặc profile "native" (key API của hệ thống).
+                     Tính vào quota job/tháng của user.
+billing = user_key → chạy bằng API key của chính user qua engine native (saas/server/native.py) — gọi thẳng API, không dùng CLI.
 """
 import datetime as dt
 import json
@@ -15,7 +16,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import agents, db, history, interview, mail, sandbox, ssot
+from . import agents, db, history, interview, llm, mail, native, sandbox, ssot
 from .config import HISTORY, JOBS_HOME, ROOT, WORKSPACE
 from .security import dec
 
@@ -91,7 +92,7 @@ def norm_usage(ev):
     return {"input_tokens": int(inp), "output_tokens": int(out), "cost_usd": ev.get("total_cost_usd"), "raw": u}
 
 
-def agent_cmd(engine, prompt, model, timeout_min, project_dir, budget=None):
+def agent_cmd(engine, prompt, model, timeout_min, project_dir):
     b, found = agents.agent_binary(engine)
     if not b:
         raise RuntimeError(agents.cli_problem(engine) if found else f"Chưa cài {engine} trên máy chủ (admin → Core agent → Cài đặt CLI).")
@@ -101,23 +102,17 @@ def agent_cmd(engine, prompt, model, timeout_min, project_dir, budget=None):
     else:
         cmd = [b, "-p", prompt, "--output-format", "stream-json", "--verbose", "--add-dir", str(project_dir),
                "--allowedTools", "Bash,Read,Edit,Write,Glob,Grep,WebSearch,WebFetch,Task"]
-        if budget:
-            cmd += ["--max-budget-usd", f"{budget:g}"]               # Claude Code tự dừng khi ước tính chi phí chạm trần
     return cmd + (["--model", model] if model else [])
-
-
-BUDGET_NOTE = ("\n\nNGÂN SÁCH LƯỢT CHẠY: khoảng {budget:g} USD. Làm tiết kiệm: tối đa 3 subagent chạy song song, chỉ đọc trang web cần cho một con số, "
-               "tóm tắt ngay vào research/*.md thay vì giữ cả trang trong ngữ cảnh; ưu tiên hoàn tất SSOT + build 0 lỗi trước khi mở rộng nghiên cứu.")
 
 
 def run_agent(job, engine, env, model, project_dir, p):
     timeout_min = db.setting_int("job_timeout_min", 120)
     prompt = PROMPT.format(root=ROOT, project_dir=project_dir, slug=p["slug"], country=p.get("country") or "Việt Nam",
-                           projects_root=WORKSPACE) + (BUDGET_NOTE.format(budget=job["budget_usd"]) if job.get("budget_usd") else "")
+                           projects_root=WORKSPACE)
     env = {**env, "GP_PROJECTS": str(WORKSPACE), "PYTHONUNBUFFERED": "1"}
     if db.one("SELECT status FROM jobs WHERE id=?", (job["id"],))["status"] == "cancelled":   # huỷ trước khi agent kịp khởi động
         return -1, None, "cancelled"
-    proc = subprocess.Popen(agent_cmd(engine, prompt, model, timeout_min, project_dir, job.get("budget_usd")), env=env, cwd=str(project_dir),
+    proc = subprocess.Popen(agent_cmd(engine, prompt, model, timeout_min, project_dir), env=env, cwd=str(project_dir),
                             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                             start_new_session=True, **sandbox.popen_kwargs())
     _running[job["id"]] = proc
@@ -205,9 +200,9 @@ def export_check(slug):
 
 def explain_failure(tail, job):
     """Lỗi của lượt chạy bằng key người dùng → câu người dùng hiểu và biết phải làm gì (thay cho "Agent thoát mã 1")."""
-    if agents.BUDGET_HINT.search(tail):
-        return (f"Đã chạm trần chi phí {job['budget_usd']:g} USD của lượt chạy (theo ước tính của Claude Code) — tăng trần ở tab Chạy Plan "
-                "rồi chạy lại; phần đã làm vẫn còn trong dự án.") if job.get("budget_usd") else "Đã chạm trần chi phí của lượt chạy."
+    if tail.startswith("budget:"):                            # engine native dừng ở trần chi phí / trần token
+        return (f"Đã chạm trần của lượt chạy ({tail[7:].strip()}) — tăng trần ở tab Chạy Plan rồi chạy lại; "
+                "các stage đã xong vẫn giữ nguyên, lần sau chạy tiếp từ stage dở.")
     if free_tier_daily(tail):                                  # gói miễn phí Gemini: nói cụ thể hơn "hết tín dụng"
         return free_tier_daily(tail)
     m = agents.CREDIT_HINT.search(tail)
@@ -254,17 +249,19 @@ def run_job(job):
         usage, engine, profile = None, job["engine"], None
         if job["billing"] == "user_key":
             k = db.one("SELECT * FROM api_keys WHERE id=?", (job["api_key_id"],))
-            engine = {"anthropic": "claude", "gemini": "agy", "openrouter": "claude"}[k["provider"]]
-            h = JOBS_HOME / str(jid)
-            h.mkdir(parents=True, exist_ok=True)
-            fake = {"engine": engine, "auth_mode": "api_key"}
-            env = agents.env_for(fake, h, dec(k["key_enc"]), job["model"])
-            log(jid, f"Engine {engine} · API key của user ({k['provider']} {k['key_hint']}) · model {job['model'] or 'mặc định'}")
+            if not k:
+                return finish(jid, "failed", "API key dùng cho lượt chạy này đã bị xoá — thêm lại key rồi chạy lại.", p)
+            engine, api = "native", (k["provider"], dec(k["key_enc"]), job["model"] or k["model"] or llm.plan_model(k["provider"]))
+            log(jid, f"API key của bạn ({llm.PROVIDERS[k['provider']]['label']} {k['key_hint']})")
         elif engine not in ("demo", "external"):
             profile = db.one("SELECT * FROM agent_profiles WHERE id=?", (job["profile_id"],))
             engine = profile["engine"]
-            env = agents.env_for(profile, agents.home(profile))
-            log(jid, f"Engine {engine} · tài khoản hệ thống \"{profile['name']}\" · model {job['model'] or profile['model'] or 'mặc định'}")
+            if engine == "native":
+                api = (profile["provider"], dec(profile["key_enc"]), job["model"] or profile["model"] or llm.plan_model(profile["provider"]))
+                log(jid, f"Tài khoản hệ thống \"{profile['name']}\" (Engine API)")
+            else:
+                env = agents.env_for(profile, agents.home(profile))
+                log(jid, f"Engine {engine} · tài khoản hệ thống \"{profile['name']}\" · model {job['model'] or profile['model'] or 'mặc định'}")
         if engine == "external":
             base = db.setting("public_base_url") or "http://localhost:8080"
             db.update("jobs", jid, status="waiting")
@@ -273,6 +270,11 @@ def run_job(job):
         if engine == "demo":
             log(jid, "Engine demo: không gọi AI — chỉ ghi idea/brief vào dự án và build từ template để thử luồng.")
             code, tail = 0, ""
+        elif engine == "native":
+            if not api[2]:
+                return finish(jid, "failed", "Chưa chọn model cho lượt chạy — chọn model ở tab Chạy Plan (hoặc đặt model mặc định cho key).", p)
+            code, usage, tail = native.run(job, p, *api, lambda t: log(jid, t), export_check)
+            sandbox.strip_links(d)
         else:
             home_dir = Path(env["HOME"])
             if sandbox.agent_ids() and sandbox.problem():
@@ -285,20 +287,25 @@ def run_job(job):
                 gone = sandbox.strip_links(d)
                 if gone:
                     log(jid, f"Đã xoá {len(gone)} symlink/file đặc biệt agent tạo: {', '.join(gone[:5])}")
-            if usage and job["billing"] == "user_key" and agents.is_openrouter(dec(k["key_enc"])):
-                usage["cost_usd"] = None            # Claude Code tính theo bảng giá Anthropic — sai với OpenRouter; xem chi phí thật ở OpenRouter
+        if engine not in ("demo", "external"):
+            model = api[2] if engine == "native" else job["model"] or (profile or {}).get("model")
             if usage:
                 db.insert("usage", user_id=job["user_id"], project_id=p["id"], source="job",
-                          provider="owner:" + engine if profile else "user:" + engine, model=job["model"] or (profile or {}).get("model"),
+                          provider=("owner:" if profile else "user:") + (api[0] if engine == "native" else engine), model=model,
                           profile_id=profile["id"] if profile else None, input_tokens=usage["input_tokens"],
                           output_tokens=usage["output_tokens"], cost_usd=usage.get("cost_usd"), created=db.now())
                 db.update("jobs", jid, usage=json.dumps(usage, ensure_ascii=False))
             if db.one("SELECT status FROM jobs WHERE id=?", (jid,))["status"] == "cancelled":
                 return finish(jid, "cancelled", "Đã huỷ", p)
             if code != 0:
+                if engine == "native":                                         # stage đã xong vẫn đáng xem — build phần đã làm
+                    log(jid, "Build phần đã làm để xem được trong hồ sơ…")
+                    post_build(jid, p, link_check=False)
+                    if tail.startswith("budget:"):
+                        return finish(jid, "failed", explain_failure(tail, job), p)
                 if "free_tier" in tail and "limit: 0" in tail:               # không phải hết quota tạm thời: model không có trong gói
                     return finish(jid, "failed", "Key Gemini đang ở gói miễn phí, model này có hạn mức 0 — chọn model Flash "
-                                                 "(ví dụ gemini-3.8-flash-medium) cho tài khoản agent rồi chạy lại.", p, system=True)
+                                                 "(ví dụ gemini-flash-latest) rồi chạy lại.", p, system=bool(profile))
                 credit = agents.CREDIT_HINT.search(tail)                       # hết tiền/hạn mức key — kiểm TRƯỚC lỗi đăng nhập
                 reason = ("quota_exhausted" if credit else "needs_login" if agents.AUTH_HINT.search(tail) else
                           "quota_exhausted" if agents.QUOTA_HINT.search(tail) else None)
@@ -311,7 +318,8 @@ def run_job(job):
                         return
                     return finish(jid, "failed", free_tier_daily(tail) or f"Tài khoản agent {STATUS_VI[reason]} — báo owner (admin → Core agent)", p,
                                   system=True)
-                return finish(jid, "failed", explain_failure(tail, job) or f"Agent thoát mã {code}", p)
+                return finish(jid, "failed", explain_failure(tail, job) or
+                              (f"Engine API dừng: {tail[:400]}" if engine == "native" else f"Agent thoát mã {code}"), p)
         ok, errors = post_build(jid, p, link_check=engine != "demo")
         if not ok:
             return finish(jid, "failed", "Build lỗi", p)

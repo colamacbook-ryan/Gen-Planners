@@ -25,6 +25,15 @@ class SSOTError(Exception):
     pass
 
 
+# File chuẩn agent được đọc, và đường dẫn SSOT được đọc/ghi — dùng chung cho API agent ngoài và engine native.
+STANDARD = {"AGENTS.md", "CLAUDE.md", "pipeline/model-reference.md", "pipeline/playbook.yaml", "pipeline/stages.yaml", "pipeline/interview.yaml",
+            "templates/project/story.yaml", "templates/project/datasets.yaml", "templates/project/products.yaml",
+            "templates/project/assumptions.yaml", "templates/project/deck.md"}
+SSOT_PATH = re.compile(r"^(idea\.md|brief\.md|project\.yaml|assumptions\.yaml|evidence\.yaml|story\.yaml|datasets\.yaml|products\.yaml|deck\.md"
+                       r"|(sections|research|partials)/\w[\w.-]*\.md|media/\w[\w.-]*\.(jpg|jpeg|png|webp))$")
+READ_ONLY = {"brief.md"}
+
+
 def _validate_model(A):
     """gen.validate_model (cùng luật với `gen.py check`) — nạp lười để server không phụ thuộc gen.py khi khởi động."""
     import sys

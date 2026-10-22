@@ -21,7 +21,7 @@ import datetime as dt
 import hashlib
 import threading
 
-from . import agents, db, history, interview, llm, mail, sandbox, ssot, worker
+from . import agents, db, history, interview, llm, mail, sandbox, search, ssot, worker
 from .config import AGENTS_HOME, COOKIE_SECURE, DATA, HISTORY, JOBS_HOME, ROOT, SAAS, WORKSPACE
 from .security import check_pw, dec, enc, hash_pw, hint, sign, unsign
 
@@ -399,6 +399,7 @@ def me(u=Depends(need_user)):
     keys = db.one("SELECT COUNT(*) n FROM api_keys WHERE user_id=?", (u["id"],))["n"]
     return {**public_user(u), "has_keys": keys > 0, "site_name": db.setting("site_name"),
             "plan_billing": db.setting("plan_billing"), "quota": quota(u), "demo_allowed": db.setting("allow_demo_engine") == "1",
+            "native_budget_usd": db.setting("native_default_budget_usd") or "3",
             "core_ready": agents.active_profile() is not None, "onboarding": onboarding(u, keys > 0),
             "announcement": db.setting("announcement"), "announcement_level": db.setting("announcement_level"),
             "maintenance": db.setting("maintenance") == "1", "support_email": db.setting("support_email"), "mail": mail.configured()}
@@ -905,15 +906,9 @@ async def run_plan(slug: str, request: Request, u=Depends(need_user)):
         if mode == "owner":
             raise HTTPException(403, "Hệ thống chỉ cho chạy Plan bằng tài khoản của owner.")
         k = my_key(u, b.get("api_key_id"))
-        eng = llm.PROVIDERS[k["provider"]]["plan_engine"]
-        if not eng:
-            raise HTTPException(400, f"Key {k['provider']} chỉ dùng để chat. Chạy Plan cần key Anthropic, OpenRouter (claude CLI) hoặc Gemini (agy).")
-        model = str(b.get("model") or "").strip() or k["model"]
-        if k["provider"] == "openrouter":
-            model = model if model.startswith("anthropic/") else agents.OPENROUTER_DEFAULT_PLAN_MODEL
-            if b.get("model") and not str(b["model"]).startswith("anthropic/"):
-                raise HTTPException(400, "Chạy Plan qua OpenRouter cần model Anthropic (vd anthropic/claude-sonnet-5.5 hoặc "
-                                         "anthropic/claude-haiku-5.5 rẻ hơn) — model khác gọi công cụ không ổn định với Claude Code.")
+        model = str(b.get("model") or "").strip()[:120] or k["model"] or llm.plan_model(k["provider"])
+        if not model:
+            raise HTTPException(400, f"Chọn model cho key {llm.PROVIDERS[k['provider']]['label']} (bấm “Lấy danh sách model” ở Cài đặt → AI & API key).")
         budget = None
         if str(b.get("budget_usd") or "").strip():
             try:
@@ -922,7 +917,7 @@ async def run_plan(slug: str, request: Request, u=Depends(need_user)):
                 raise HTTPException(400, "Trần chi phí phải là số (USD)") from None
             if not 0.05 <= budget <= 1000:
                 raise HTTPException(400, "Trần chi phí trong khoảng 0,05–1000 USD")
-        kw.update(engine=eng, billing="user_key", api_key_id=k["id"], model=model, budget_usd=budget)
+        kw.update(engine="native", billing="user_key", api_key_id=k["id"], model=model, budget_usd=budget)
     else:
         if mode == "user_key":
             raise HTTPException(403, "Hệ thống yêu cầu chạy Plan bằng API key của bạn.")
@@ -933,7 +928,7 @@ async def run_plan(slug: str, request: Request, u=Depends(need_user)):
         prof = agents.active_profile()
         if not prof:
             raise HTTPException(503, "Hệ thống chưa có core agent sẵn sàng. Báo owner cấu hình ở trang admin.")
-        cap = float(db.setting("owner_job_budget_usd") or 0)
+        cap = float(db.setting("owner_job_budget_usd") or 0) if prof["engine"] == "native" else 0   # CLI gói tháng: không tính tiền theo token
         kw.update(engine=prof["engine"], billing="owner", profile_id=prof["id"], budget_usd=cap or None)
     jid = db.insert("jobs", **kw)
     db.update("projects", p["id"], status="running", updated=db.now())
@@ -1248,12 +1243,7 @@ def revoke_token(tid: int, u=Depends(need_user)):
     return {"ok": True}
 
 
-STANDARD = {"AGENTS.md", "CLAUDE.md", "pipeline/model-reference.md", "pipeline/playbook.yaml", "pipeline/stages.yaml", "pipeline/interview.yaml",
-            "templates/project/story.yaml", "templates/project/datasets.yaml", "templates/project/products.yaml",
-            "templates/project/assumptions.yaml", "templates/project/deck.md"}
-SSOT_PATH = re.compile(r"^(idea\.md|brief\.md|project\.yaml|assumptions\.yaml|evidence\.yaml|story\.yaml|datasets\.yaml|products\.yaml|deck\.md"
-                       r"|(sections|research|partials)/\w[\w.-]*\.md|media/\w[\w.-]*\.(jpg|jpeg|png|webp))$")
-READ_ONLY = {"brief.md"}
+STANDARD, SSOT_PATH, READ_ONLY = ssot.STANDARD, ssot.SSOT_PATH, ssot.READ_ONLY     # luật đường dẫn dùng chung với engine native
 
 
 @app.get("/api/standard/{path:path}")
@@ -1490,7 +1480,7 @@ def metrics(days: int = 30, a=Depends(need_admin)):
         "health": {"version": GIT_REV, "sandbox": sb["enabled"], "sandbox_hint": sb["hint"], "pandoc": bool(shutil.which("pandoc")),
                    "queue": c("SELECT COUNT(*) n FROM jobs WHERE status='queued'"), "running": c("SELECT COUNT(*) n FROM jobs WHERE status IN ('running','starting')"),
                    "oldest_queued_s": _dur(oldest, now.replace(microsecond=0).isoformat()) if oldest else None,
-                   "core_agent": bool(agents.active_profile()), "maintenance": db.setting("maintenance") == "1",
+                   "core_agent": bool(agents.active_profile()), "maintenance": db.setting("maintenance") == "1", "search": search.provider(),
                    "uptime_s": round(time.time() - STARTED), "python": sys.version.split()[0]}}
 
 
@@ -1724,7 +1714,7 @@ def admin_audit(a=Depends(need_admin)):
 def profile_row(p):
     tok, n = agents.tokens_this_month(p["id"])
     return {**{k: v for k, v in p.items() if k != "key_enc"}, "models": json.loads(p["models"] or "[]"), "tokens_month": tok,
-            "jobs_month": n, "installed": bool(agents.binary(p["engine"])) if p["engine"] != "demo" else True,
+            "jobs_month": n, "installed": bool(agents.binary(p["engine"])) if p["engine"] in agents.CLI else True,
             "terminal": p["id"] in agents.TERMINALS and agents.TERMINALS[p["id"]].alive}
 
 
@@ -1735,8 +1725,9 @@ def list_agents(o=Depends(need_owner)):
     if issues:
         st = {**st, "enabled": False, "hint": " ".join(issues)}
     return {"sandbox": st, "profiles": [profile_row(p) for p in db.q("SELECT * FROM agent_profiles ORDER BY is_active DESC, priority, id")],
-            "engines": {k: {"label": v["label"], "install": v["install"], "installed": bool(agents.binary(k)) if k != "demo" else True,
-                            "key_label": v.get("key_label"), "actions": list(v["terminal"])} for k, v in agents.ENGINES.items()}}
+            "engines": {k: {"label": v["label"], "install": v["install"], "installed": bool(agents.binary(k)) if k in agents.CLI else True,
+                            "key_label": v.get("key_label"), "actions": list(v["terminal"])} for k, v in agents.ENGINES.items()},
+            "providers": {k: {"label": v["label"], "models": v["models"]} for k, v in llm.PROVIDERS.items()}}
 
 
 def get_profile(pid):
@@ -1751,11 +1742,20 @@ async def add_agent(request: Request, o=Depends(need_owner)):
     b = await body(request)
     if b.get("engine") not in agents.ENGINES or not str(b.get("name", "")).strip():
         raise HTTPException(400, "Cần tên và engine hợp lệ")
-    mode = "api_key" if b.get("auth_mode") == "api_key" else "account"
-    key = str(b.get("key", "")).strip()
+    key, provider = str(b.get("key", "")).strip(), None
+    if b["engine"] == "native":                       # Engine API: key API của hệ thống, tính tiền theo token
+        provider = b.get("provider")
+        if provider not in llm.PROVIDERS or not key:
+            raise HTTPException(400, "Engine API cần nhà cung cấp và API key")
+        mode = "api_key"
+    else:                                             # CLI agy / Claude Code: chỉ đăng nhập gói tháng
+        if b.get("auth_mode") == "api_key":
+            raise HTTPException(400, "CLI chỉ dùng tài khoản gói tháng (đăng nhập). Key API → tạo tài khoản loại “Engine API”.")
+        mode = "account"
     first = not db.one("SELECT id FROM agent_profiles")
-    pid = db.insert("agent_profiles", name=b["name"].strip(), engine=b["engine"], auth_mode=mode, key_enc=enc(key) if key else None,
-                    key_hint=hint(key) if key else None, model=b.get("model") or None, enabled=1, is_active=int(first),
+    pid = db.insert("agent_profiles", name=b["name"].strip(), engine=b["engine"], auth_mode=mode, provider=provider, key_enc=enc(key) if key else None,
+                    key_hint=hint(key) if key else None, model=b.get("model") or (llm.plan_model(provider) if provider else None),
+                    models=json.dumps(llm.PROVIDERS[provider]["models"]) if provider else None, enabled=1, is_active=int(first),
                     priority=to_int(b.get("priority") or 100, "Ưu tiên", 0, 10000), account_label=b.get("account_label"), status="new", created=db.now())
     db.update("agent_profiles", pid, home_dir=str(agents.AGENTS_HOME / str(pid)))
     db.audit(o["id"], "agent_add", b["name"], {"engine": b["engine"], "mode": mode})
@@ -1776,8 +1776,8 @@ async def edit_agent(pid: int, request: Request, o=Depends(need_owner)):
             nxt = agents.active_profile(exclude=(pid,))
             if nxt:
                 db.update("agent_profiles", nxt["id"], is_active=1)
-    if b.get("auth_mode") in ("account", "api_key"):
-        kw["auth_mode"] = b["auth_mode"]
+    if b.get("auth_mode") == "api_key" and p["engine"] in agents.CLI:
+        raise HTTPException(400, "CLI chỉ dùng tài khoản gói tháng (đăng nhập). Key API → tạo tài khoản loại “Engine API”.")
     if b.get("key"):
         kw.update(key_enc=enc(b["key"].strip()), key_hint=hint(b["key"].strip()))
     if b.get("reset_status"):
@@ -1864,21 +1864,23 @@ def term_stop(pid: int, o=Depends(need_owner)):
 EDITABLE = {"site_name", "allow_signup", "plan_billing", "default_quota_projects", "default_quota_jobs_month", "job_timeout_min",
             "max_concurrent_jobs", "auto_failover", "allow_demo_engine", "google_client_id", "public_base_url",
             "signup_domains", "support_email", "default_country", "announcement", "announcement_level", "maintenance", "log_retention_days",
-            "smtp_host", "smtp_port", "smtp_user", "smtp_from", "smtp_tls", "owner_job_budget_usd"}
+            "smtp_host", "smtp_port", "smtp_user", "smtp_from", "smtp_tls", "owner_job_budget_usd", "native_default_budget_usd",
+            "native_token_cap", "search_provider"}
 
 
 NUMERIC = {"default_quota_projects": (0, 10000), "default_quota_jobs_month": (0, 10000), "job_timeout_min": (5, 1440), "max_concurrent_jobs": (1, 16),
-           "log_retention_days": (0, 3650)}
+           "log_retention_days": (0, 3650), "native_token_cap": (10_000, 100_000_000)}
 SETTING_LABEL = {"default_quota_projects": "Số dự án tối đa", "default_quota_jobs_month": "Số lần chạy / tháng",
                  "job_timeout_min": "Thời gian tối đa mỗi job", "max_concurrent_jobs": "Số job song song",
-                 "log_retention_days": "Số ngày giữ log job"}
+                 "log_retention_days": "Số ngày giữ log job", "native_token_cap": "Trần token mỗi lượt"}
 
 
 @app.get("/api/admin/settings")
 def get_settings(o=Depends(need_owner)):
     s = {r["key"]: r["value"] for r in db.q("SELECT * FROM settings") if r["key"] in EDITABLE}
     return {**s, "google_client_secret_set": bool(db.setting("google_client_secret_enc")), "smtp_password_set": bool(db.setting("smtp_password_enc")),
-            "mail_configured": mail.configured()}
+            "mail_configured": mail.configured(), "search_key_set": bool(db.setting("search_key_enc")),
+            "search_key_kind": db.setting("search_key_kind"), "search_active": search.provider()}
 
 
 @app.post("/api/admin/settings/test-email")
@@ -1890,6 +1892,17 @@ async def test_email(request: Request, o=Depends(need_owner)):
     if not ok:
         raise HTTPException(400, f"Không gửi được: {err}")
     return {"ok": True, "to": to}
+
+
+@app.post("/api/admin/settings/test-search")
+async def test_search(o=Depends(need_owner)):
+    try:
+        rs = await run_in_threadpool(search.search, "dân số Việt Nam tổng cục thống kê", 5)
+    except search.SearchError as e:
+        raise HTTPException(400, str(e)) from None
+    if not rs:
+        raise HTTPException(400, f"{search.provider()} không trả kết quả — kiểm tra key hoặc chọn nhà cung cấp khác")
+    return {"provider": search.provider(), "results": rs}
 
 
 @app.put("/api/admin/settings")
@@ -1909,14 +1922,21 @@ async def put_settings(request: Request, o=Depends(need_owner)):
         b["announcement"] = str(b["announcement"] or "").strip()[:500]
     if "announcement_level" in b and b["announcement_level"] not in ("info", "warn"):
         raise HTTPException(400, "Mức thông báo: info | warn")
-    if "owner_job_budget_usd" in b:
-        try:
-            v = float(str(b["owner_job_budget_usd"] or 0).replace(",", "."))
-        except ValueError:
-            raise HTTPException(400, "Trần chi phí mỗi lượt: số USD") from None
-        if not 0 <= v <= 1000:
-            raise HTTPException(400, "Trần chi phí mỗi lượt: 0–1000 USD (0 = không giới hạn)")
-        b["owner_job_budget_usd"] = f"{v:g}"
+    for k, lo in (("owner_job_budget_usd", 0), ("native_default_budget_usd", 0.05)):
+        if k in b:
+            try:
+                v = float(str(b[k] or 0).replace(",", "."))
+            except ValueError:
+                raise HTTPException(400, "Trần chi phí mỗi lượt: số USD") from None
+            if not lo <= v <= 1000:
+                raise HTTPException(400, f"Trần chi phí mỗi lượt: {lo:g}–1000 USD")
+            b[k] = f"{v:g}"
+    if "search_provider" in b and b["search_provider"] not in search.PROVIDERS:
+        raise HTTPException(400, "Nhà cung cấp tìm web không hợp lệ")
+    if b.get("search_key") and b.get("search_key_kind") not in ("brave", "tavily"):
+        raise HTTPException(400, "Loại key tìm web: brave | tavily")
+    if b.get("search_provider") in ("brave", "tavily") and not (b.get("search_key") or db.setting("search_key_enc")):
+        raise HTTPException(400, f"Chọn {b['search_provider']} cần lưu key tìm web")
     if "smtp_tls" in b and b["smtp_tls"] not in mail.TLS_MODES:
         raise HTTPException(400, "Bảo mật SMTP: starttls | ssl | none")
     if "smtp_port" in b and str(b["smtp_port"]).strip():
@@ -1946,6 +1966,12 @@ async def put_settings(request: Request, o=Depends(need_owner)):
         db.set_setting("smtp_password_enc", enc(str(b["smtp_password"])))
     if b.get("clear_smtp_password"):
         db.set_setting("smtp_password_enc", "")
+    if b.get("search_key"):
+        db.set_setting("search_key_enc", enc(str(b["search_key"]).strip()))
+        db.set_setting("search_key_kind", b["search_key_kind"])
+    if b.get("clear_search_key"):
+        db.set_setting("search_key_enc", "")
+        db.set_setting("search_key_kind", "")
     db.audit(o["id"], "settings_update", "", {k: v for k, v in b.items() if k in EDITABLE})
     return get_settings(o)
 

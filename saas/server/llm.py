@@ -8,15 +8,35 @@ import time
 
 import httpx
 
+# plan_engine "native": Chạy Plan bằng chính key này qua engine native (gọi thẳng API, function calling) — CLI agy / Claude Code
+# chỉ dùng cho tài khoản gói tháng của owner.
 PROVIDERS = {
-    "anthropic": {"label": "Anthropic (Claude)", "models": ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"],
-                  "plan_engine": "claude"},
-    "openai": {"label": "OpenAI", "models": [], "plan_engine": None},
+    "deepseek": {"label": "DeepSeek", "models": ["deepseek-flash", "deepseek-v4-pro"], "plan_engine": "native"},
+    "anthropic": {"label": "Anthropic (Claude)", "models": ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"], "plan_engine": "native"},
+    "openai": {"label": "OpenAI", "models": [], "plan_engine": "native"},
     # Alias "-latest" do Google tự trỏ sang bản hiện hành — không bị ngừng như tên phiên bản cố định
-    "gemini": {"label": "Google Gemini", "models": ["gemini-flash-latest", "gemini-pro-latest"], "plan_engine": "agy"},
-    "openrouter": {"label": "OpenRouter", "models": [], "plan_engine": "claude"},   # Plan: Claude Code qua Anthropic Skin, chỉ model anthropic/*
+    "gemini": {"label": "Google Gemini", "models": ["gemini-flash-latest", "gemini-pro-latest"], "plan_engine": "native"},
+    "openrouter": {"label": "OpenRouter", "models": [], "plan_engine": "native"},
+}
+# Điểm cuối chuẩn OpenAI (chat/completions + tools) của từng nhà cung cấp — engine native dùng một định dạng duy nhất.
+OPENAI_COMPAT = {
+    "deepseek": "https://api.deepseek.com/chat/completions",
+    "openai": "https://api.openai.com/v1/chat/completions",
+    "openrouter": "https://openrouter.ai/api/v1/chat/completions",
+    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    "anthropic": "https://api.anthropic.com/v1/chat/completions",
+}
+# Giá USD / 1 triệu token: (vào, vào trúng cache, ra). Dùng giá giờ cao điểm cho chắc; model lạ → không biết giá, chặn theo token.
+PRICES = {
+    ("deepseek", "deepseek-flash"): (0.30, 0.006, 1.20), ("deepseek", "deepseek-chat"): (0.30, 0.006, 1.20),
+    ("deepseek", "deepseek-v4-pro"): (1.32, 0.044, 3.96), ("deepseek", "deepseek-reasoner"): (1.32, 0.044, 3.96),
 }
 TIMEOUT = httpx.Timeout(120, connect=15)
+
+
+def plan_model(provider):
+    """Model mặc định khi Chạy Plan: model đầu danh sách (rẻ, gọi công cụ tốt). OpenAI/OpenRouter: người dùng phải chọn."""
+    return next(iter((PROVIDERS.get(provider) or {}).get("models") or []), None)
 
 
 class LLMError(Exception):
@@ -53,8 +73,8 @@ def _chat(provider, key, model, system, messages, max_tokens):
             text = "".join(b.get("text", "") for b in j.get("content", []) if b.get("type") == "text")
             u = j.get("usage", {})
             return text, {"input_tokens": u.get("input_tokens", 0), "output_tokens": u.get("output_tokens", 0)}
-        if provider in ("openai", "openrouter"):
-            url = "https://api.openai.com/v1/chat/completions" if provider == "openai" else "https://openrouter.ai/api/v1/chat/completions"
+        if provider in ("openai", "openrouter", "deepseek"):
+            url = OPENAI_COMPAT[provider]
             r = httpx.post(url, timeout=TIMEOUT, headers={"Authorization": f"Bearer {key}"},
                            json={"model": model, "max_tokens": max_tokens,
                                  "messages": [{"role": "system", "content": system}, *messages]})
@@ -85,7 +105,8 @@ def _ok(r: httpx.Response) -> dict:
     if r.status_code >= 400:
         try:
             msg = r.json()
-            msg = msg.get("error", msg)
+            msg = msg[0] if isinstance(msg, list) and msg else msg        # endpoint chuẩn OpenAI của Gemini trả lỗi dạng [{error}]
+            msg = msg.get("error", msg) if isinstance(msg, dict) else msg
             msg = msg.get("message", msg) if isinstance(msg, dict) else msg
         except ValueError:
             msg = r.text[:300]
@@ -113,6 +134,9 @@ def list_models(provider: str, key: str) -> list[str]:
         elif provider == "openrouter":
             j = _ok(httpx.get("https://openrouter.ai/api/v1/models", headers={"Authorization": f"Bearer {key}"}, timeout=30))
             ids = [m["id"] for m in j.get("data", [])]
+        elif provider == "deepseek":
+            j = _ok(httpx.get("https://api.deepseek.com/models", headers={"Authorization": f"Bearer {key}"}, timeout=30))
+            ids = [m["id"] for m in j.get("data", [])]
         else:
             return []
     except httpx.HTTPError as e:
@@ -131,3 +155,36 @@ def parse_json(text: str) -> dict:
         return json.loads(m.group(0))
     except json.JSONDecodeError:
         return {"reply": text.strip()}
+
+
+def chat_tools(provider, key, model, messages, tools, max_tokens=4096, retries=4):
+    """Một lượt function calling chuẩn OpenAI → (message, usage). usage = {input, cached, output, cost_usd|None}.
+    Dùng cho engine native: cùng một định dạng cho DeepSeek, OpenAI, Gemini, Anthropic, OpenRouter."""
+    url = OPENAI_COMPAT.get(provider)
+    if not url:
+        raise LLMError(f"{provider} chưa hỗ trợ chạy Plan")
+    payload = {"model": model, "messages": messages, "tools": tools, "tool_choice": "auto", "max_tokens": max_tokens}
+    if provider == "openrouter":
+        payload["usage"] = {"include": True}                  # OpenRouter trả chi phí thật của lượt gọi
+    for attempt in range(retries):
+        try:
+            r = httpx.post(url, timeout=httpx.Timeout(300, connect=20), headers={"Authorization": f"Bearer {key}"}, json=payload)
+            j = _ok(r)
+            break
+        except httpx.HTTPError as e:
+            err = LLMError(f"Không gọi được {provider}: {type(e).__name__}", status=503)
+        except LLMError as e:
+            err = e
+        if err.status not in TRANSIENT or attempt == retries - 1 or "PerDay" in str(err):   # hết lượt/ngày: thử lại vô ích
+            raise err
+        time.sleep(2 * (attempt + 1) ** 2)
+    msg = (j.get("choices") or [{}])[0].get("message") or {}
+    u = j.get("usage") or {}
+    cached = u.get("prompt_cache_hit_tokens") or (u.get("prompt_tokens_details") or {}).get("cached_tokens") or 0
+    inp, out = u.get("prompt_tokens", 0), u.get("completion_tokens", 0)
+    cost = u.get("cost") if provider == "openrouter" else None
+    if cost is None:
+        price = next((v for (p, m), v in PRICES.items() if p == provider and model.startswith(m)), None)
+        if price:
+            cost = ((inp - cached) * price[0] + cached * price[1] + out * price[2]) / 1e6
+    return msg, {"input_tokens": inp, "cached_tokens": cached, "output_tokens": out, "cost_usd": cost}

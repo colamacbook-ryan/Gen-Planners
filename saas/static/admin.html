@@ -46,6 +46,7 @@ async function overview() {
   const alerts = [
     !ag && owner && ["bad", 'Chưa có core agent — người dùng chưa chạy được Plan bằng tài khoản hệ thống. <a href="#agents">Cấu hình agent →</a>'],
     !H.sandbox && ["warn", `Agent chưa được cô lập: ${esc(H.sandbox_hint)}`],
+    owner && ["duckduckgo", "none"].includes(H.search) && ["warn", `Engine API ${H.search === "none" ? "đang tắt tìm web" : "đang tìm web bằng DuckDuckGo không key (thường bị chặn trên máy chủ)"} — số liệu sẽ nhiều ước tính, ít nguồn. <a href="#settings">Thêm key Brave / Tavily →</a>`],
     H.maintenance && ["warn", 'Đang bật chế độ bảo trì — người dùng chỉ xem được. <a href="#settings">Tắt ở Cài đặt →</a>'],
     st.disk_free / st.disk_total < .1 && ["bad", `Ổ đĩa sắp đầy: còn ${bytes(st.disk_free)} (${pct(st.disk_free / st.disk_total)}).`],
     H.oldest_queued_s > 600 && ["warn", `Có job chờ ${dur(H.oldest_queued_s)} — tăng "Số job song song" hoặc kiểm tra core agent.`],
@@ -221,9 +222,9 @@ function showLog(id) { clearInterval(A.poll); $("#logc").hidden = false; $("#lx"
 
 // ---------------------------------------------------------------- core agent (owner)
 async function agents() {
-  const {profiles, engines, sandbox} = await api("/admin/agents"); A.sandbox = sandbox;
-  const eng = Object.entries(engines).filter(([k]) => k !== "demo");
-  $("#main").innerHTML = topbar("Core agent", "Agent lõi chạy Plan trên tài khoản của chủ hệ thống · mỗi tài khoản agent là một lần đăng nhập riêng (HOME riêng)") + `<div class="body">
+  const {profiles, engines, sandbox, providers} = await api("/admin/agents"); A.sandbox = sandbox;
+  const eng = Object.entries(engines).filter(([k, e]) => e.install);
+  $("#main").innerHTML = topbar("Core agent", "Agent lõi chạy Plan cho người dùng chọn “tài khoản hệ thống”: CLI đăng nhập gói tháng (mỗi tài khoản một HOME riêng) hoặc Engine API bằng key của hệ thống") + `<div class="body">
   <div class="grid g2">${eng.map(([k, e]) => `<div class="card"><div class="row"><b class="grow">${esc(e.label)}</b>${e.installed ? '<span class="pill ok">đã cài</span>' : pill("not_installed")}</div>
     <p class="hint" style="margin:6px 0">Lệnh cài: <code>${esc(e.install)}</code></p><button class="sm" data-install="${k}" type="button">${e.installed ? "Cài lại / cập nhật" : "Cài đặt CLI"}</button></div>`).join("")}</div>
   ${A.sandbox && !A.sandbox.enabled ? `<div class="banner" style="margin-top:14px"><b>Agent chưa được cô lập.</b> ${esc(A.sandbox.hint)}</div>` : A.sandbox ? `<p class="hint" style="margin-top:14px">🔒 ${esc(A.sandbox.hint)}</p>` : ""}
@@ -237,16 +238,19 @@ async function agents() {
   <form class="card" id="af" style="margin-top:14px;max-width:760px"><h2>Thêm tài khoản agent</h2><div class="grid g2" style="gap:0 12px">
     <div><label for="an">Tên tài khoản agent</label><input id="an" required placeholder="Ví dụ: Google Ryan chính"></div>
     <div><label for="ae">Loại agent</label><select id="ae">${Object.entries(engines).map(([k, e]) => `<option value="${k}">${esc(e.label)}</option>`).join("")}</select></div>
-    <div><label for="am">Cách xác thực</label><select id="am"><option value="account">Đăng nhập tài khoản (OAuth trong terminal)</option><option value="api_key">API key</option></select></div>
+    <div id="apr" hidden><label for="apv">Nhà cung cấp</label><select id="apv">${Object.entries(providers).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join("")}</select></div>
     <div><label for="al">Nhãn tài khoản (email)</label><input id="al" placeholder="để nhận ra tài khoản nào"></div>
-    <div id="akr" hidden><label for="ak" id="akl">API key</label><input id="ak" type="password" autocomplete="off"></div>
-    <div><label for="amo">Model (tuỳ chọn)</label><input id="amo" placeholder="lấy danh sách sau khi đăng nhập"></div>
+    <div id="akr" hidden><label for="ak">API key của hệ thống</label><input id="ak" type="password" autocomplete="off"></div>
+    <div><label for="amo">Model (tuỳ chọn)</label><input id="amo" placeholder="lấy danh sách sau khi thêm"></div>
     <div><label for="ap">Ưu tiên (số nhỏ chạy trước)</label><input id="ap" type="number" value="100"></div></div>
-    <p class="err" id="amsg"></p><button class="pri">Thêm tài khoản agent</button></form></div>`;
-  const syncMode = () => { $("#akr").hidden = $("#am").value !== "api_key"; $("#akl").textContent = engines[$("#ae").value]?.key_label || "API key"; };
-  $("#am").onchange = $("#ae").onchange = syncMode; syncMode();
-  $("#af").onsubmit = async e => { e.preventDefault(); try { await api("/admin/agents", {body: {name: $("#an").value, engine: $("#ae").value, auth_mode: $("#am").value,
-    key: $("#ak").value, model: $("#amo").value, account_label: $("#al").value, priority: $("#ap").value}}); toast("Đã thêm tài khoản agent"); agents(); } catch (x) { $("#amsg").textContent = x.message; } };
+    <p class="hint" id="ahint"></p><p class="err" id="amsg"></p><button class="pri">Thêm tài khoản agent</button></form></div>`;
+  const HINT = {native: "Engine API gọi thẳng API bằng key của hệ thống, tính tiền theo token — trần chi phí mỗi lượt đặt ở Cài đặt hệ thống → Chạy Plan.",
+    agy: "Đăng nhập tài khoản Google (gói tháng) trong terminal sau khi thêm.", claude: "Đăng nhập tài khoản Claude (gói Pro/Max) trong terminal sau khi thêm, rồi lưu token dài hạn."};
+  const syncMode = () => { const n = $("#ae").value === "native"; $("#akr").hidden = $("#apr").hidden = !n; $("#ahint").textContent = HINT[$("#ae").value] || ""; };
+  $("#ae").onchange = syncMode; syncMode();
+  $("#af").onsubmit = async e => { e.preventDefault(); const n = $("#ae").value === "native"; try { await api("/admin/agents", {body: {name: $("#an").value, engine: $("#ae").value,
+    provider: n ? $("#apv").value : undefined, key: n ? $("#ak").value : undefined, model: $("#amo").value, account_label: $("#al").value, priority: $("#ap").value}});
+    toast("Đã thêm tài khoản agent"); agents(); } catch (x) { $("#amsg").textContent = x.message; } };
   $$("[data-install]").forEach(b => b.onclick = async () => { if (!await ask(`Chạy lệnh cài ${b.dataset.install} trên máy chủ?`, "Cài đặt", false)) return; const r = await api("/admin/agents/install", {body: {engine: b.dataset.install}}); toast("Đang cài — xem log ở Jobs #" + r.job_id); location.hash = "jobs"; });
   $$(".prof").forEach(card => { const id = +card.dataset.p, p = profiles.find(x => x.id === id);
     card.querySelectorAll("[data-a]").forEach(b => b.onclick = () => profAction(p, b.dataset.a, b));
@@ -255,11 +259,13 @@ async function agents() {
     const pr = card.querySelector(".prio"); if (pr) pr.onchange = async () => { await api("/admin/agents/" + id, {method: "PATCH", body: {priority: +pr.value || 0}}); toast("Đã lưu ưu tiên"); agents(); }; });
   const live = profiles.find(p => p.terminal); if (live) openTerm(live);
 }
+const PROVIDER_LABEL = {deepseek: "DeepSeek", anthropic: "Anthropic", openai: "OpenAI", gemini: "Gemini", openrouter: "OpenRouter"};
+const agentsCli = e => e === "agy" || e === "claude";
 function profCard(p) {
   const pct = p.budget_tokens_month ? Math.min(100, p.tokens_month / p.budget_tokens_month * 100) : null;
   const models = [...new Set([p.model, ...p.models].filter(Boolean))];
   return `<div class="prof ${p.is_active ? "act" : ""}" data-p="${p.id}"><div class="row"><h3 class="grow">${esc(p.name)}</h3>${p.is_active ? '<span class="pill core">đang dùng</span>' : ""}${p.enabled ? pill(p.status || "new") : '<span class="pill">đã tắt</span>'}</div>
-  <div class="kv"><span>Loại agent</span><span>${esc(ENGINE[p.engine] || p.engine)} ${p.installed ? "" : '<span class="err">· chưa cài CLI</span>'}</span><span>Xác thực</span><span>${p.auth_mode === "api_key" ? `API key ${esc(p.key_hint || "(chưa có)")}` : "đăng nhập tài khoản"}${p.account_label ? " · " + esc(p.account_label) : ""}</span>
+  <div class="kv"><span>Loại agent</span><span>${esc(ENGINE[p.engine] || p.engine)} ${p.installed ? "" : '<span class="err">· chưa cài CLI</span>'}</span><span>Xác thực</span><span>${p.engine === "native" ? `API key ${esc(PROVIDER_LABEL[p.provider] || p.provider || "")} ${esc(p.key_hint || "")}` : p.auth_mode === "api_key" ? `API key ${esc(p.key_hint || "(chưa có)")}` : "đăng nhập gói tháng"}${p.account_label ? " · " + esc(p.account_label) : ""}</span>
   <span>Phiên bản</span><span>${esc(p.version || "—")}</span><span>Model</span><span><select class="msel" aria-label="Model của tài khoản agent" style="padding:4px 8px"><option value="">mặc định</option>${models.map(m => `<option ${m === p.model ? "selected" : ""}>${esc(m)}</option>`).join("")}</select></span>
   <span>Tháng này</span><span>${tok(p.tokens_month)} token · ${p.jobs_month} lượt</span>
   <span>Ưu tiên</span><span><input class="prio" type="number" min="0" aria-label="Ưu tiên (số nhỏ chạy trước)" value="${p.priority ?? 100}" style="padding:4px 8px;width:110px"> <span class="hint">số nhỏ dùng trước</span></span>
@@ -267,7 +273,7 @@ function profCard(p) {
   ${pct != null ? `<div class="meter" title="${Math.round(pct)}% ngân sách"><i style="width:${pct}%;background:${pct > 85 ? "var(--bad)" : "var(--core)"}"></i></div>` : ""}
   ${p.quota_text ? `<details style="margin-top:8px"><summary class="hint">Quota đọc lúc ${when(p.quota_checked)}</summary><pre class="log" style="max-height:200px">${esc(p.quota_text.slice(-2500))}</pre></details>` : ""}
   <div class="row" style="margin-top:10px">${p.is_active ? "" : '<button class="sm pri" data-a="activate" type="button">Dùng tài khoản này</button>'}
-  <button class="sm" data-a="check" type="button">Kiểm tra</button>${p.engine !== "demo" ? `${p.auth_mode === "account" ? '<button class="sm" data-a="login" type="button">Đăng nhập</button>' : ""}
+  <button class="sm" data-a="check" type="button">Kiểm tra</button>${p.engine === "native" ? '<button class="sm" data-a="models" type="button">Lấy model</button><button class="sm ghost" data-a="key" type="button">Đổi key</button>' : ""}${agentsCli(p.engine) ? `${p.auth_mode === "account" ? '<button class="sm" data-a="login" type="button">Đăng nhập</button>' : ""}
   <button class="sm" data-a="usage" type="button">Xem quota</button><button class="sm" data-a="models" type="button">Lấy model</button>
   ${p.auth_mode === "account" ? `${p.engine === "claude" ? `<button class="sm ghost" data-a="key" type="button">${p.key_hint ? "Thay" : "Lưu"} token</button>` : ""}<button class="sm ghost" data-a="logout" type="button">Đăng xuất</button>` : '<button class="sm ghost" data-a="key" type="button">Đổi key</button>'}` : ""}
   ${["quota_exhausted", "needs_login"].includes(p.status) ? '<button class="sm ghost" data-a="reset" type="button">Đặt lại trạng thái</button>' : ""}
@@ -331,8 +337,16 @@ async function settings() {
     ${sel("plan_billing", "Ai trả chi phí chạy Plan", [["either", "Người dùng chọn: tài khoản hệ thống hoặc key riêng"], ["owner", "Chỉ tài khoản hệ thống (core agent)"], ["user_key", "Chỉ API key của người dùng"]])}
     ${f("default_quota_jobs_month", "Lần chạy bằng tài khoản hệ thống / người dùng / tháng", "number")}${f("default_quota_projects", "Số dự án tối đa / người dùng", "number")}
     ${f("job_timeout_min", "Thời gian tối đa mỗi job (phút)", "number")}${f("max_concurrent_jobs", "Số job chạy song song", "number", "1–16; mỗi job là một core agent đang chạy")}
-    ${f("owner_job_budget_usd", "Trần chi phí mỗi lượt chạy bằng tài khoản hệ thống (USD)", "text", "0 = không giới hạn. Chỉ áp dụng cho Claude Code (key Anthropic / OpenRouter); agent làm tiết kiệm khi có trần")}
-    ${sel("auto_failover", "Tự chuyển tài khoản agent khi hết quota", yn)}${sel("allow_demo_engine", "Chế độ demo (không cần key)", yn, "Cho người mới thử luồng; hồ sơ demo có cảnh báo khi chia sẻ")}</div></section>
+    ${sel("auto_failover", "Tự chuyển tài khoản agent khi hết quota", yn)}${sel("allow_demo_engine", "Chế độ demo (không cần key)", yn, "Cho người mới thử luồng; hồ sơ demo có cảnh báo khi chia sẻ")}</div>
+    <h3 style="margin:16px 0 4px">Engine API — chạy bằng API key</h3><p class="hint">Dùng khi người dùng chạy Plan bằng key của họ, hoặc tài khoản hệ thống loại “Engine API”. CLI đăng nhập gói tháng không tính tiền theo token nên không áp trần USD.</p>
+    <div class="grid g2" style="gap:0 14px">${f("native_default_budget_usd", "Trần chi phí mặc định mỗi lượt (USD)", "text", "Khi người chạy không tự đặt trần. Model chưa có bảng giá thì chặn theo trần token")}
+    ${f("owner_job_budget_usd", "Trần mỗi lượt bằng tài khoản hệ thống (USD)", "text", "Cho profile Engine API của hệ thống. 0 = dùng trần mặc định")}
+    ${f("native_token_cap", "Trần token mỗi lượt", "number", "Tổng token vào + ra; chặn cả model không biết giá")}
+    ${sel("search_provider", "Tìm web cho agent", [["auto", "Tự động (Brave/Tavily nếu có key, không thì DuckDuckGo)"], ["brave", "Brave Search API"], ["tavily", "Tavily"], ["duckduckgo", "DuckDuckGo (miễn phí, có thể bị giới hạn)"], ["none", "Tắt — agent chỉ đọc URL đã biết"]], `Đang dùng: <b>${esc(s.search_active)}</b>`)}
+    <div><label for="srk">Key tìm web (Brave / Tavily)</label><div class="row"><select id="srkk" aria-label="Loại key tìm web" style="width:auto"><option value="brave" ${s.search_key_kind === "brave" ? "selected" : ""}>Brave</option><option value="tavily" ${s.search_key_kind === "tavily" ? "selected" : ""}>Tavily</option></select>
+      <input id="srk" class="grow" type="password" autocomplete="off" placeholder="${s.search_key_set ? `đã lưu key ${esc(s.search_key_kind)} — nhập để thay` : "tuỳ chọn"}"></div>
+      ${s.search_key_set ? '<label class="row hint" style="margin-top:6px"><input type="checkbox" id="srkClear" style="width:auto"> Xoá key đã lưu</label>' : ""}</div></div>
+    <div class="form-actions"><button type="button" id="srtest">Thử tìm web</button><span class="hint">Lưu cài đặt trước khi thử. DuckDuckGo thường chặn máy chủ đặt ở datacenter — Brave (2.000 lượt/tháng miễn phí) hoặc Tavily ổn định hơn.</span></div></section>
   <section class="card" id="s-mail"><h2>Email (SMTP)</h2><p class="hint">Dùng cho quên mật khẩu, gửi lời mời và báo Plan chạy xong. Dùng máy chủ mail của công ty, Google Workspace (smtp.gmail.com, mật khẩu ứng dụng), Amazon SES, Mailgun…
       ${s.mail_configured ? pill("ok") : '<span class="pill warn">chưa cấu hình</span>'}</p><div class="grid g2" style="gap:0 14px">
     ${f("smtp_host", "Máy chủ SMTP", "text", "", "smtp.gmail.com")}${f("smtp_port", "Cổng", "number", "587 cho STARTTLS, 465 cho SSL")}
@@ -353,8 +367,12 @@ async function settings() {
   $("#sf").onsubmit = async e => { e.preventDefault(); const b = {}; $$("[data-k]").forEach(i => b[i.dataset.k] = i.value); if ($("#gcs").value) b.google_client_secret = $("#gcs").value;
     if ($("#gcsClear")?.checked) b.clear_google_client_secret = true;
     if ($("#smpw").value) b.smtp_password = $("#smpw").value; if ($("#smpwClear")?.checked) b.clear_smtp_password = true;
+    if ($("#srk").value) { b.search_key = $("#srk").value; b.search_key_kind = $("#srkk").value; } if ($("#srkClear")?.checked) b.clear_search_key = true;
     try { await api("/admin/settings", {method: "PUT", body: b}); A.me = await api("/me"); toast("Đã lưu cài đặt"); settings(); }
     catch (x) { $("#smsg").textContent = "✗ " + x.message; $("#smsg").className = "err"; toast("Chưa lưu: " + x.message); } };
+  $("#srtest").onclick = async e => { const b = e.currentTarget; b.disabled = true;
+    try { const r = await api("/admin/settings/test-search", {body: {}}); toast(`${r.provider}: ${r.results.length} kết quả · ${r.results[0].title}`); }
+    catch (x) { toast(x.message); } finally { b.disabled = false; } };
   $("#smtest").onclick = async e => { const b = e.currentTarget; b.disabled = true; b.textContent = "Đang gửi…";
     try { const r = await api("/admin/settings/test-email", {body: {to: $("#smto").value}}); toast("Đã gửi email thử tới " + r.to); }
     catch (x) { toast(x.message); } finally { b.disabled = false; b.textContent = "Gửi email thử"; } };

@@ -39,7 +39,7 @@ const STATUS = {interview: "phỏng vấn", brainstorm: "brainstorm", ready: "s�
   needs_login: "cần đăng nhập", waiting: "chờ agent", open: "đang mở", used: "đã dùng", expired: "hết hạn", revoked: "đã thu hồi", archived: "đã lưu trữ",
   owner: "chủ hệ thống", admin: "admin", user: "người dùng", maintenance: "bảo trì"};
 const ROLE = {owner: "Chủ hệ thống (owner)", admin: "Admin", user: "Người dùng"};
-const ENGINE = {agy: "Antigravity", claude: "Claude Code", external: "Agent ngoài", demo: "Demo", local: "Máy chủ"};
+const ENGINE = {agy: "Antigravity", claude: "Claude Code", native: "Engine API", external: "Agent ngoài", demo: "Demo", local: "Máy chủ"};
 const BILL = {owner: "tài khoản hệ thống", user_key: "key của người dùng", external: "agent ngoài", demo: "demo", none: "—"};
 const pill = s => `<span class="pill ${esc(s)}">${esc(STATUS[s] || s || "—")}</span>`;
 
