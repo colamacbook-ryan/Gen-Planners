@@ -1,0 +1,9 @@
+# Không đóng gói dữ liệu chạy thử, khoá mã hoá hay lịch sử git vào image
+.git
+saas/data/
+**/__pycache__/
+.pytest_cache/
+projects/*/build/
+saas/demo/out/
+.env
+*.key
